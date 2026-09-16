@@ -25,6 +25,7 @@ import {
 } from '../data/mockData';
 import { canTransitionTo } from '../services/stateMachine';
 import { onlineDb, OnlineDbConfig } from '../services/onlineDbClient';
+import { useAuth } from './AuthContext';
 
 interface DatabaseContextType {
   companies: Company[];
@@ -39,11 +40,17 @@ interface DatabaseContextType {
   lastSyncMessage: string;
   
   // Actions nghiệp vụ
-  addAsset: (asset: Omit<ContainerAsset, 'id' | 'isLocked'>) => ContainerAsset;
-  addOffer: (offer: Omit<Offer, 'id' | 'createdAt'>) => Offer;
-  addRequest: (req: Omit<ContainerRequest, 'id' | 'createdAt'>) => ContainerRequest;
+  addAsset: (asset: Omit<ContainerAsset, 'id' | 'isLocked'>) => ContainerAsset | null;
+  updateAsset: (assetId: string, asset: Omit<ContainerAsset, 'id' | 'isLocked'>) => { success: boolean; message: string };
+  deleteAsset: (assetId: string) => { success: boolean; message: string };
+  addOffer: (offer: Omit<Offer, 'id' | 'createdAt'>) => Offer | null;
+  updateOffer: (offerId: string, offer: Omit<Offer, 'id' | 'createdAt'>) => { success: boolean; message: string };
+  deleteOffer: (offerId: string) => { success: boolean; message: string };
+  addRequest: (req: Omit<ContainerRequest, 'id' | 'createdAt'>) => ContainerRequest | null;
+  updateRequest: (requestId: string, req: Omit<ContainerRequest, 'id' | 'createdAt'>) => { success: boolean; message: string };
+  deleteRequest: (requestId: string) => { success: boolean; message: string };
   holdAtomicReservation: (candidate: MatchCandidate, request: ContainerRequest) => { success: boolean; transactionId?: string; message?: string };
-  acceptAgreement: (transactionId: string, party: 'A' | 'B') => { success: boolean; message: string };
+  acceptAgreement: (transactionId: string) => { success: boolean; message: string };
   opsApproveCarrier: (transactionId: string, refNumber: string, evidenceFileName: string) => { success: boolean; message: string };
   settlePayment: (transactionId: string, party: 'A' | 'B', bankRef: string) => { success: boolean; message: string };
   submitInspection: (transactionId: string, inspectionData: {
@@ -57,7 +64,7 @@ interface DatabaseContextType {
     isDiscrepancyFound: boolean;
     discrepancyNotes?: string;
   }) => { success: boolean; message: string };
-  confirmHandover: (transactionId: string, party: 'A' | 'B') => { success: boolean; message: string };
+  confirmHandover: (transactionId: string) => { success: boolean; message: string };
   toggleHold: (transactionId: string, isOnHold: boolean, reason?: string) => void;
   resolveCase: (caseId: string, resolutionSummary: string) => void;
   resetToDemoData: () => void;
@@ -68,6 +75,8 @@ interface DatabaseContextType {
 const DatabaseContext = createContext<DatabaseContextType | undefined>(undefined);
 
 export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { currentRole, currentCompany, currentUserEmail } = useAuth();
+
   const [companies, setCompanies] = useState<Company[]>(() => {
     const saved = localStorage.getItem('econt_db_companies');
     return saved ? JSON.parse(saved) : INITIAL_COMPANIES;
@@ -122,7 +131,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const newLog: AuditEvent = {
       id: 'AUD-' + Math.random().toString(36).substring(2, 9),
       timestamp: new Date().toISOString(),
-      actorEmail: 'system@econt.vn',
+      actorEmail: currentUserEmail,
       action,
       entityName,
       entityId,
@@ -153,7 +162,11 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
-  const addAsset = (assetData: Omit<ContainerAsset, 'id' | 'isLocked'>): ContainerAsset => {
+  const addAsset = (assetData: Omit<ContainerAsset, 'id' | 'isLocked'>): ContainerAsset | null => {
+    if (currentRole !== 'ENTERPRISE_A' || assetData.currentCustodianId !== currentCompany.id) {
+      return null;
+    }
+
     const newAsset: ContainerAsset = {
       ...assetData,
       id: 'ASSET-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
@@ -164,7 +177,41 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return newAsset;
   };
 
-  const addOffer = (offerData: Omit<Offer, 'id' | 'createdAt'>): Offer => {
+  const updateAsset = (assetId: string, assetData: Omit<ContainerAsset, 'id' | 'isLocked'>) => {
+    const existing = assets.find(a => a.id === assetId);
+    if (currentRole !== 'ENTERPRISE_A' || !existing || existing.currentCustodianId !== currentCompany.id) {
+      return { success: false, message: 'Chỉ Bên A sở hữu container mới được sửa dữ liệu.' };
+    }
+    if (existing.isLocked || transactions.some(t => t.assetId === assetId && !['CANCELLED', 'REJECTED', 'EXPIRED'].includes(t.status))) {
+      return { success: false, message: 'Container đang được sử dụng trong giao dịch, không thể sửa.' };
+    }
+
+    const updatedAsset = { ...assetData, id: assetId, isLocked: existing.isLocked };
+    setAssets(prev => prev.map(a => a.id === assetId ? updatedAsset : a));
+    setOffers(prev => prev.map(o => o.assetId === assetId ? { ...o, asset: updatedAsset } : o));
+    addAudit('ASSET_UPDATED', 'ContainerAsset', assetId, `Cập nhật container ${updatedAsset.containerNumber}`);
+    return { success: true, message: 'Đã cập nhật container.' };
+  };
+
+  const deleteAsset = (assetId: string) => {
+    const existing = assets.find(a => a.id === assetId);
+    if (currentRole !== 'ENTERPRISE_A' || !existing || existing.currentCustodianId !== currentCompany.id) {
+      return { success: false, message: 'Chỉ Bên A sở hữu container mới được xóa dữ liệu.' };
+    }
+    if (offers.some(o => o.assetId === assetId) || transactions.some(t => t.assetId === assetId)) {
+      return { success: false, message: 'Container đã có Offer hoặc giao dịch, không thể xóa cứng.' };
+    }
+
+    setAssets(prev => prev.filter(a => a.id !== assetId));
+    addAudit('ASSET_DELETED', 'ContainerAsset', assetId, `Xóa container ${existing.containerNumber}`);
+    return { success: true, message: 'Đã xóa container.' };
+  };
+
+  const addOffer = (offerData: Omit<Offer, 'id' | 'createdAt'>): Offer | null => {
+    if (currentRole !== 'ENTERPRISE_A' || offerData.companyId !== currentCompany.id || offerData.asset.currentCustodianId !== currentCompany.id) {
+      return null;
+    }
+
     const newOffer: Offer = {
       ...offerData,
       id: 'OFR-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
@@ -175,7 +222,39 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return newOffer;
   };
 
-  const addRequest = (reqData: Omit<ContainerRequest, 'id' | 'createdAt'>): ContainerRequest => {
+  const updateOffer = (offerId: string, offerData: Omit<Offer, 'id' | 'createdAt'>) => {
+    const existing = offers.find(o => o.id === offerId);
+    if (currentRole !== 'ENTERPRISE_A' || !existing || existing.companyId !== currentCompany.id || existing.asset.currentCustodianId !== currentCompany.id) {
+      return { success: false, message: 'Chỉ Bên A sở hữu Offer mới được sửa dữ liệu.' };
+    }
+    if (existing.status !== 'AVAILABLE' || transactions.some(t => t.offerId === offerId)) {
+      return { success: false, message: 'Offer đã được giữ chỗ hoặc đã xử lý, không thể sửa.' };
+    }
+
+    setOffers(prev => prev.map(o => o.id === offerId ? { ...offerData, id: offerId, createdAt: existing.createdAt } : o));
+    addAudit('OFFER_UPDATED', 'Offer', offerId, `Cập nhật Offer cho cont ${offerData.asset.containerNumber}`);
+    return { success: true, message: 'Đã cập nhật Offer.' };
+  };
+
+  const deleteOffer = (offerId: string) => {
+    const existing = offers.find(o => o.id === offerId);
+    if (currentRole !== 'ENTERPRISE_A' || !existing || existing.companyId !== currentCompany.id) {
+      return { success: false, message: 'Chỉ Bên A sở hữu Offer mới được xóa dữ liệu.' };
+    }
+    if (existing.status !== 'AVAILABLE' || transactions.some(t => t.offerId === offerId)) {
+      return { success: false, message: 'Offer đã được giữ chỗ hoặc có giao dịch, không thể xóa.' };
+    }
+
+    setOffers(prev => prev.filter(o => o.id !== offerId));
+    addAudit('OFFER_DELETED', 'Offer', offerId, `Xóa Offer cho cont ${existing.asset.containerNumber}`);
+    return { success: true, message: 'Đã xóa Offer.' };
+  };
+
+  const addRequest = (reqData: Omit<ContainerRequest, 'id' | 'createdAt'>): ContainerRequest | null => {
+    if (currentRole !== 'ENTERPRISE_B' || reqData.companyId !== currentCompany.id) {
+      return null;
+    }
+
     const newReq: ContainerRequest = {
       ...reqData,
       id: 'REQ-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
@@ -186,8 +265,40 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return newReq;
   };
 
+  const updateRequest = (requestId: string, reqData: Omit<ContainerRequest, 'id' | 'createdAt'>) => {
+    const existing = requests.find(r => r.id === requestId);
+    if (currentRole !== 'ENTERPRISE_B' || !existing || existing.companyId !== currentCompany.id) {
+      return { success: false, message: 'Chỉ Bên B sở hữu Booking mới được sửa dữ liệu.' };
+    }
+    if (existing.status !== 'OPEN' || transactions.some(t => t.requestId === requestId)) {
+      return { success: false, message: 'Booking đã được giữ chỗ hoặc đã xử lý, không thể sửa.' };
+    }
+
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...reqData, id: requestId, createdAt: existing.createdAt } : r));
+    addAudit('REQUEST_UPDATED', 'ContainerRequest', requestId, `Cập nhật Booking ${reqData.bookingNumber}`);
+    return { success: true, message: 'Đã cập nhật Booking.' };
+  };
+
+  const deleteRequest = (requestId: string) => {
+    const existing = requests.find(r => r.id === requestId);
+    if (currentRole !== 'ENTERPRISE_B' || !existing || existing.companyId !== currentCompany.id) {
+      return { success: false, message: 'Chỉ Bên B sở hữu Booking mới được xóa dữ liệu.' };
+    }
+    if (existing.status !== 'OPEN' || transactions.some(t => t.requestId === requestId)) {
+      return { success: false, message: 'Booking đã được giữ chỗ hoặc có giao dịch, không thể xóa.' };
+    }
+
+    setRequests(prev => prev.filter(r => r.id !== requestId));
+    addAudit('REQUEST_DELETED', 'ContainerRequest', requestId, `Xóa Booking ${existing.bookingNumber}`);
+    return { success: true, message: 'Đã xóa Booking.' };
+  };
+
   // 1. GIỮ CHỖ NGUYÊN TỬ (Atomic Reservation)
   const holdAtomicReservation = (candidate: MatchCandidate, request: ContainerRequest) => {
+    if (currentRole !== 'ENTERPRISE_B' || request.companyId !== currentCompany.id) {
+      return { success: false, message: 'Chỉ Bên B mới được giữ chỗ container cho nhu cầu của mình.' };
+    }
+
     const offer = offers.find(o => o.id === candidate.offer.id);
     if (!offer || offer.status !== 'AVAILABLE') {
       return { success: false, message: 'Lỗi xung đột (409): Container này vừa được người khác giữ chỗ.' };
@@ -223,17 +334,40 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   // 2. KÝ THỎA THUẬN TÁI SỬ DỤNG
-  const acceptAgreement = (transactionId: string, party: 'A' | 'B') => {
+  const acceptAgreement = (transactionId: string) => {
     const txn = transactions.find(t => t.id === transactionId);
     if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
+
+    if (txn.status !== 'NEGOTIATING') {
+      return { success: false, message: 'Giao dịch không còn ở bước chấp nhận thỏa thuận.' };
+    }
+    if (txn.isOnHold) {
+      return { success: false, message: 'Giao dịch đang bị tạm dừng, chưa thể ký.' };
+    }
+
+    const party = currentRole === 'ENTERPRISE_A' && currentCompany.id === txn.companyAId
+      ? 'A'
+      : currentRole === 'ENTERPRISE_B' && currentCompany.id === txn.companyBId
+        ? 'B'
+        : null;
+
+    if (!party) {
+      return { success: false, message: 'Chỉ đại diện đúng doanh nghiệp A hoặc B mới được ký giao dịch này.' };
+    }
+
+    if ((party === 'A' && txn.companyAAcceptedAt) || (party === 'B' && txn.companyBAcceptedAt)) {
+      return { success: false, message: `Bên ${party} đã ký thỏa thuận trước đó.` };
+    }
 
     const nowIso = new Date().toISOString();
     const updated = { ...txn };
 
     if (party === 'A') {
       updated.companyAAcceptedAt = nowIso;
+      updated.companyAAcceptedBy = currentUserEmail;
     } else {
       updated.companyBAcceptedAt = nowIso;
+      updated.companyBAcceptedBy = currentUserEmail;
     }
 
     let msg = `Bên ${party} đã ký chấp nhận thỏa thuận.`;
@@ -255,6 +389,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // 3. OPS PHÊ DUYỆT RU HÃNG TÀU
   const opsApproveCarrier = (transactionId: string, refNumber: string, evidenceFileName: string) => {
+    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Ops hoặc Quản trị hệ thống mới được duyệt RU.' };
+    }
+
     const txn = transactions.find(t => t.id === transactionId);
     if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
 
@@ -307,6 +445,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // 4. XÁC NHẬN THANH TOÁN (Tài chính)
   const settlePayment = (transactionId: string, party: 'A' | 'B', bankRef: string) => {
+    if (currentRole !== 'FINANCE' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Tài chính hoặc Quản trị hệ thống mới được đối soát thanh toán.' };
+    }
+
     const txn = transactions.find(t => t.id === transactionId);
     if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
 
@@ -362,6 +504,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     isDiscrepancyFound: boolean;
     discrepancyNotes?: string;
   }) => {
+    if (currentRole !== 'ENTERPRISE_B' || currentCompany.id !== transactions.find(t => t.id === transactionId)?.companyBId) {
+      return { success: false, message: 'Chỉ đại diện Bên B mới được ghi nhận kiểm tra thực địa.' };
+    }
+
     const txn = transactions.find(t => t.id === transactionId);
     if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
 
@@ -409,40 +555,87 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   // 6. XÁC NHẬN BÀN GIAO 2 BÊN (DUAL CONFIRMATION) -> COMPLETED
-  const confirmHandover = (transactionId: string, party: 'A' | 'B') => {
+  const confirmHandover = (transactionId: string) => {
     const txn = transactions.find(t => t.id === transactionId);
     if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
 
+    if (txn.status !== 'HANDOVER_PENDING') {
+      return { success: false, message: 'Giao dịch chưa ở bước xác nhận bàn giao.' };
+    }
+    if (txn.isOnHold) {
+      return { success: false, message: 'Giao dịch đang bị tạm dừng, chưa thể xác nhận bàn giao.' };
+    }
+
+    const party = currentRole === 'ENTERPRISE_A' && currentCompany.id === txn.companyAId
+      ? 'A'
+      : currentRole === 'ENTERPRISE_B' && currentCompany.id === txn.companyBId
+        ? 'B'
+        : null;
+
+    if (!party) {
+      return { success: false, message: 'Chỉ đại diện đúng doanh nghiệp A hoặc B mới được xác nhận bàn giao.' };
+    }
+
+    if ((party === 'A' && txn.handoverAConfirmedAt) || (party === 'B' && txn.handoverBConfirmedAt)) {
+      return { success: false, message: `Bên ${party} đã xác nhận bàn giao trước đó.` };
+    }
+
     const updated = { ...txn };
-    const hash = 'SHA256:ECONT-' + Math.random().toString(36).substring(2, 12).toUpperCase();
-    updated.handoverHash = hash;
+    const nowIso = new Date().toISOString();
 
-    const guard = canTransitionTo(updated, 'COMPLETED');
-    if (guard.allowed) {
-      updated.status = 'COMPLETED';
-      updated.nextAction = 'Giao dịch hoàn tất thành công. Quyền quản lý cont đã thuộc về Bên B.';
+    if (party === 'A') {
+      updated.handoverAConfirmedAt = nowIso;
+      updated.handoverAConfirmedBy = currentUserEmail;
+    } else {
+      updated.handoverBConfirmedAt = nowIso;
+      updated.handoverBConfirmedBy = currentUserEmail;
+    }
 
-      // Chuyển Custody của Asset từ A sang B
-      setAssets(prev => prev.map(a => a.id === updated.assetId ? {
-        ...a,
-        currentCustodianId: updated.companyBId,
-        currentCustodianName: updated.companyBName,
-        currentLocationName: 'Kho Bên B (Đã bàn giao)',
-        isLocked: false
-      } : a));
+    const bothConfirmed = Boolean(updated.handoverAConfirmedAt && updated.handoverBConfirmedAt);
+    let hash: string | undefined;
+    let msg = `Bên ${party} đã xác nhận bàn giao. Đang chờ bên còn lại xác nhận.`;
 
-      // Đánh dấu Offer & Request là COMPLETED
-      setOffers(prev => prev.map(o => o.id === updated.offerId ? { ...o, status: 'COMPLETED' } : o));
-      setRequests(prev => prev.map(r => r.id === updated.requestId ? { ...r, status: 'COMPLETED' } : r));
+    if (bothConfirmed) {
+      hash = 'SHA256:ECONT-' + Math.random().toString(36).substring(2, 12).toUpperCase();
+      updated.handoverHash = hash;
+
+      const guard = canTransitionTo(updated, 'COMPLETED');
+      if (guard.allowed) {
+        updated.status = 'COMPLETED';
+        updated.nextAction = 'Giao dịch hoàn tất thành công. Quyền quản lý cont đã thuộc về Bên B.';
+        msg = 'Cả hai bên đã xác nhận bàn giao. Giao dịch đã hoàn tất!';
+
+        // Chuyển Custody của Asset từ A sang B
+        setAssets(prev => prev.map(a => a.id === updated.assetId ? {
+          ...a,
+          currentCustodianId: updated.companyBId,
+          currentCustodianName: updated.companyBName,
+          currentLocationName: 'Kho Bên B (Đã bàn giao)',
+          isLocked: false
+        } : a));
+
+        // Đánh dấu Offer & Request là COMPLETED
+        setOffers(prev => prev.map(o => o.id === updated.offerId ? { ...o, status: 'COMPLETED' } : o));
+        setRequests(prev => prev.map(r => r.id === updated.requestId ? { ...r, status: 'COMPLETED' } : r));
+      }
     }
 
     setTransactions(prev => prev.map(t => t.id === transactionId ? updated : t));
-    addAudit('HANDOVER_COMPLETED', 'Transaction', transactionId, `Hoàn tất giao nhận cont ${txn.asset.containerNumber}. Mã xác thực: ${hash}`);
-    return { success: true, message: 'Chúc mừng! Hai bên đã ký bàn giao thành công. Giao dịch đạt trạng thái COMPLETED!' };
+    addAudit(
+      bothConfirmed ? 'HANDOVER_COMPLETED' : 'HANDOVER_CONFIRMED',
+      'Transaction',
+      transactionId,
+      bothConfirmed
+        ? `Hoàn tất giao nhận cont ${txn.asset.containerNumber}. Mã xác thực: ${hash}`
+        : `Bên ${party} xác nhận bàn giao cont ${txn.asset.containerNumber}.`
+    );
+    return { success: true, message: msg };
   };
 
   // Bật / tắt Hold thủ công (Dành cho Ops)
   const toggleHold = (transactionId: string, isOnHold: boolean, reason?: string) => {
+    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') return;
+
     setTransactions(prev => prev.map(t => {
       if (t.id === transactionId) {
         return {
@@ -458,6 +651,8 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Giải quyết khiếu nại (Ops)
   const resolveCase = (caseId: string, resolutionSummary: string) => {
+    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') return;
+
     setCases(prev => prev.map(c => {
       if (c.id === caseId) {
         return {
@@ -499,8 +694,14 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         isSyncing,
         lastSyncMessage,
         addAsset,
+        updateAsset,
+        deleteAsset,
         addOffer,
+        updateOffer,
+        deleteOffer,
         addRequest,
+        updateRequest,
+        deleteRequest,
         holdAtomicReservation,
         acceptAgreement,
         opsApproveCarrier,
@@ -526,4 +727,3 @@ export const useDatabase = (): DatabaseContextType => {
   }
   return ctx;
 };
-

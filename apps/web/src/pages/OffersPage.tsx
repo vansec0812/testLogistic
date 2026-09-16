@@ -15,33 +15,42 @@ import {
   DollarSign, 
   CheckCircle2, 
   AlertTriangle,
+  Pencil,
+  Trash2,
   X
 } from 'lucide-react';
 
 export const OffersPage: React.FC = () => {
-  const { offers, assets, addOffer } = useDatabase();
-  const { currentCompany } = useAuth();
+  const { offers, assets, addOffer, updateOffer, deleteOffer } = useDatabase();
+  const { currentRole, currentCompany } = useAuth();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState(assets[0]?.id || '');
   const [pickupLocation, setPickupLocation] = useState('Kho Ngoại quan Tân Cảng, TP. Thủ Đức');
   const [baselineCost, setBaselineCost] = useState(3000000);
+  const [editingOfferId, setEditingOfferId] = useState<string | null>(null);
+  const ownAssets = assets.filter(asset => asset.currentCustodianId === currentCompany.id);
   const [depotName, setDepotName] = useState('Depot Tân Cảng Cát Lái');
 
   const handleCreateOffer = (e: React.FormEvent) => {
     e.preventDefault();
+    if (currentRole !== 'ENTERPRISE_A') {
+      alert('Chỉ Bên A mới được đăng nguồn cung container.');
+      return;
+    }
+
     const asset = assets.find(a => a.id === selectedAssetId);
     if (!asset) {
       alert('Vui lòng chọn container hợp lệ.');
       return;
     }
 
-    addOffer({
+    const offerData = {
       assetId: asset.id,
       asset,
       companyId: currentCompany.id,
       companyName: currentCompany.companyName,
-      status: 'AVAILABLE',
+      status: 'AVAILABLE' as const,
       pickupLocationName: pickupLocation,
       pickupLatitude: asset.currentLatitude,
       pickupLongitude: asset.currentLongitude,
@@ -51,10 +60,41 @@ export const OffersPage: React.FC = () => {
       expectedDepotName: depotName,
       baselineDepotCostVnd: baselineCost,
       reviewNotes: 'Đã sẵn sàng bàn giao trực tiếp tại bãi.'
-    });
+    };
+
+    const result = editingOfferId
+      ? updateOffer(editingOfferId, offerData)
+      : (addOffer(offerData) ? { success: true, message: 'Đã tạo Offer.' } : { success: false, message: 'Không có quyền tạo Offer.' });
+
+    if (!result.success) {
+      alert(result.message);
+      return;
+    }
 
     setIsModalOpen(false);
-    alert('Đăng tải nguồn cung Offer thành công!');
+    setEditingOfferId(null);
+    alert(editingOfferId ? 'Cập nhật Offer thành công!' : 'Đăng tải nguồn cung Offer thành công!');
+  };
+
+  const handleOpenCreate = () => {
+    setEditingOfferId(null);
+    setSelectedAssetId(ownAssets[0]?.id || '');
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (offer: typeof offers[number]) => {
+    setEditingOfferId(offer.id);
+    setSelectedAssetId(offer.assetId);
+    setPickupLocation(offer.pickupLocationName);
+    setBaselineCost(offer.baselineDepotCostVnd);
+    setDepotName(offer.expectedDepotName);
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = (offerId: string) => {
+    if (!window.confirm('Xóa Offer này? Offer đã giữ chỗ hoặc có giao dịch sẽ không bị xóa.')) return;
+    const result = deleteOffer(offerId);
+    alert(result.message);
   };
 
   return (
@@ -70,13 +110,13 @@ export const OffersPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setIsModalOpen(true)}
+        {currentRole === 'ENTERPRISE_A' && <button
+          onClick={handleOpenCreate}
           className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold flex items-center gap-2 shadow-lg shadow-emerald-900/40 transition-all"
         >
           <Plus className="w-4 h-4" />
           <span>Tạo Offer Nguồn vỏ mới</span>
-        </button>
+        </button>}
       </div>
 
       {/* Grid danh sách Offers */}
@@ -127,7 +167,19 @@ export const OffersPage: React.FC = () => {
 
             <div className="mt-3 flex items-center justify-between text-xs">
               <span className="text-slate-500">Hãng tàu: {offer.asset.carrierCode} · Trả depot: {offer.expectedDepotName}</span>
-              <span className="text-brand-400 font-medium">Sẵn sàng ghép đôi</span>
+              <div className="flex items-center gap-2">
+                <span className="text-brand-400 font-medium">Sẵn sàng ghép đôi</span>
+                {currentRole === 'ENTERPRISE_A' && offer.companyId === currentCompany.id && (
+                  <>
+                    <button type="button" onClick={() => handleOpenEdit(offer)} className="p-1 text-brand-400 hover:text-brand-300" title="Sửa Offer">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button type="button" onClick={() => handleDelete(offer.id)} className="p-1 text-rose-400 hover:text-rose-300" title="Xóa Offer">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         ))}
@@ -146,7 +198,7 @@ export const OffersPage: React.FC = () => {
 
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
               <Plus className="w-5 h-5 text-emerald-400" />
-              <span>ĐĂNG TẢI NGUỒN VỎ CONT TÁI SỬ DỤNG</span>
+               <span>{editingOfferId ? 'CHỈNH SỬA OFFER' : 'ĐĂNG TẢI NGUỒN VỎ CONT TÁI SỬ DỤNG'}</span>
             </h3>
 
             <form onSubmit={handleCreateOffer} className="space-y-4 text-xs">
@@ -160,7 +212,7 @@ export const OffersPage: React.FC = () => {
                   className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white outline-none"
                   required
                 >
-                  {assets.map((a) => (
+                  {ownAssets.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.containerNumber} ({a.containerType} - Hãng {a.carrierCode}) - {a.currentLocationName}
                     </option>
@@ -222,7 +274,7 @@ export const OffersPage: React.FC = () => {
                   type="submit"
                   className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-md"
                 >
-                  Đăng tải Offer ngay
+                  {editingOfferId ? 'Lưu thay đổi' : 'Đăng tải Offer ngay'}
                 </button>
               </div>
             </form>
@@ -232,4 +284,3 @@ export const OffersPage: React.FC = () => {
     </div>
   );
 };
-

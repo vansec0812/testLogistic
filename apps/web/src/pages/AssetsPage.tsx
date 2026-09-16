@@ -18,12 +18,14 @@ import {
   ShieldCheck, 
   Building,
   Camera,
+  Pencil,
+  Trash2,
   X
 } from 'lucide-react';
 
 export const AssetsPage: React.FC = () => {
-  const { assets, addAsset } = useDatabase();
-  const { currentCompany } = useAuth();
+  const { assets, addAsset, updateAsset, deleteAsset } = useDatabase();
+  const { currentRole, currentCompany } = useAuth();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [containerInput, setContainerInput] = useState('');
@@ -34,18 +36,24 @@ export const AssetsPage: React.FC = () => {
   const [depotName, setDepotName] = useState('Depot Tân Cảng Cát Lái');
   const [detentionDays, setDetentionDays] = useState(4);
   const [notes, setNotes] = useState('');
+  const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
 
   // Validate check digit trực tiếp khi gõ
   const validation = validateContainerNumber(containerInput);
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
+    if (currentRole !== 'ENTERPRISE_A') {
+      alert('Chỉ Bên A mới được đăng ký vỏ container.');
+      return;
+    }
+
     if (!validation.isValid) {
       alert(validation.message || 'Mã container không hợp lệ.');
       return;
     }
 
-    addAsset({
+    const assetData = {
       containerNumber: containerInput.toUpperCase().trim(),
       containerType,
       carrierId: 'CARR-' + carrierCode,
@@ -63,11 +71,46 @@ export const AssetsPage: React.FC = () => {
       photos: [
         'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600&auto=format&fit=crop&q=80'
       ]
-    });
+    };
+
+    const result = editingAssetId
+      ? updateAsset(editingAssetId, assetData)
+      : (addAsset(assetData) ? { success: true, message: 'Đăng ký container thành công.' } : { success: false, message: 'Không có quyền đăng ký container.' });
+
+    if (!result.success) {
+      alert(result.message);
+      return;
+    }
 
     setIsModalOpen(false);
     setContainerInput('');
-    alert('Đăng ký container thành công!');
+    setEditingAssetId(null);
+    alert(editingAssetId ? 'Cập nhật container thành công!' : 'Đăng ký container thành công!');
+  };
+
+  const handleOpenCreate = () => {
+    setEditingAssetId(null);
+    setContainerInput('');
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (asset: typeof assets[number]) => {
+    setEditingAssetId(asset.id);
+    setContainerInput(asset.containerNumber);
+    setContainerType(asset.containerType);
+    setCarrierCode(asset.carrierCode);
+    setCondition(asset.physicalCondition);
+    setLocationName(asset.currentLocationName);
+    setDepotName(asset.currentDepotName);
+    setDetentionDays(Math.max(1, Math.ceil((Date.parse(asset.freeTimeDetentionEnd) - Date.now()) / 86400000)));
+    setNotes(asset.conditionNotes || '');
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = (assetId: string) => {
+    if (!window.confirm('Xóa container này? Chỉ container chưa có Offer/giao dịch mới được xóa.')) return;
+    const result = deleteAsset(assetId);
+    alert(result.message);
   };
 
   const autoGenerateValidCont = () => {
@@ -91,13 +134,13 @@ export const AssetsPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setIsModalOpen(true)}
+        {currentRole === 'ENTERPRISE_A' && <button
+          onClick={handleOpenCreate}
           className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold flex items-center gap-2 shadow-lg shadow-brand-900/40 transition-all"
         >
           <Plus className="w-4 h-4" />
           <span>Đăng ký Vỏ cont mới</span>
-        </button>
+        </button>}
       </div>
 
       {/* Danh sách Container */}
@@ -161,7 +204,19 @@ export const AssetsPage: React.FC = () => {
 
               <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
                 <span className="text-slate-500">Depot trả dự kiến: {asset.currentDepotName}</span>
-                <span className="text-emerald-400 font-semibold">Khả dụng</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-emerald-400 font-semibold">Khả dụng</span>
+                  {currentRole === 'ENTERPRISE_A' && asset.currentCustodianId === currentCompany.id && (
+                    <>
+                      <button type="button" onClick={() => handleOpenEdit(asset)} className="p-1 text-brand-400 hover:text-brand-300" title="Sửa container">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" onClick={() => handleDelete(asset.id)} className="p-1 text-rose-400 hover:text-rose-300" title="Xóa container">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -181,7 +236,7 @@ export const AssetsPage: React.FC = () => {
 
             <div className="flex items-center gap-2 mb-4">
               <Box className="w-5 h-5 text-brand-400" />
-              <h3 className="text-lg font-bold text-white">ĐĂNG KÝ VỎ CONTAINER MỚI</h3>
+              <h3 className="text-lg font-bold text-white">{editingAssetId ? 'CHỈNH SỬA CONTAINER' : 'ĐĂNG KÝ VỎ CONTAINER MỚI'}</h3>
             </div>
 
             <form onSubmit={handleRegister} className="space-y-4 text-xs">
@@ -309,7 +364,7 @@ export const AssetsPage: React.FC = () => {
                   type="submit"
                   className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold shadow-md"
                 >
-                  Xác nhận Đăng ký
+                  {editingAssetId ? 'Lưu thay đổi' : 'Xác nhận Đăng ký'}
                 </button>
               </div>
             </form>
@@ -319,4 +374,3 @@ export const AssetsPage: React.FC = () => {
     </div>
   );
 };
-

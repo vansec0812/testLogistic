@@ -1,5 +1,5 @@
 // ==============================================================================
-// ECont Navigation Bar & Global Role Switcher
+// ECont Navigation Bar & Demo Role Switcher
 // ==============================================================================
 
 import React from 'react';
@@ -115,7 +115,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => 
                 value={currentRole}
                 onChange={(event) => setRole(event.target.value as UserRole)}
                 className="h-10 min-w-[176px] pl-9 pr-8 rounded-xl bg-white text-slate-700 border border-slate-200 text-xs font-semibold shadow-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-                title={roleBadge.desc}
+                title={`Demo role: ${roleBadge.desc}. Production phai lay role tu session da xac thuc.`}
               >
                 {ROLE_OPTIONS.map((role) => (
                   <option key={role.value} value={role.value}>{role.label}</option>

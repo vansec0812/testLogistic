@@ -190,6 +190,12 @@ export interface Transaction {
   agreementVersion: number;
   companyAAcceptedAt?: string;
   companyBAcceptedAt?: string;
+  companyAAcceptedBy?: string;
+  companyBAcceptedBy?: string;
+  handoverAConfirmedAt?: string;
+  handoverAConfirmedBy?: string;
+  handoverBConfirmedAt?: string;
+  handoverBConfirmedBy?: string;
   handoverHash?: string;
   quote: Quote;
   carrierApproval?: CarrierApproval;
@@ -279,4 +285,3 @@ export interface AuditEvent {
   entityId: string;
   details: string;
 }
-

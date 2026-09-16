@@ -17,6 +17,8 @@ import {
   DollarSign, 
   Sparkles, 
   Navigation,
+  Pencil,
+  Trash2,
   X
 } from 'lucide-react';
 
@@ -26,8 +28,8 @@ interface RequestsPageProps {
 }
 
 export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSelectedTxnId }) => {
-  const { requests, addRequest } = useDatabase();
-  const { currentCompany } = useAuth();
+  const { requests, addRequest, updateRequest, deleteRequest } = useDatabase();
+  const { currentRole, currentCompany } = useAuth();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [matchingRequest, setMatchingRequest] = useState<ContainerRequest | null>(null);
@@ -40,10 +42,16 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
   const [cargoType, setCargoType] = useState('Hàng may mặc xuất khẩu đi Mỹ');
   const [maxDistance, setMaxDistance] = useState(40);
   const [baselinePickupCost, setBaselinePickupCost] = useState(3400000);
+  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
 
   const handleCreateRequest = (e: React.FormEvent) => {
     e.preventDefault();
-    const newReq = addRequest({
+    if (currentRole !== 'ENTERPRISE_B') {
+      alert('Chỉ Bên B mới được tạo nhu cầu theo Booking.');
+      return;
+    }
+
+    const requestData: Omit<ContainerRequest, 'id' | 'createdAt'> = {
       companyId: currentCompany.id,
       companyName: currentCompany.companyName,
       carrierId: 'CARR-' + carrierCode,
@@ -60,11 +68,54 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
       maxDistanceKm: maxDistance,
       cargoType,
       baselinePickupCostVnd: baselinePickupCost
-    });
+    };
+
+    if (editingRequestId) {
+      const result = updateRequest(editingRequestId, requestData);
+      if (!result.success) {
+        alert(result.message);
+        return;
+      }
+      setIsModalOpen(false);
+      setEditingRequestId(null);
+      alert('Cập nhật Booking thành công!');
+      return;
+    }
+
+    const newReq = addRequest(requestData);
+
+    if (!newReq) {
+      alert('Không có quyền tạo nhu cầu cho vai trò hiện tại.');
+      return;
+    }
 
     setIsModalOpen(false);
     // Tự động mở matching modal cho request vừa tạo
     setMatchingRequest(newReq);
+  };
+
+  const handleOpenCreate = () => {
+    setEditingRequestId(null);
+    setBookingNumber('MSK-VN-' + Math.floor(100000 + Math.random() * 900000));
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (request: typeof requests[number]) => {
+    setEditingRequestId(request.id);
+    setBookingNumber(request.bookingNumber);
+    setCarrierCode(request.carrierCode);
+    setContainerType(request.containerType);
+    setDeliveryLocation(request.deliveryLocationName);
+    setCargoType(request.cargoType);
+    setMaxDistance(request.maxDistanceKm);
+    setBaselinePickupCost(request.baselinePickupCostVnd);
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = (requestId: string) => {
+    if (!window.confirm('Xóa Booking này? Booking đã giữ chỗ hoặc có giao dịch sẽ không bị xóa.')) return;
+    const result = deleteRequest(requestId);
+    alert(result.message);
   };
 
   const handleGoToTransaction = (txnId: string) => {
@@ -85,13 +136,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
           </p>
         </div>
 
-        <button
+        {currentRole === 'ENTERPRISE_B' && <button
           onClick={() => setIsModalOpen(true)}
           className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold flex items-center gap-2 shadow-lg shadow-blue-900/40 transition-all"
         >
           <Plus className="w-4 h-4" />
           <span>Tạo Nhu cầu Booking mới</span>
-        </button>
+        </button>}
       </div>
 
       {/* Danh sách Requests */}
@@ -145,15 +196,29 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-1">
+            <div className="flex items-center justify-between pt-1 gap-2">
               <span className="text-xs text-slate-400">Loại hàng: {req.cargoType}</span>
-              <button
-                onClick={() => setMatchingRequest(req)}
-                className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-950 transition-all"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Khớp lệnh & Báo giá (Matching)</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {currentRole === 'ENTERPRISE_B' && req.companyId === currentCompany.id && req.status === 'OPEN' && (
+                  <>
+                    <button type="button" onClick={() => handleOpenEdit(req)} className="p-1 text-brand-400 hover:text-brand-300" title="Sửa Booking">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button type="button" onClick={() => handleDelete(req.id)} className="p-1 text-rose-400 hover:text-rose-300" title="Xóa Booking">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                )}
+                {currentRole === 'ENTERPRISE_B' && req.status === 'OPEN' && (
+                  <button
+                    onClick={() => setMatchingRequest(req)}
+                    className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-950 transition-all"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Khớp lệnh & Báo giá</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ))}
@@ -181,7 +246,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
 
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
               <Plus className="w-5 h-5 text-blue-400" />
-              <span>ĐĂNG KÝ NHU CẦU VỎ THEO BOOKING HÃNG TÀU</span>
+              <span>{editingRequestId ? 'CHỈNH SỬA BOOKING' : 'ĐĂNG KÝ NHU CẦU VỎ THEO BOOKING HÃNG TÀU'}</span>
             </h3>
 
             <form onSubmit={handleCreateRequest} className="space-y-4 text-xs">
@@ -291,7 +356,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                   type="submit"
                   className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-md"
                 >
-                  Đăng ký & Tìm vỏ ngay
+                  {editingRequestId ? 'Lưu thay đổi' : 'Đăng ký & Tìm vỏ ngay'}
                 </button>
               </div>
             </form>
@@ -301,4 +366,3 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     </div>
   );
 };
-

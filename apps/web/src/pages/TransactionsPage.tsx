@@ -44,10 +44,15 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     confirmHandover,
     toggleHold
   } = useDatabase();
-  const { currentRole } = useAuth();
+  const { currentRole, currentCompany } = useAuth();
 
   // Chọn giao dịch đang xem
   const activeTxn = transactions.find(t => t.id === selectedTxnId) || transactions[0];
+
+  const canSignAsA = currentRole === 'ENTERPRISE_A' && currentCompany.id === activeTxn?.companyAId;
+  const canSignAsB = currentRole === 'ENTERPRISE_B' && currentCompany.id === activeTxn?.companyBId;
+  const canOperate = currentRole === 'OPS' || currentRole === 'SUPER_ADMIN';
+  const canReconcile = currentRole === 'FINANCE' || currentRole === 'SUPER_ADMIN';
 
   // State cho các bước
   const [carrierRef, setCarrierRef] = useState('MSK-RU-2026-9812');
@@ -148,13 +153,15 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                   </div>
                   {activeTxn.companyAAcceptedAt ? (
                     <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  ) : (
+                  ) : canSignAsA ? (
                     <button
-                      onClick={() => acceptAgreement(activeTxn.id, 'A')}
+                      onClick={() => acceptAgreement(activeTxn.id)}
                       className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow transition-colors"
                     >
                       Bên A Ký chấp thuận
                     </button>
+                  ) : (
+                    <span className="text-[10px] text-slate-500">Chỉ đại diện Bên A</span>
                   )}
                 </div>
 
@@ -167,13 +174,15 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                   </div>
                   {activeTxn.companyBAcceptedAt ? (
                     <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  ) : (
+                  ) : canSignAsB ? (
                     <button
-                      onClick={() => acceptAgreement(activeTxn.id, 'B')}
+                      onClick={() => acceptAgreement(activeTxn.id)}
                       className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow transition-colors"
                     >
                       Bên B Ký chấp thuận
                     </button>
+                  ) : (
+                    <span className="text-[10px] text-slate-500">Chỉ đại diện Bên B</span>
                   )}
                 </div>
               </div>
@@ -226,13 +235,13 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                 </div>
 
                 <div className="pt-2 flex justify-end">
-                  <button
+                  {canOperate && <button
                     onClick={() => opsApproveCarrier(activeTxn.id, carrierRef, evidenceName)}
                     className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold flex items-center gap-2 shadow-md transition-colors"
                   >
                     <Ship className="w-4 h-4" />
                     <span>Xác nhận Hãng tàu Đã Duyệt RU (Chuyển Bước 3)</span>
-                  </button>
+                  </button>}
                 </div>
               </div>
             </div>
@@ -272,7 +281,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                   <div className="text-[11px] text-slate-400">
                     Bao gồm: Phí RU gánh (600k) + Phí nền tảng A (600k)
                   </div>
-                  {activeTxn.paymentOrderA?.status !== 'SETTLED' && (
+                  {canReconcile && activeTxn.paymentOrderA?.status !== 'SETTLED' && (
                     <button
                       onClick={() => settlePayment(activeTxn.id, 'A', 'MB-TRAN-A9842')}
                       className="w-full mt-2 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow"
@@ -298,7 +307,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                   <div className="text-[11px] text-slate-400">
                     Bao gồm: Phí RU gánh (600k) + Phí nền tảng B (300k)
                   </div>
-                  {activeTxn.paymentOrderB?.status !== 'SETTLED' && (
+                  {canReconcile && activeTxn.paymentOrderB?.status !== 'SETTLED' && (
                     <button
                       onClick={() => settlePayment(activeTxn.id, 'B', 'VCB-TRAN-B1290')}
                       className="w-full mt-2 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold shadow"
@@ -352,7 +361,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
               </div>
 
               <div className="flex justify-end pt-2">
-                <button
+                {canSignAsB && <button
                   onClick={() => submitInspection(activeTxn.id, {
                     inspectorName: 'Nguyễn Văn Tài (Tài xế/Đại diện bên B)',
                     checklistFloor: true,
@@ -367,7 +376,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                 >
                   <Eye className="w-4 h-4" />
                   <span>Tài xế Đã Tới Kho A & Tiến Hành Kiểm Tra (Chuyển Bước 5)</span>
-                </button>
+                </button>}
               </div>
             </div>
           )}
@@ -489,17 +498,43 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
               <div className="p-4 rounded-lg bg-slate-950 border border-slate-800 text-xs space-y-3">
                 <p className="text-slate-300">
-                  Biên bản kiểm tra 6 mặt đã hoàn tất đạt chuẩn. Bên A (Kho giao) và Bên B (Tài xế/Kho nhận) cùng bấm nút ký xác nhận để hệ thống chốt giao dịch và chuyển giao quyền sở hữu quản lý cont (Custody).
+                  Biên bản kiểm tra 6 mặt đã hoàn tất đạt chuẩn. Bên A (Kho giao) và Bên B (Tài xế/Kho nhận) xác nhận độc lập để hệ thống chốt giao dịch và chuyển giao quyền quản lý cont (Custody).
                 </p>
 
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    onClick={() => confirmHandover(activeTxn.id, 'A')}
-                    className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-bold flex items-center gap-1.5 shadow-lg transition-colors"
-                  >
-                    <PenTool className="w-4 h-4" />
-                    <span>Cả 2 Bên Cùng Ký Hoàn Tất Bàn Giao (Chuyển COMPLETED)</span>
-                  </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  <div className="p-3 rounded-lg border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-emerald-400">BÊN A - ĐÃ GIAO</div>
+                      <div className="text-[11px] text-slate-400">
+                        {activeTxn.handoverAConfirmedAt ? `Đã xác nhận: ${formatDateTime(activeTxn.handoverAConfirmedAt)}` : 'Chưa xác nhận'}
+                      </div>
+                    </div>
+                    {!activeTxn.handoverAConfirmedAt && canSignAsA && (
+                      <button
+                        onClick={() => confirmHandover(activeTxn.id)}
+                        className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow transition-colors"
+                      >
+                        Bên A xác nhận
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="p-3 rounded-lg border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-blue-400">BÊN B - ĐÃ NHẬN</div>
+                      <div className="text-[11px] text-slate-400">
+                        {activeTxn.handoverBConfirmedAt ? `Đã xác nhận: ${formatDateTime(activeTxn.handoverBConfirmedAt)}` : 'Chưa xác nhận'}
+                      </div>
+                    </div>
+                    {!activeTxn.handoverBConfirmedAt && canSignAsB && (
+                      <button
+                        onClick={() => confirmHandover(activeTxn.id)}
+                        className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow transition-colors"
+                      >
+                        Bên B xác nhận
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -570,7 +605,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
               Khi phát hiện sai lệch hiện trạng, tiền đến muộn hoặc từ chối carrier, Ops có thể kích hoạt Tạm dừng (ON_HOLD).
             </p>
 
-            {activeTxn.isOnHold ? (
+            {canOperate && (activeTxn.isOnHold ? (
               <button
                 onClick={() => toggleHold(activeTxn.id, false)}
                 className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-colors"
@@ -584,7 +619,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
               >
                 Kích hoạt Tạm dừng (ON_HOLD)
               </button>
-            )}
+            ))}
           </div>
         </div>
       </div>

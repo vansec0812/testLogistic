@@ -113,6 +113,9 @@ export function canTransitionTo(
       if (txn.status !== 'HANDOVER_PENDING') {
         return { allowed: false, reason: 'Giao dịch chưa ở trạng thái chờ xác nhận bàn giao cuối.' };
       }
+      if (!txn.handoverAConfirmedAt || !txn.handoverBConfirmedAt) {
+        return { allowed: false, reason: 'Cả Bên A và Bên B phải xác nhận bàn giao.' };
+      }
       if (!txn.handoverHash) {
         return { allowed: false, reason: 'Thiếu mã băm chứng thực (Handover Hash) phiên bản thống nhất.' };
       }
@@ -138,4 +141,3 @@ export function canTransitionTo(
       return { allowed: false, reason: 'Trạng thái chuyển đổi không xác định.' };
   }
 }
-
