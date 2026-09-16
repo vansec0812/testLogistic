@@ -1,0 +1,184 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    font-synthesis: none;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900;
+    min-width: 360px;
+    background-image:
+      radial-gradient(circle at 8% 0%, rgba(14, 165, 233, 0.08), transparent 28rem),
+      radial-gradient(circle at 92% 12%, rgba(16, 185, 129, 0.06), transparent 24rem);
+    background-attachment: fixed;
+  }
+
+  button,
+  a,
+  select,
+  input,
+  textarea {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2;
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border: 2px solid #f1f5f9;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/*
+ * Light visual system for the current prototype. The screens were originally
+ * authored with dark Tailwind utility tokens; these scoped mappings keep all
+ * business flows intact while presenting one consistent light interface.
+ */
+.econt-app .bg-slate-950 { background-color: #f8fafc !important; }
+.econt-app .bg-slate-900,
+.econt-app .bg-slate-900\/50,
+.econt-app .bg-slate-900\/60 { background-color: #ffffff !important; }
+.econt-app .bg-slate-850 { background-color: #f4f7fb !important; }
+.econt-app .bg-slate-800,
+.econt-app .bg-slate-800\/60,
+.econt-app .bg-slate-750,
+.econt-app .bg-slate-700 { background-color: #eef2f7 !important; }
+
+.econt-app .border-slate-800,
+.econt-app .border-slate-800\/80,
+.econt-app .border-slate-800\/60,
+.econt-app .border-slate-700 { border-color: #e2e8f0 !important; }
+
+.econt-app .text-slate-100 { color: #172033 !important; }
+.econt-app .text-slate-200,
+.econt-app .text-slate-300 { color: #334155 !important; }
+.econt-app .text-slate-400 { color: #64748b !important; }
+.econt-app .text-slate-500 { color: #94a3b8 !important; }
+.econt-app .text-slate-600 { color: #64748b !important; }
+.econt-app .text-white { color: #172033 !important; }
+
+.econt-app .bg-brand-950,
+.econt-app .bg-brand-950\/70 { background-color: #eff6ff !important; }
+.econt-app .bg-brand-900,
+.econt-app .bg-brand-900\/80,
+.econt-app .bg-brand-800 { background-color: #dbeafe !important; }
+.econt-app .text-brand-300,
+.econt-app .text-brand-400 { color: #0369a1 !important; }
+.econt-app .border-brand-800,
+.econt-app .border-brand-800\/80,
+.econt-app .border-brand-700\/60 { border-color: #bfdbfe !important; }
+
+.econt-app .bg-emerald-950,
+.econt-app .bg-emerald-950\/20,
+.econt-app .bg-emerald-950\/40,
+.econt-app .bg-emerald-950\/60,
+.econt-app .bg-emerald-950\/80,
+.econt-app .bg-emerald-900 { background-color: #ecfdf5 !important; }
+.econt-app .text-emerald-300,
+.econt-app .text-emerald-400 { color: #047857 !important; }
+.econt-app .border-emerald-700,
+.econt-app .border-emerald-700\/60,
+.econt-app .border-emerald-800,
+.econt-app .border-emerald-800\/40,
+.econt-app .border-emerald-800\/60,
+.econt-app .border-emerald-900\/40 { border-color: #a7f3d0 !important; }
+
+.econt-app .bg-blue-950,
+.econt-app .bg-blue-950\/40 { background-color: #eff6ff !important; }
+.econt-app .text-blue-300,
+.econt-app .text-blue-400 { color: #1d4ed8 !important; }
+.econt-app .border-blue-700,
+.econt-app .border-blue-800\/60 { border-color: #bfdbfe !important; }
+
+.econt-app .bg-amber-950,
+.econt-app .bg-amber-950\/30,
+.econt-app .bg-amber-950\/60,
+.econt-app .bg-amber-950\/80 { background-color: #fffbeb !important; }
+.econt-app .text-amber-300,
+.econt-app .text-amber-400 { color: #b45309 !important; }
+.econt-app .border-amber-700,
+.econt-app .border-amber-800,
+.econt-app .border-amber-800\/80 { border-color: #fde68a !important; }
+
+.econt-app .bg-rose-950,
+.econt-app .bg-rose-950\/60,
+.econt-app .bg-rose-950\/80,
+.econt-app .bg-rose-900 { background-color: #fff1f2 !important; }
+.econt-app .text-rose-300,
+.econt-app .text-rose-400 { color: #be123c !important; }
+.econt-app .border-rose-700,
+.econt-app .border-rose-800 { border-color: #fecdd3 !important; }
+
+.econt-app .bg-purple-950 { background-color: #faf5ff !important; }
+.econt-app .text-purple-400 { color: #7e22ce !important; }
+
+.econt-app [class*="from-navy-"],
+.econt-app [class*="from-brand-950"] {
+  background-image: linear-gradient(120deg, #ffffff 0%, #eff6ff 58%, #ecfeff 100%) !important;
+}
+
+.econt-app .bg-brand-500.text-white,
+.econt-app .bg-brand-600.text-white,
+.econt-app .bg-blue-600.text-white,
+.econt-app .bg-emerald-600.text-white,
+.econt-app .bg-rose-600.text-white,
+.econt-app .bg-amber-600.text-white,
+.econt-app .econt-logo .text-white {
+  color: #ffffff !important;
+}
+
+.econt-app .hover\:bg-slate-800:hover,
+.econt-app .hover\:bg-slate-800\/60:hover,
+.econt-app .hover\:bg-slate-750:hover,
+.econt-app .hover\:bg-slate-700:hover,
+.econt-app .hover\:bg-slate-850:hover {
+  background-color: #e2e8f0 !important;
+}
+
+.econt-app .hover\:text-white:hover,
+.econt-app .group:hover .group-hover\:text-white {
+  color: #0f172a !important;
+}
+
+.econt-app .shadow-lg,
+.econt-app .shadow-xl {
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.07) !important;
+}
+
+.econt-app table thead {
+  background-color: #f8fafc !important;
+}
+
+.econt-app input,
+.econt-app select,
+.econt-app textarea {
+  color: #172033;
+}
+
+.econt-app input::placeholder,
+.econt-app textarea::placeholder {
+  color: #94a3b8;
+}
+
+@media (max-width: 640px) {
+  .econt-app main {
+    padding-top: 1rem;
+  }
+}
