@@ -329,7 +329,7 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-slate-800 truncate">{c.title}</span>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${priority.color}`}>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-md border ${priority.color}`}>
                           {priority.label}
                         </span>
                       </div>
@@ -338,16 +338,16 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
                     <CaseStatusBadge status={c.status} size="xs" />
                   </div>
 
-                  <p className="text-xs text-slate-500 pl-7 line-clamp-2">{c.description}</p>
+                  <p className="text-xs text-slate-600 pl-7 line-clamp-2">{c.description}</p>
 
                   <div className="pl-7 flex items-center gap-3 flex-wrap">
-                    <span className="text-[10px] text-slate-400">
+                    <span className="text-xs text-slate-500">
                       Bởi {c.openedByCompanyName}
                     </span>
                     {c.transactionId && (
-                      <span className="text-[10px] font-mono text-brand-600">{c.transactionId}</span>
+                      <span className="text-xs font-mono font-semibold text-blue-600">{c.transactionId}</span>
                     )}
-                    <span className="text-[10px] text-slate-400">{formatRelativeTime(c.createdAt)}</span>
+                    <span className="text-xs text-slate-500">{formatRelativeTime(c.createdAt)}</span>
                   </div>
                 </div>
 
@@ -361,7 +361,7 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
                           <CheckCircle className="w-3.5 h-3.5" /> Kết luận giải quyết
                         </p>
                         <p className="text-xs text-emerald-700">{c.resolution.summary}</p>
-                        <p className="text-[10px] text-emerald-500 mt-1">
+                        <p className="text-xs text-emerald-600 mt-1">
                           Lỗi thuộc: {c.resolution.faultParty} · Bởi: {c.resolution.resolvedBy} · {formatDateTime(c.resolution.resolvedAt)}
                         </p>
                       </div>
@@ -474,7 +474,7 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
               <Shield className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
               <div>
                 <p className="text-xs font-semibold text-amber-700">Quy tắc xử lý Case (SRS)</p>
-                <ul className="text-[10px] text-amber-600 mt-1.5 space-y-0.5 list-disc list-inside">
+                <ul className="text-xs text-amber-700 mt-1.5 space-y-1 list-disc list-inside">
                   <li>Case DAMAGE_DISPUTE → xem xét ảnh + biên bản kiểm tra</li>
                   <li>Case PAYMENT_ISSUE → đối chiếu với ngân hàng trước khi kết luận</li>
                   <li>Nếu CRITICAL → tạm dừng (ON_HOLD) giao dịch liên quan</li>

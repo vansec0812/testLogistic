@@ -12,6 +12,7 @@ export type UserRole =
 
 // ISO 6346: chỉ 20GP và 40HC; alias 20DC->20GP, 40HQ->40HC qua mapping
 export type ContainerType = '20GP' | '40HC';
+export type CarrierCode = string;
 
 // SRS §4.4: Tình trạng vật lý (physical status)
 export type PhysicalStatus =
@@ -685,7 +686,7 @@ export interface Notification {
   id: string;
   recipientCompanyId: string;
   recipientUserId?: string;
-  type: 'TRANSACTION_UPDATE' | 'PAYMENT_REQUIRED' | 'DEADLINE_ALERT' | 'CASE_UPDATE' | 'RATING_REMINDER' | 'SYSTEM';
+  type: 'TRANSACTION_UPDATE' | 'PAYMENT_REQUIRED' | 'DEADLINE_ALERT' | 'CASE_UPDATE' | 'RATING_REMINDER' | 'SYSTEM' | 'OPS_ALERT';
   title: string;
   body: string;
   relatedEntityId?: string;

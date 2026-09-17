@@ -36,30 +36,30 @@ function KpiCard({
   onClick?: () => void;
 }) {
   const colorMap = {
-    blue: { icon: 'text-blue-600 bg-blue-50', border: 'border-blue-100' },
-    emerald: { icon: 'text-emerald-600 bg-emerald-50', border: 'border-emerald-100' },
-    amber: { icon: 'text-amber-600 bg-amber-50', border: 'border-amber-100' },
-    violet: { icon: 'text-violet-600 bg-violet-50', border: 'border-violet-100' },
-    red: { icon: 'text-red-600 bg-red-50', border: 'border-red-100' },
+    blue: { icon: 'text-blue-600 bg-blue-50', border: 'border-blue-100 hover:border-blue-300' },
+    emerald: { icon: 'text-emerald-600 bg-emerald-50', border: 'border-emerald-100 hover:border-emerald-300' },
+    amber: { icon: 'text-amber-600 bg-amber-50', border: 'border-amber-100 hover:border-amber-300' },
+    violet: { icon: 'text-violet-600 bg-violet-50', border: 'border-violet-100 hover:border-violet-300' },
+    red: { icon: 'text-red-600 bg-red-50', border: 'border-red-100 hover:border-red-300' },
   };
   const c = colorMap[color];
   return (
     <button
       onClick={onClick}
       disabled={!onClick}
-      className={`w-full text-left rounded-xl border bg-white p-4 shadow-sm hover:shadow-md transition-all ${
+      className={`w-full text-left rounded-2xl border bg-white p-4 sm:p-5 shadow-sm hover:shadow-md transition-all ${
         onClick ? 'hover:-translate-y-0.5 cursor-pointer' : 'cursor-default'
       } ${c.border}`}
     >
       <div className="flex items-start justify-between">
-        <div className={`p-2 rounded-lg ${c.icon}`}>
-          <Icon className="w-4 h-4" />
+        <div className={`p-2.5 rounded-xl ${c.icon}`}>
+          <Icon className="w-5 h-5" />
         </div>
-        {onClick && <ArrowUpRight className="w-3.5 h-3.5 text-slate-300 mt-1" />}
+        {onClick && <ArrowUpRight className="w-4 h-4 text-slate-400 mt-1" />}
       </div>
-      <p className="text-2xl font-bold text-slate-900 mt-3 font-mono">{value}</p>
-      <p className="text-xs text-slate-500 mt-0.5 font-medium">{label}</p>
-      {sub && <p className="text-[10px] text-slate-400 mt-0.5">{sub}</p>}
+      <p className="text-2xl sm:text-3xl font-bold text-slate-900 mt-3 font-mono">{value}</p>
+      <p className="text-sm text-slate-600 mt-1 font-medium">{label}</p>
+      {sub && <p className="text-xs text-slate-500 mt-0.5">{sub}</p>}
     </button>
   );
 }
@@ -74,7 +74,7 @@ function DeadlineAlert({ txn, setCurrentTab, setSelectedTxnId }: {
 
   return (
     <div
-      className={`flex items-start gap-3 rounded-xl border px-4 py-3 cursor-pointer hover:opacity-90 ${
+      className={`flex items-start gap-3 rounded-xl border px-4 py-3 cursor-pointer hover:opacity-95 shadow-sm ${
         countdown.isExpired
           ? 'bg-red-50 border-red-200'
           : 'bg-amber-50 border-amber-200'
@@ -84,14 +84,14 @@ function DeadlineAlert({ txn, setCurrentTab, setSelectedTxnId }: {
         setCurrentTab('transactions');
       }}
     >
-      <Clock className={`w-4 h-4 mt-0.5 shrink-0 ${countdown.isExpired ? 'text-red-500' : 'text-amber-500'} animate-pulse`} />
+      <Clock className={`w-4 h-4 mt-0.5 shrink-0 ${countdown.isExpired ? 'text-red-600' : 'text-amber-600'} animate-pulse`} />
       <div className="flex-1 min-w-0">
-        <p className={`text-sm font-semibold ${countdown.isExpired ? 'text-red-700' : 'text-amber-700'}`}>
+        <p className={`text-sm font-semibold ${countdown.isExpired ? 'text-red-800' : 'text-amber-800'}`}>
           {countdown.isExpired ? '⛔ Đã hết hạn' : `⏰ Còn ${countdown.display}`} · {txn.id}
         </p>
-        <p className="text-xs text-slate-500 mt-0.5 truncate">{txn.nextAction}</p>
+        <p className="text-xs sm:text-sm text-slate-600 mt-0.5 truncate">{txn.nextAction}</p>
       </div>
-      <TransactionStatusBadge status={txn.status} size="xs" />
+      <TransactionStatusBadge status={txn.status} size="sm" />
     </div>
   );
 }
@@ -166,29 +166,29 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
 
   return (
     <div className="space-y-6">
-      {/* Welcome Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-navy-900 rounded-2xl p-6 shadow-xl relative overflow-hidden">
-        <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-brand-900/10 to-transparent pointer-events-none" />
+      {/* Welcome Banner (Light Modern Enterprise SaaS Style) */}
+      <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/40 to-white rounded-2xl p-6 sm:p-7 border border-blue-200/80 shadow-sm relative overflow-hidden">
+        <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-blue-100/30 to-transparent pointer-events-none" />
         <div className="relative z-10 flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${roleBadge.color} ${roleBadge.bgColor}`}>
                 {roleBadge.icon} {roleBadge.label}
               </span>
-              <span className="text-xs text-slate-400">· {roleBadge.desc}</span>
+              <span className="text-xs text-slate-500 font-medium">· {roleBadge.desc}</span>
             </div>
-            <h2 className="text-2xl font-bold text-white tracking-tight">
+            <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
               Xin chào, {currentUserName.split(' ')[0]} 👋
             </h2>
-            <p className="text-sm text-slate-300 mt-1">
-              <span className="font-semibold text-white">{currentCompany.companyName}</span>
+            <p className="text-sm sm:text-base text-slate-600 mt-1.5 font-medium">
+              Doanh nghiệp: <span className="font-bold text-slate-900">{currentCompany.companyName}</span>
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2.5">
             {currentRole === 'ENTERPRISE_A' && (
               <button
                 onClick={() => setCurrentTab('offers')}
-                className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold flex items-center gap-2 transition-all"
+                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold flex items-center gap-2 shadow-sm transition-all"
               >
                 <Box className="w-4 h-4" />
                 Đăng nguồn vỏ cont
@@ -197,7 +197,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
             {currentRole === 'ENTERPRISE_B' && (
               <button
                 onClick={() => setCurrentTab('requests')}
-                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold flex items-center gap-2 transition-all"
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold flex items-center gap-2 shadow-sm transition-all"
               >
                 <Sparkles className="w-4 h-4" />
                 Tìm vỏ ghép đôi
@@ -206,7 +206,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
             {(currentRole === 'OPS' || currentRole === 'SUPER_ADMIN') && (
               <button
                 onClick={() => setCurrentTab('ops')}
-                className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold flex items-center gap-2 transition-all"
+                className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold flex items-center gap-2 shadow-sm transition-all"
               >
                 <Activity className="w-4 h-4" />
                 Vào cổng Vận hành
@@ -215,7 +215,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
             {(currentRole === 'FINANCE' || currentRole === 'SUPER_ADMIN') && (
               <button
                 onClick={() => setCurrentTab('finance')}
-                className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold flex items-center gap-2 transition-all"
+                className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold flex items-center gap-2 shadow-sm transition-all"
               >
                 <CreditCard className="w-4 h-4" />
                 Cổng Tài chính
@@ -228,7 +228,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
       {/* Urgent deadline alerts */}
       {urgentTxns.length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-500" />
             Cảnh báo deadline ({urgentTxns.length})
           </h3>
@@ -240,18 +240,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
 
       {/* KPI Cards */}
       <div>
-        <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-          <BarChart3 className="w-4 h-4 text-slate-400" />
-          Tổng quan
-          {currentRole === 'ENTERPRISE_A' && ' · Bên A'}
-          {currentRole === 'ENTERPRISE_B' && ' · Bên B'}
-          {currentRole === 'OPS' && ' · Vận hành'}
-          {currentRole === 'FINANCE' && ' · Tài chính'}
-          {currentRole === 'SUPER_ADMIN' && ' · Hệ thống'}
+        <h3 className="text-sm sm:text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-blue-600" />
+          Tổng quan chỉ số
+          {currentRole === 'ENTERPRISE_A' && ' · Bên A (Chủ vỏ)'}
+          {currentRole === 'ENTERPRISE_B' && ' · Bên B (Chủ hàng)'}
+          {currentRole === 'OPS' && ' · Vận hành ECont'}
+          {currentRole === 'FINANCE' && ' · Tài chính & Ký quỹ'}
+          {currentRole === 'SUPER_ADMIN' && ' · Quản trị Hệ thống'}
         </h3>
 
         {(currentRole === 'ENTERPRISE_A' || currentRole === 'ENTERPRISE_B') && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
             {currentRole === 'ENTERPRISE_A' && (
               <KpiCard
                 icon={Box} label="Container đang quản lý" value={stats.myAssets}
@@ -284,19 +284,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
               sub="Từ tất cả giao dịch hoàn tất"
             />
             <KpiCard
-              icon={AlertCircle} label="Case đang mở" value={stats.openCases}
+              icon={AlertCircle} label="Sự cố & Khiếu nại" value={stats.openCases}
               color={stats.openCases > 0 ? 'red' : 'blue'} onClick={() => setCurrentTab('cases')}
             />
           </div>
         )}
 
         {(currentRole === 'OPS' || currentRole === 'SUPER_ADMIN') && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
             <KpiCard icon={FileText} label="Offer chờ thẩm định" value={stats.pendingOpsOffers}
               color={stats.pendingOpsOffers > 0 ? 'amber' : 'blue'} onClick={() => setCurrentTab('offers')} />
             <KpiCard icon={FileText} label="Nhu cầu chờ xác minh" value={stats.pendingOpsRequests}
               color={stats.pendingOpsRequests > 0 ? 'amber' : 'blue'} onClick={() => setCurrentTab('requests')} />
-            <KpiCard icon={Ship} label="Chờ hãng tàu duyệt" value={stats.pendingCarrier}
+            <KpiCard icon={Ship} label="Chờ hãng tàu duyệt RU" value={stats.pendingCarrier}
               color={stats.pendingCarrier > 0 ? 'amber' : 'blue'} onClick={() => setCurrentTab('ops')} />
             <KpiCard icon={Handshake} label="Giao dịch hoạt động" value={transactions.filter(t => !['COMPLETED','CANCELLED','REJECTED','EXPIRED'].includes(t.status)).length}
               color="violet" onClick={() => setCurrentTab('transactions')} />
@@ -306,7 +306,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
         )}
 
         {currentRole === 'FINANCE' && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
             <KpiCard icon={CreditCard} label="Chờ đối soát thanh toán" value={stats.pendingPayments}
               color={stats.pendingPayments > 0 ? 'amber' : 'blue'} onClick={() => setCurrentTab('finance')} />
             <KpiCard icon={CheckCircle2} label="Giao dịch đã hoàn tất" value={transactions.filter(t => t.status === 'COMPLETED').length}
@@ -319,56 +319,56 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
         )}
       </div>
 
-      {/* Auto-Match Radar Widget */}
+      {/* Auto-Match Radar Widget (Light Theme) */}
       {liveMatches.length > 0 && (
-        <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 text-white rounded-2xl p-5 border border-emerald-700/50 shadow-lg space-y-4">
+        <div className="bg-gradient-to-r from-emerald-50 via-teal-50/60 to-white rounded-2xl p-5 border border-emerald-200 shadow-sm space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <span className="w-3 h-3 rounded-full bg-emerald-400 animate-ping" />
+              <span className="w-3 h-3 rounded-full bg-emerald-500 ring-4 ring-emerald-100 animate-pulse" />
               <div>
-                <h3 className="text-sm font-bold tracking-tight text-white flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-bold tracking-tight text-emerald-950 flex items-center gap-2">
                   <span>RADAR TỰ ĐỘNG GHÉP ĐÔI REAL-TIME (AUTO-MATCH RADAR)</span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-slate-950">
+                  <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-emerald-600 text-white shadow-sm">
                     LIVE
                   </span>
                 </h3>
-                <p className="text-xs text-slate-300 mt-0.5">
-                  Phát hiện <strong className="text-emerald-400">{liveMatches.length}</strong> cơ hội ghép vỏ container tối ưu ngay lúc này
+                <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
+                  Phát hiện <strong className="text-emerald-700">{liveMatches.length}</strong> cơ hội ghép vỏ container tối ưu ngay lúc này
                 </p>
               </div>
             </div>
 
             <button
               onClick={() => setCurrentTab('requests')}
-              className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5"
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold transition-colors shadow-sm flex items-center gap-1.5"
             >
               <span>Xem tất cả trên Sàn Nhu Cầu</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
+              <ArrowUpRight className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {liveMatches.slice(0, 2).map(({ req, bestCand }) => (
               <div
                 key={req.id}
-                className="p-3.5 rounded-xl bg-slate-900/80 border border-emerald-600/30 flex items-center justify-between gap-3"
+                className="p-4 rounded-xl bg-white border border-emerald-200/90 shadow-sm flex items-center justify-between gap-3"
               >
-                <div className="space-y-1 text-xs">
+                <div className="space-y-1.5 text-xs sm:text-sm">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-white text-sm">{bestCand.offer.asset.containerNumber}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 font-mono font-bold">
-                      M: {bestCand.scoreM}/100
+                    <span className="font-mono font-bold text-slate-900 text-base">{bestCand.offer.asset.containerNumber}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-mono font-bold">
+                      Điểm M: {bestCand.scoreM}/100
                     </span>
-                    <span className="text-slate-400">↔ {req.bookingNumber}</span>
+                    <span className="text-slate-500 font-medium">↔ {req.bookingNumber}</span>
                   </div>
-                  <p className="text-[11px] text-slate-300">
-                    Khoảng cách: <strong className="text-white">{bestCand.distanceKm}km</strong> · Tiết kiệm dự kiến: <strong className="text-emerald-400 font-mono">{formatVnd(Math.abs(bestCand.quote.sBVnd))}</strong>
+                  <p className="text-xs text-slate-600">
+                    Khoảng cách: <strong className="text-slate-800">{bestCand.distanceKm}km</strong> · Tiết kiệm dự kiến: <strong className="text-emerald-700 font-mono font-bold">{formatVnd(Math.abs(bestCand.quote.sBVnd))}</strong>
                   </p>
                 </div>
 
                 <button
                   onClick={() => setCurrentTab('requests')}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold whitespace-nowrap shadow-sm"
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold whitespace-nowrap shadow-sm"
                 >
                   Khớp Ngay
                 </button>
@@ -380,17 +380,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Recent transactions */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-700">Giao dịch gần đây</h3>
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <h3 className="text-sm sm:text-base font-bold text-slate-900">Giao dịch gần đây</h3>
             <button
               onClick={() => setCurrentTab('transactions')}
-              className="text-xs text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-1"
+              className="text-xs sm:text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1"
             >
-              Xem tất cả <ArrowUpRight className="w-3.5 h-3.5" />
+              Xem tất cả <ArrowUpRight className="w-4 h-4" />
             </button>
           </div>
-          <div className="divide-y divide-slate-50">
+          <div className="divide-y divide-slate-100">
             {transactions.length === 0 && (
               <p className="px-5 py-8 text-sm text-slate-400 text-center">Chưa có giao dịch nào</p>
             )}
@@ -402,22 +402,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold text-slate-800 font-mono">{txn.id}</span>
-                    <TransactionStatusBadge status={txn.status} size="xs" />
+                    <span className="text-sm font-bold text-slate-900 font-mono">{txn.id}</span>
+                    <TransactionStatusBadge status={txn.status} size="sm" />
                     {txn.isOnHold && (
-                      <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded px-1">⏸ HOLD</span>
+                      <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-1.5 py-0.5">⏸ HOLD</span>
                     )}
                   </div>
-                  <p className="text-xs text-slate-500 mt-1 truncate">
+                  <p className="text-xs sm:text-sm text-slate-600 mt-1 truncate">
                     {txn.asset.containerNumber} · {txn.companyAName} → {txn.companyBName}
                   </p>
-                  <p className="text-[10px] text-slate-400 mt-0.5 truncate">{txn.nextAction}</p>
+                  <p className="text-xs text-slate-400 mt-0.5 truncate">{txn.nextAction}</p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-xs font-mono font-semibold text-emerald-600">
+                  <p className="text-xs sm:text-sm font-mono font-bold text-emerald-600">
                     {formatVnd(Math.max(txn.quote.sAVnd, 0) + Math.max(txn.quote.sBVnd, 0))}
                   </p>
-                  <p className="text-[10px] text-slate-400">{formatRelativeTime(txn.updatedAt)}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{formatRelativeTime(txn.updatedAt)}</p>
                 </div>
               </button>
             ))}
@@ -425,19 +425,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
         </div>
 
         {/* Notifications */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <Bell className="w-3.5 h-3.5 text-slate-400" />
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <h3 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+              <Bell className="w-4 h-4 text-slate-500" />
               Thông báo
               {unreadNotificationCount > 0 && (
-                <span className="min-w-[18px] h-4.5 rounded-full bg-red-500 text-white text-[10px] font-bold px-1.5 leading-none flex items-center justify-center">
+                <span className="min-w-[20px] h-5 rounded-full bg-red-600 text-white text-xs font-bold px-1.5 leading-none flex items-center justify-center">
                   {unreadNotificationCount}
                 </span>
               )}
             </h3>
           </div>
-          <div className="divide-y divide-slate-50">
+          <div className="divide-y divide-slate-100">
             {myNotifications.length === 0 && (
               <p className="px-5 py-8 text-sm text-slate-400 text-center">Không có thông báo mới</p>
             )}
@@ -446,19 +446,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
                 key={notif.id}
                 onClick={() => markNotificationRead(notif.id)}
                 className={`w-full px-5 py-3.5 text-left transition-colors hover:bg-slate-50 ${
-                  !notif.isRead ? 'bg-brand-50/30' : ''
+                  !notif.isRead ? 'bg-blue-50/30' : ''
                 }`}
               >
-                <div className="flex items-start gap-2">
+                <div className="flex items-start gap-2.5">
                   {!notif.isRead && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-brand-500 mt-1.5 shrink-0" />
+                    <span className="w-2 h-2 rounded-full bg-blue-600 mt-1.5 shrink-0" />
                   )}
-                  <div className={!notif.isRead ? '' : 'pl-3.5'}>
-                    <p className={`text-xs font-semibold leading-snug ${notif.isRead ? 'text-slate-500' : 'text-slate-800'}`}>
+                  <div className={!notif.isRead ? '' : 'pl-3'}>
+                    <p className={`text-xs sm:text-sm font-bold leading-snug ${notif.isRead ? 'text-slate-600' : 'text-slate-900'}`}>
                       {notif.title}
                     </p>
-                    <p className="text-[10px] text-slate-400 mt-0.5 leading-snug">{notif.body}</p>
-                    <p className="text-[10px] text-slate-300 mt-1">{formatRelativeTime(notif.createdAt)}</p>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">{notif.body}</p>
+                    <p className="text-xs text-slate-400 mt-1">{formatRelativeTime(notif.createdAt)}</p>
                   </div>
                 </div>
               </button>

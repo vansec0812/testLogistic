@@ -37,6 +37,7 @@ import {
   ConditionBadge
 } from '../components/StatusBadge';
 import { Company, CompanyStatus } from '../types';
+import { AiEdoScannerModal, ExtractedEdoData } from '../components/AiEdoScannerModal';
 
 interface OpsPortalPageProps {
   setCurrentTab?: (tab: string) => void;
@@ -85,11 +86,23 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
 
   // Company CRUD state
   const [showAddCompanyModal, setShowAddCompanyModal] = useState(false);
+  const [showAiEdoModal, setShowAiEdoModal] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [companyForm, setCompanyForm] = useState<Partial<Company>>({
     businessType: 'FORWARDER',
     verificationStatus: 'VERIFIED'
   });
+
+  // Role guard
+  if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+    return (
+      <div className="text-center py-16 space-y-3 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
+        <ShieldCheck className="w-12 h-12 text-slate-300 mx-auto" />
+        <h3 className="text-lg font-bold text-slate-800">Chỉ dành cho Bộ phận Vận hành ECont Ops</h3>
+        <p className="text-sm text-slate-500">Doanh nghiệp Bên A và Bên B không có quyền truy cập Cổng Điều phối Vận hành.</p>
+      </div>
+    );
+  }
 
   // Filter queues
   const carrierPendingTxns = transactions.filter(t => t.status === 'PENDING_CARRIER');
@@ -147,10 +160,19 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
           </p>
         </div>
 
-        <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1.5">
-          <Clock className="w-3.5 h-3.5" />
-          <span>Tổng {carrierPendingTxns.length + underReviewOffers.length + underReviewRequests.length + openCases.length} tác vụ cần xử lý</span>
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowAiEdoModal(true)}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
+          >
+            <Sparkles className="w-4 h-4 text-teal-200" />
+            <span>Quét AI Đối Soát e-DO</span>
+          </button>
+          <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5" />
+            <span>{carrierPendingTxns.length + underReviewOffers.length + underReviewRequests.length + openCases.length} tác vụ</span>
+          </span>
+        </div>
       </div>
 
       {/* 2. Top Metric Counters */}
@@ -167,10 +189,10 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
             <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">CHỜ DUYỆT RU HÃNG</span>
             <Ship className="w-5 h-5 text-amber-600" />
           </div>
-          <div className="text-2xl font-bold font-mono text-slate-900 mt-2">
+          <div className="text-2xl sm:text-3xl font-bold font-mono text-slate-900 mt-2">
             {carrierPendingTxns.length}
           </div>
-          <p className="text-[11px] text-amber-700 mt-1">Cần nhập công văn RU</p>
+          <p className="text-xs text-amber-700 font-medium mt-1">Cần nhập công văn RU</p>
         </button>
 
         <button
@@ -185,10 +207,10 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
             <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">OFFER CHỜ THẨM ĐỊNH</span>
             <PackageOpen className="w-5 h-5 text-emerald-600" />
           </div>
-          <div className="text-2xl font-bold font-mono text-slate-900 mt-2">
+          <div className="text-2xl sm:text-3xl font-bold font-mono text-slate-900 mt-2">
             {underReviewOffers.length}
           </div>
-          <p className="text-[11px] text-emerald-700 mt-1">Kiểm tra ảnh & vị trí vỏ</p>
+          <p className="text-xs text-emerald-700 font-medium mt-1">Kiểm tra ảnh & vị trí vỏ</p>
         </button>
 
         <button
@@ -203,10 +225,10 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
             <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">BOOKING CHỜ XÁC MINH</span>
             <Search className="w-5 h-5 text-cyan-600" />
           </div>
-          <div className="text-2xl font-bold font-mono text-slate-900 mt-2">
+          <div className="text-2xl sm:text-3xl font-bold font-mono text-slate-900 mt-2">
             {underReviewRequests.length}
           </div>
-          <p className="text-[11px] text-cyan-700 mt-1">Kiểm tra booking Bên B</p>
+          <p className="text-xs text-cyan-700 font-medium mt-1">Kiểm tra booking Bên B</p>
         </button>
 
         <button
@@ -221,10 +243,10 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
             <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">CASE TRANH CHẤP</span>
             <AlertTriangle className="w-5 h-5 text-rose-600" />
           </div>
-          <div className="text-2xl font-bold font-mono text-slate-900 mt-2">
+          <div className="text-2xl sm:text-3xl font-bold font-mono text-slate-900 mt-2">
             {openCases.length}
           </div>
-          <p className="text-[11px] text-rose-700 mt-1">Cần điều tra & kết luận</p>
+          <p className="text-xs text-rose-700 font-medium mt-1">Cần điều tra & kết luận</p>
         </button>
       </div>
 
@@ -301,16 +323,16 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                     <div className="space-y-1.5 text-xs">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono font-bold text-slate-900 text-sm">{txn.id}</span>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
                           PENDING_CARRIER
                         </span>
                         <span className="font-mono text-slate-700 font-semibold">{txn.asset.containerNumber}</span>
-                        <span className="text-slate-400">· Hãng {txn.asset.carrierCode} ({txn.asset.containerType})</span>
+                        <span className="text-slate-500">· Hãng {txn.asset.carrierCode} ({txn.asset.containerType})</span>
                       </div>
                       <div className="text-slate-600">
                         Chủ vỏ (A): <strong className="text-slate-800">{txn.companyAName}</strong> → Chủ hàng (B): <strong className="text-slate-800">{txn.companyBName}</strong>
                       </div>
-                      <div className="text-slate-500 text-[11px]">
+                      <div className="text-slate-500 text-xs mt-0.5">
                         Hạn xử lý (SLA 4 giờ): Còn {formatRelativeTime(txn.dueAt, true)}
                       </div>
                     </div>
@@ -470,7 +492,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                         <CaseStatusBadge status={c.status} size="xs" />
                         <span className="font-semibold text-slate-800 text-xs">{c.title}</span>
                       </div>
-                      <span className="text-[11px] text-slate-500">Mở bởi: {c.openedByCompanyName} ({formatRelativeTime(c.createdAt)})</span>
+                      <span className="text-xs text-slate-500">Mở bởi: {c.openedByCompanyName} ({formatRelativeTime(c.createdAt)})</span>
                     </div>
 
                     <p className="text-xs text-slate-600 bg-white p-3 rounded-xl border border-slate-200">
@@ -533,7 +555,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="font-bold text-slate-900 text-sm">{co.shortName}</span>
-                        <span className="text-slate-500 block text-[11px]">{co.companyName}</span>
+                        <span className="text-slate-500 block text-xs">{co.companyName}</span>
                       </div>
                       <CompanyStatusBadge status={co.verificationStatus} size="xs" />
                     </div>
@@ -545,8 +567,8 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                   {/* Actions: Edit, Status, Delete */}
                   <div className="pt-2 border-t border-slate-200 flex items-center justify-between gap-2 flex-wrap">
                     {/* Status switcher for Ops */}
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-slate-400 font-medium">Trạng thái:</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-slate-500 font-medium">Trạng thái:</span>
                       <select
                         value={co.verificationStatus}
                         onChange={e => {
@@ -555,7 +577,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                             verifiedAt: e.target.value === 'VERIFIED' ? new Date().toISOString() : undefined
                           });
                         }}
-                        className="px-2 py-1 rounded bg-white border border-slate-200 text-[11px] font-semibold outline-none"
+                        className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-xs font-semibold outline-none"
                       >
                         <option value="VERIFIED">VERIFIED</option>
                         <option value="PENDING_VERIFICATION">PENDING</option>
@@ -851,6 +873,17 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
           </div>
         </div>
       )}
+
+      {/* AI eDO Scanner Modal */}
+      <AiEdoScannerModal
+        isOpen={showAiEdoModal}
+        onClose={() => setShowAiEdoModal(false)}
+        onApplyData={(data) => {
+          alert(`Ops AI Verification: e-DO ${data.edoNumber} của hãng ${data.carrierCode} hợp lệ (Độ tin cậy: ${data.confidenceScore}%). Hạn lưu bãi: ${data.expiryDate}`);
+        }}
+        title="AI Thẩm Định & Đối Soát Chứng Từ e-DO / Booking"
+        subtitle="Hệ thống tự động kiểm tra tính hợp lệ của lệnh giao hàng đối chiếu với hãng tàu"
+      />
     </div>
   );
 };

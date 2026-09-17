@@ -83,7 +83,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         <aside className="border-b lg:border-b-0 lg:border-r border-slate-200 bg-slate-50/50">
           <div className="px-5 py-4 border-b border-slate-200 bg-white">
             <div className="text-xs font-bold text-slate-900 uppercase tracking-wide">Cuộc trao đổi ({visibleThreads.length})</div>
-            <div className="text-[11px] text-slate-500 mt-0.5">Theo container hoặc giao dịch</div>
+            <div className="text-xs text-slate-500 mt-0.5">Theo container hoặc giao dịch</div>
           </div>
           <div className="max-h-[500px] overflow-y-auto divide-y divide-slate-100">
             {visibleThreads.length === 0 ? (
@@ -106,22 +106,22 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                     onClick={() => setSelectedThreadId(thread.id)}
                     className={`w-full text-left p-4 transition-colors ${
                       isSelected 
-                        ? 'bg-brand-50/70 border-l-4 border-l-brand-600' 
+                        ? 'bg-blue-50/70 border-l-4 border-l-blue-600' 
                         : 'hover:bg-slate-100/70'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono font-bold text-slate-900 text-xs">
+                      <span className="font-mono font-bold text-slate-900 text-sm">
                         {thread.containerNumber || thread.contextLabel}
                       </span>
-                      <span className="text-[10px] text-slate-400">
+                      <span className="text-xs text-slate-500 font-medium">
                         {lastMessage ? formatRelativeTime(lastMessage.createdAt) : ''}
                       </span>
                     </div>
-                    <div className="text-xs font-semibold text-slate-700 mt-1 truncate">
+                    <div className="text-xs sm:text-sm font-semibold text-slate-800 mt-1 truncate">
                       {isOpsOrAdmin ? `${thread.companyAName} ↔ ${thread.companyBName}` : otherName}
                     </div>
-                    <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                    <div className="text-xs text-slate-500 truncate mt-0.5">
                       {lastMessage ? lastMessage.body : 'Chưa có tin nhắn...'}
                     </div>
                   </button>
@@ -139,9 +139,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               <div className="px-6 py-4 border-b border-slate-200 bg-white flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-slate-900 text-sm">{selectedThread.containerNumber || selectedThread.contextLabel}</span>
+                    <span className="font-mono font-bold text-slate-900 text-base">{selectedThread.containerNumber || selectedThread.contextLabel}</span>
                     {selectedThread.carrierCode && (
-                      <span className="text-xs text-slate-500">· Hãng {selectedThread.carrierCode} ({selectedThread.containerType || ''})</span>
+                      <span className="text-xs text-slate-600 font-medium">· Hãng {selectedThread.carrierCode} ({selectedThread.containerType || ''})</span>
                     )}
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5">
@@ -164,13 +164,13 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                         key={msg.id}
                         className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}
                       >
-                        <div className="text-[10px] text-slate-400 mb-1 px-1">
+                        <div className="text-xs text-slate-500 mb-1 px-1 font-medium">
                           {msg.senderCompanyName} · {msg.senderRole} · {formatDateTime(msg.createdAt)}
                         </div>
                         <div
-                          className={`max-w-[80%] p-3.5 rounded-2xl text-xs leading-relaxed shadow-sm ${
+                          className={`max-w-[80%] p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm ${
                             isMine
-                              ? 'bg-brand-600 text-white rounded-br-none'
+                              ? 'bg-blue-600 text-white rounded-br-none'
                               : 'bg-white text-slate-800 border border-slate-200 rounded-bl-none'
                           }`}
                         >

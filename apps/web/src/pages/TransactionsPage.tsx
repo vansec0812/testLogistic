@@ -93,6 +93,22 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
   const [isDiscrepancy, setIsDiscrepancy] = useState(false);
   const [discrepancyNote, setDiscrepancyNote] = useState('');
   const [discrepancySeverity, setDiscrepancySeverity] = useState<'MINOR' | 'MAJOR'>('MINOR');
+  const [inspectionPhotos, setInspectionPhotos] = useState<string[]>([
+    'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800',
+    'https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=800',
+  ]);
+
+  const handleUploadInspectionPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setInspectionPhotos(p => [...p, reader.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
 
   // Hold / Cancel Modals
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -213,12 +229,12 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
               </div>
 
               {/* Tóm tắt điều khoản thỏa thuận */}
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2 text-slate-700">
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm space-y-2 text-slate-700">
                 <div className="font-semibold text-slate-900 mb-1">Nội dung Thỏa thuận Tái sử dụng Container (ECont Agreement v{activeTxn.currentAgreementVersion}):</div>
                 <p>1. <strong>Bên A ({activeTxn.companyAName})</strong> cam kết container {activeTxn.asset.containerNumber} đạt chuẩn đóng hàng xuất khẩu, còn hạn detention tối thiểu đến ngày quy định.</p>
                 <p>2. <strong>Bên B ({activeTxn.companyBName})</strong> chịu trách nhiệm điều xe kéo cont từ kho A đến kho B và nhận bàn giao đúng hạn cut-off.</p>
                 <p>3. Phí tái sử dụng của Hãng tàu được chia sẻ tỷ lệ α = {activeTxn.quote.shareAlpha}. Phí dịch vụ ECont chỉ thu trên mức tiết kiệm thực tế.</p>
-                <p className="text-[11px] text-slate-500 pt-1">
+                <p className="text-xs text-slate-500 pt-1">
                   * Khi cả hai bên ký chấp nhận cùng phiên bản v{activeTxn.currentAgreementVersion}, giao dịch sẽ tự động chuyển sang Bước 2 (Chờ Hãng tàu RU).
                 </p>
               </div>
@@ -227,8 +243,8 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
                   <div>
-                    <div className="text-xs font-bold text-emerald-700">BÊN A (Chủ vỏ)</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">
+                    <div className="text-xs sm:text-sm font-bold text-emerald-700">BÊN A (Chủ vỏ)</div>
+                    <div className="text-xs text-slate-500 mt-1">
                       {currentAgreement.companyAAcceptedAt 
                         ? `Đã ký: ${formatDateTime(currentAgreement.companyAAcceptedAt)}` 
                         : 'Chưa ký xác nhận'}
@@ -247,14 +263,14 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       Bên A Ký Thỏa Thuận
                     </button>
                   ) : (
-                    <span className="text-[11px] text-slate-400">Chờ đại diện A ký</span>
+                    <span className="text-xs text-slate-500 font-medium">Chờ đại diện A ký</span>
                   )}
                 </div>
 
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
                   <div>
-                    <div className="text-xs font-bold text-blue-700">BÊN B (Chủ hàng)</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">
+                    <div className="text-xs sm:text-sm font-bold text-blue-700">BÊN B (Chủ hàng)</div>
+                    <div className="text-xs text-slate-500 mt-1">
                       {currentAgreement.companyBAcceptedAt 
                         ? `Đã ký: ${formatDateTime(currentAgreement.companyBAcceptedAt)}` 
                         : 'Chưa ký xác nhận'}
@@ -273,7 +289,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       Bên B Ký Thỏa Thuận
                     </button>
                   ) : (
-                    <span className="text-[11px] text-slate-400">Chờ đại diện B ký</span>
+                    <span className="text-xs text-slate-500 font-medium">Chờ đại diện B ký</span>
                   )}
                 </div>
               </div>
@@ -331,7 +347,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       type="text"
                       value={carrierRef}
                       onChange={(e) => setCarrierRef(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-900 font-mono outline-none uppercase focus:ring-2 focus:ring-brand-500"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none uppercase focus:ring-2 focus:ring-brand-500"
                       required
                     />
                   </div>
@@ -341,7 +357,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       type="text"
                       value={evidenceName}
                       onChange={(e) => setEvidenceName(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-900 outline-none focus:ring-2 focus:ring-brand-500"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus:ring-2 focus:ring-brand-500"
                       required
                     />
                   </div>
@@ -351,14 +367,14 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       type="datetime-local"
                       value={carrierExpiry}
                       onChange={(e) => setCarrierExpiry(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-900 outline-none focus:ring-2 focus:ring-brand-500"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus:ring-2 focus:ring-brand-500"
                       required
                     />
                   </div>
                 </div>
 
                 <div className="pt-2 flex flex-wrap justify-between items-center gap-3">
-                  <span className="text-[11px] text-slate-500">
+                  <span className="text-xs text-slate-500">
                     Quyền thao tác: <strong className="text-slate-700">Điều phối viên (Ops)</strong>
                   </span>
                   {canOperate ? (
@@ -410,10 +426,10 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Lệnh thu bên A */}
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-3">
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-emerald-700 uppercase">NGHĨA VỤ BÊN A</span>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                    <span className="font-bold text-emerald-700 uppercase text-xs">NGHĨA VỤ BÊN A</span>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${
                       activeTxn.paymentOrderA?.status === 'PAID' 
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
                         : 'bg-amber-50 text-amber-700 border-amber-200'
@@ -421,10 +437,10 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       {activeTxn.paymentOrderA?.status === 'PAID' ? 'ĐÃ ĐỐI SOÁT' : 'CHỜ THU'}
                     </span>
                   </div>
-                  <div className="text-lg font-bold font-mono text-slate-900">
+                  <div className="text-xl font-bold font-mono text-slate-900">
                     {formatVnd(activeTxn.quote.econtCollectedFromA)}
                   </div>
-                  <div className="text-[11px] text-slate-500">
+                  <div className="text-xs text-slate-500">
                     Bao gồm: Thu hộ RU ({formatVnd(activeTxn.quote.shareAlpha * activeTxn.quote.fRuVnd)}) + Phí ECont ({formatVnd(activeTxn.quote.fAVnd)})
                   </div>
                   {canReconcile && activeTxn.paymentOrderA?.status !== 'PAID' && (
@@ -432,7 +448,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       onClick={() => {
                         settlePayment(activeTxn.id, 'A', 'MB-TRAN-A9842', activeTxn.quote.econtCollectedFromA);
                       }}
-                      className="w-full mt-2 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm"
+                      className="w-full mt-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm"
                     >
                       Xác nhận đã nhận tiền Bên A
                     </button>
@@ -440,10 +456,10 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                 </div>
 
                 {/* Lệnh thu bên B */}
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-3">
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-blue-700 uppercase">NGHĨA VỤ BÊN B</span>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                    <span className="font-bold text-blue-700 uppercase text-xs">NGHĨA VỤ BÊN B</span>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${
                       activeTxn.paymentOrderB?.status === 'PAID' 
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
                         : 'bg-amber-50 text-amber-700 border-amber-200'
@@ -451,10 +467,10 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       {activeTxn.paymentOrderB?.status === 'PAID' ? 'ĐÃ ĐỐI SOÁT' : 'CHỜ THU'}
                     </span>
                   </div>
-                  <div className="text-lg font-bold font-mono text-slate-900">
+                  <div className="text-xl font-bold font-mono text-slate-900">
                     {formatVnd(activeTxn.quote.econtCollectedFromB)}
                   </div>
-                  <div className="text-[11px] text-slate-500">
+                  <div className="text-xs text-slate-500">
                     Bao gồm: Thu hộ RU ({formatVnd((1 - activeTxn.quote.shareAlpha) * activeTxn.quote.fRuVnd)}) + Phí ECont ({formatVnd(activeTxn.quote.fBVnd)})
                   </div>
                   {canReconcile && activeTxn.paymentOrderB?.status !== 'PAID' && (
@@ -462,7 +478,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       onClick={() => {
                         settlePayment(activeTxn.id, 'B', 'VCB-TRAN-B1290', activeTxn.quote.econtCollectedFromB);
                       }}
-                      className="w-full mt-2 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-sm"
+                      className="w-full mt-2 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-sm"
                     >
                       Xác nhận đã nhận tiền Bên B
                     </button>
@@ -498,10 +514,10 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
               {/* Thông tin phiếu Dispatch Permit */}
               <div className="p-5 rounded-xl bg-slate-50 border border-emerald-300 flex flex-wrap items-center justify-between gap-4">
-                <div className="space-y-1.5 text-xs text-slate-700">
+                <div className="space-y-1.5 text-xs sm:text-sm text-slate-700">
                   <div className="text-emerald-700 font-mono font-bold text-base flex items-center gap-2">
                     <span>{activeTxn.dispatchPermit?.permitNumber || 'ECONT-DP-2026-98421'}</span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-semibold">ACTIVE</span>
+                    <span className="text-xs bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-bold">ACTIVE</span>
                   </div>
                   <div>
                     Tài xế nhận cont: <strong className="text-slate-900">{activeTxn.dispatchPermit?.driverName || driverName}</strong> · Biển số xe: <strong className="font-mono text-brand-700">{activeTxn.dispatchPermit?.truckPlate || truckPlate}</strong>
@@ -509,14 +525,14 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                   <div className="text-slate-500">
                     Địa điểm lấy: {activeTxn.asset.currentLocationName}
                   </div>
-                  <div className="text-[11px] text-slate-500">
-                    Token bảo mật: <span className="font-mono text-slate-700">{activeTxn.dispatchPermit?.verificationToken || 'DP-SEC-8921'}</span> · Hiệu lực đến: {formatDateTime(activeTxn.dispatchPermit?.validUntil)}
+                  <div className="text-xs text-slate-500">
+                    Token bảo mật: <span className="font-mono text-slate-700 font-semibold">{activeTxn.dispatchPermit?.verificationToken || 'DP-SEC-8921'}</span> · Hiệu lực đến: {formatDateTime(activeTxn.dispatchPermit?.validUntil)}
                   </div>
                 </div>
 
                 <div className="flex flex-col items-center p-3 rounded-xl bg-white border border-slate-200 text-slate-900 text-center shadow-sm">
                   <QrCode className="w-16 h-16 text-slate-800" />
-                  <span className="text-[9px] font-mono font-bold mt-1 text-slate-600">QUÉT QR CHECK-IN</span>
+                  <span className="text-xs font-mono font-bold mt-1 text-slate-600">QUÉT QR CHECK-IN</span>
                 </div>
               </div>
 
@@ -579,6 +595,33 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                     <input type="checkbox" checked={chkUndercarriage} onChange={e => setChkUndercarriage(e.target.checked)} className="rounded text-brand-600" />
                     <span>6. Đà đáy vững chắc</span>
                   </label>
+                </div>
+
+                {/* Photo upload at inspection */}
+                <div className="pt-2 border-t border-slate-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-800">
+                      Ảnh chụp hiện trường giám định ({inspectionPhotos.length} ảnh)
+                    </span>
+                    <label className="cursor-pointer text-xs font-semibold text-brand-600 hover:text-brand-700 flex items-center gap-1">
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Tải ảnh hiện trường</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={handleUploadInspectionPhoto}
+                      />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                    {inspectionPhotos.map((url, idx) => (
+                      <div key={idx} className="h-16 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+                        <img src={url} alt={`Ảnh kiểm tra ${idx + 1}`} className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Tùy chọn báo hư hỏng */}
@@ -685,8 +728,8 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                   <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-between">
                     <div>
-                      <div className="text-xs font-bold text-emerald-700">BÊN A - ĐÃ GIAO</div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">
+                      <div className="text-xs sm:text-sm font-bold text-emerald-700">BÊN A - ĐÃ GIAO</div>
+                      <div className="text-xs text-slate-500 mt-1">
                         {activeTxn.handoverRecord?.confirmationA
                           ? `Đã xác nhận: ${formatDateTime(activeTxn.handoverRecord.confirmationA.confirmedAt)}`
                           : 'Chưa xác nhận'}
@@ -710,8 +753,8 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
                   <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-between">
                     <div>
-                      <div className="text-xs font-bold text-blue-700">BÊN B - ĐÃ NHẬN</div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">
+                      <div className="text-xs sm:text-sm font-bold text-blue-700">BÊN B - ĐÃ NHẬN</div>
+                      <div className="text-xs text-slate-500 mt-1">
                         {activeTxn.handoverRecord?.confirmationB
                           ? `Đã xác nhận: ${formatDateTime(activeTxn.handoverRecord.confirmationB.confirmedAt)}`
                           : 'Chưa xác nhận'}
@@ -772,22 +815,22 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
             </h4>
 
             <div>
-              <span className="text-slate-400 block text-[11px]">BÊN A (Chủ nguồn vỏ):</span>
-              <strong className="text-slate-800 text-sm">{activeTxn.companyAName}</strong>
+              <span className="text-slate-500 font-medium block text-xs">BÊN A (Chủ nguồn vỏ):</span>
+              <strong className="text-slate-900 text-sm">{activeTxn.companyAName}</strong>
             </div>
 
             <div>
-              <span className="text-slate-400 block text-[11px]">BÊN B (Chủ hàng xuất khẩu):</span>
-              <strong className="text-slate-800 text-sm">{activeTxn.companyBName}</strong>
+              <span className="text-slate-500 font-medium block text-xs">BÊN B (Chủ hàng xuất khẩu):</span>
+              <strong className="text-slate-900 text-sm">{activeTxn.companyBName}</strong>
             </div>
 
             <div className="pt-2 border-t border-slate-100">
-              <span className="text-slate-400 block text-[11px]">Container:</span>
-              <div className="font-mono font-bold text-slate-900 text-sm">
+              <span className="text-slate-500 font-medium block text-xs">Container:</span>
+              <div className="font-mono font-bold text-slate-900 text-base">
                 {activeTxn.asset.containerNumber} ({activeTxn.asset.containerType})
               </div>
-              <div className="text-slate-500 text-[11px] mt-0.5">
-                Hãng tàu: {activeTxn.asset.carrierCode} · Vị trí: {activeTxn.asset.currentLocationName}
+              <div className="text-slate-500 text-xs mt-1">
+                Hãng tàu: <strong className="text-slate-700">{activeTxn.asset.carrierCode}</strong> · Vị trí: {activeTxn.asset.currentLocationName}
               </div>
             </div>
           </div>
@@ -798,7 +841,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
               <AlertTriangle className="w-4 h-4 text-amber-500" />
               <span>KIỂM SOÁT SỰ CỐ & TẠM DỪNG (HOLD)</span>
             </h4>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-xs text-slate-600">
               Khi phát hiện sai lệch hiện trạng, tiền đến muộn hoặc từ chối carrier, Ops có thể kích hoạt Tạm dừng (ON_HOLD).
             </p>
 

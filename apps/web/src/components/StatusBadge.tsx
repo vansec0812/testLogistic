@@ -21,9 +21,9 @@ interface StatusBadgeInfo {
 function getBadgeClasses(size: 'xs' | 'sm' | 'md') {
   const base = 'inline-flex items-center gap-1 rounded-full font-semibold border';
   const sizes = {
-    xs: 'px-1.5 py-0 text-[10px]',
-    sm: 'px-2 py-0.5 text-xs',
-    md: 'px-3 py-1 text-sm',
+    xs: 'px-2 py-0.5 text-xs font-semibold',
+    sm: 'px-2.5 py-0.5 text-xs font-bold',
+    md: 'px-3.5 py-1 text-sm font-bold',
   };
   return `${base} ${sizes[size]}`;
 }

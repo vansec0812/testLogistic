@@ -36,6 +36,29 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+export const ROLE_OPTIONS: Array<{ value: UserRole; label: string; icon: string; desc: string }> = [
+  { value: 'ENTERPRISE_A', label: 'Bên A · Quản lý nguồn vỏ', icon: '🏭', desc: 'Hưng Thịnh Logistics — Đơn vị cần trả vỏ rỗng' },
+  { value: 'ENTERPRISE_B', label: 'Bên B · Cần vỏ container', icon: '📦', desc: 'Toàn Cầu Export Corp — Đơn vị đóng hàng xuất khẩu' },
+  { value: 'OPS', label: 'Vận hành · ECont Ops', icon: '⚙️', desc: 'Trung tâm Vận hành, Duyệt hãng tàu & Đối soát ECont' },
+];
+
+export const ECONT_OPS_COMPANY: Company = {
+  id: 'COMP-OPS',
+  taxCode: '0318999999',
+  companyName: 'Nền tảng ECont Logistics — Trung tâm Vận hành & Điều phối',
+  shortName: 'ECont Operations',
+  businessType: 'FORWARDER',
+  address: 'Tầng 12, Tòa nhà Bitexco, Quận 1, TP.HCM',
+  representativeName: 'Vũ Minh Trí (Ops Lead)',
+  representativePhone: '0901239999',
+  representativeEmail: 'ops.lead@econt.vn',
+  verificationStatus: 'VERIFIED',
+  trustScoreA: 100,
+  trustScoreB: 100,
+  totalCompletedAsA: 100,
+  totalCompletedAsB: 100,
+};
+
 const ROLE_INFO: Record<UserRole, RoleBadge> = {
   ENTERPRISE_A: {
     label: 'Bên A · Đơn vị quản lý nguồn vỏ',
@@ -52,25 +75,25 @@ const ROLE_INFO: Record<UserRole, RoleBadge> = {
     icon: '📦',
   },
   OPS: {
-    label: 'Vận hành (Ops)',
+    label: 'Vận hành & Đối soát (Ops)',
     color: 'text-amber-700 border-amber-300',
     bgColor: 'bg-amber-50',
-    desc: 'Điều phối viên ECont — Thẩm định DN, duyệt RU, xử lý sự cố',
+    desc: 'Điều phối viên ECont — Thẩm định DN, duyệt RU, đối soát & xử lý case',
     icon: '⚙️',
   },
   FINANCE: {
-    label: 'Tài chính & Đối soát',
-    color: 'text-purple-700 border-purple-300',
-    bgColor: 'bg-purple-50',
-    desc: 'Kế toán ECont — Đối soát ngân hàng, thu hộ RU, hoàn tiền',
-    icon: '💰',
+    label: 'Vận hành & Đối soát (Ops)',
+    color: 'text-amber-700 border-amber-300',
+    bgColor: 'bg-amber-50',
+    desc: 'Điều phối viên ECont — Thẩm định DN, duyệt RU, đối soát & xử lý case',
+    icon: '⚙️',
   },
   SUPER_ADMIN: {
-    label: 'Quản trị hệ thống',
-    color: 'text-rose-700 border-rose-300',
-    bgColor: 'bg-rose-50',
-    desc: 'Quản trị viên — Cấu hình hệ thống, audit log, toàn quyền',
-    icon: '🛡️',
+    label: 'Vận hành & Đối soát (Ops)',
+    color: 'text-amber-700 border-amber-300',
+    bgColor: 'bg-amber-50',
+    desc: 'Điều phối viên ECont — Thẩm định DN, duyệt RU, đối soát & xử lý case',
+    icon: '⚙️',
   },
 };
 
@@ -89,40 +112,46 @@ const ROLE_USERS: Record<UserRole, { companyIndex: number; email: string; name: 
     userId: 'USR-B01',
   },
   OPS: {
-    companyIndex: 0, // Ops thuộc ECont, dùng company đầu tiên làm placeholder
+    companyIndex: -1, // Use ECONT_OPS_COMPANY
     email: 'ops.lead@econt.vn',
-    name: 'Vũ Minh Trí (Trưởng ban Điều phối)',
+    name: 'Vũ Minh Trí (Trưởng ban Điều phối & Vận hành)',
     userId: 'USR-OPS01',
   },
   FINANCE: {
-    companyIndex: 0,
-    email: 'finance@econt.vn',
-    name: 'Đặng Thu Thảo (Kế toán trưởng)',
-    userId: 'USR-FIN01',
+    companyIndex: -1,
+    email: 'ops.lead@econt.vn',
+    name: 'Vũ Minh Trí (Trưởng ban Điều phối & Vận hành)',
+    userId: 'USR-OPS01',
   },
   SUPER_ADMIN: {
-    companyIndex: 0,
-    email: 'admin@econt.vn',
-    name: 'Quản trị viên Hệ thống',
-    userId: 'USR-ADMIN01',
+    companyIndex: -1,
+    email: 'ops.lead@econt.vn',
+    name: 'Vũ Minh Trí (Trưởng ban Điều phối & Vận hành)',
+    userId: 'USR-OPS01',
   },
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentRole, setCurrentRole] = useState<UserRole>(() => {
     const saved = localStorage.getItem('econt_active_role') as UserRole;
-    return saved && Object.keys(ROLE_INFO).includes(saved) ? saved : 'ENTERPRISE_A';
+    return saved && ['ENTERPRISE_A', 'ENTERPRISE_B', 'OPS'].includes(saved) ? saved : 'ENTERPRISE_A';
   });
 
   useEffect(() => {
     localStorage.setItem('econt_active_role', currentRole);
   }, [currentRole]);
 
-  const setRole = (role: UserRole) => setCurrentRole(role);
+  const setRole = (role: UserRole) => {
+    // If legacy role passed, map to OPS
+    const normalizedRole = (role === 'FINANCE' || role === 'SUPER_ADMIN') ? 'OPS' : role;
+    setCurrentRole(normalizedRole);
+  };
 
   const value = useMemo((): AuthContextType => {
-    const userInfo = ROLE_USERS[currentRole];
-    const currentCompany = INITIAL_COMPANIES[userInfo.companyIndex];
+    const userInfo = ROLE_USERS[currentRole] || ROLE_USERS.OPS;
+    const currentCompany = userInfo.companyIndex === -1 ? ECONT_OPS_COMPANY : INITIAL_COMPANIES[userInfo.companyIndex];
+
+    const isOps = currentRole === 'OPS' || currentRole === 'FINANCE' || currentRole === 'SUPER_ADMIN';
 
     return {
       currentRole,
@@ -131,18 +160,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       currentUserEmail: userInfo.email,
       currentUserName: userInfo.name,
       currentUserId: userInfo.userId,
-      roleBadge: ROLE_INFO[currentRole],
+      roleBadge: ROLE_INFO[currentRole] || ROLE_INFO.OPS,
       canCreateOffers: currentRole === 'ENTERPRISE_A',
       canCreateRequests: currentRole === 'ENTERPRISE_B',
-      canOpsReview: currentRole === 'OPS' || currentRole === 'SUPER_ADMIN',
-      canFinanceReconcile: currentRole === 'FINANCE' || currentRole === 'SUPER_ADMIN',
-      canAdmin: currentRole === 'SUPER_ADMIN',
+      canOpsReview: isOps,
+      canFinanceReconcile: isOps,
+      canAdmin: isOps,
       isPartyA: (companyAId: string) =>
         currentRole === 'ENTERPRISE_A' && currentCompany.id === companyAId,
       isPartyB: (companyBId: string) =>
         currentRole === 'ENTERPRISE_B' && currentCompany.id === companyBId,
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRole]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

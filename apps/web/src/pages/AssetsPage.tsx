@@ -11,9 +11,11 @@ import { ConditionBadge, PhysicalStatusBadge } from '../components/StatusBadge';
 import { formatDateTime, formatRelativeTime, formatVnd } from '../lib/utils';
 import {
   Boxes, Plus, Search, AlertTriangle, Clock, CheckCircle2, X, Edit2, Trash2,
-  Lock, Unlock, Image, Package, MapPin, Calendar, Building, Info, Eye, Camera, Upload
+  Lock, Unlock, Image, Package, MapPin, Calendar, Building, Info, Eye, Camera, Upload,
+  Sparkles, UploadCloud, RefreshCw
 } from 'lucide-react';
 import { INITIAL_CARRIERS, INITIAL_DEPOTS } from '../data/mockData';
+import { AiEdoScannerModal, ExtractedEdoData } from '../components/AiEdoScannerModal';
 
 export const AssetsPage: React.FC = () => {
   const { assets, addAsset, updateAsset, deleteAsset, offers } = useDatabase();
@@ -21,6 +23,9 @@ export const AssetsPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showAiEdoModal, setShowAiEdoModal] = useState(false);
+  const [isAiInspecting, setIsAiInspecting] = useState(false);
+  const [inspectionResult, setInspectionResult] = useState<{ score: number; text: string } | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<ContainerAsset | null>(null);
   const [editingAsset, setEditingAsset] = useState<ContainerAsset | null>(null);
   const [successMsg, setSuccessMsg] = useState('');
@@ -133,6 +138,59 @@ export const AssetsPage: React.FC = () => {
     }
   };
 
+  const handleApplyEdo = (data: ExtractedEdoData) => {
+    setForm(p => ({
+      ...p,
+      containerNumber: data.containerNumber,
+      carrierId: `CARR-${data.carrierCode.slice(0, 3)}`,
+      containerType: data.containerType,
+      currentLocationName: data.returnDepot,
+      freeTimeDetentionEnd: data.expiryDate,
+      physicalStatus: 'EMPTY_AT_YARD',
+      declaredCondition: 'GOOD',
+    }));
+    setShowAddForm(true);
+    showMsg(`AI đã đọc e-DO ${data.edoNumber}! Đã điền tự động form đăng ký vỏ.`);
+  };
+
+  const handleRealUpload = (e: React.ChangeEvent<HTMLInputElement>, assetId: string) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const urls: string[] = [];
+    let count = 0;
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        urls.push(reader.result as string);
+        count++;
+        if (count === files.length) {
+          const currentPhotos = assets.find(a => a.id === assetId)?.photos || [];
+          const updated = [...currentPhotos, ...urls].slice(0, 6);
+          updateAsset(assetId, { photos: updated });
+          if (selectedAsset && selectedAsset.id === assetId) {
+            setSelectedAsset({ ...selectedAsset, photos: updated });
+          }
+          showMsg(`Đã tải lên ${files.length} ảnh thực tế thành công!`);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleAiInspection = (assetId: string) => {
+    setIsAiInspecting(true);
+    setInspectionResult(null);
+    setTimeout(() => {
+      setIsAiInspecting(false);
+      setInspectionResult({
+        score: 98,
+        text: 'IICL-5 Đạt chuẩn đóng hàng xuất khẩu (Vách kín sáng 100%, sàn sạch, tỷ lệ rỉ sét < 1%)',
+      });
+      updateAsset(assetId, { declaredCondition: 'GOOD' });
+      showMsg('AI Inspection: Container đạt chuẩn giám định chất lượng IICL-5!');
+    }, 1200);
+  };
+
   // Upload simulation to reach 6 photos for IICL checklist
   const handleAddSamplePhotos = (assetId: string) => {
     const asset = assets.find(a => a.id === assetId);
@@ -165,81 +223,92 @@ export const AssetsPage: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
         <div>
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <Boxes className="w-6 h-6 text-brand-600" />
-            <span>Quản lý Container (Assets CRUD)</span>
+            <Boxes className="w-6 h-6 text-blue-600" />
+            <span>Quản lý Vỏ Container (Assets CRUD)</span>
           </h2>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
             {currentRole === 'ENTERPRISE_A' ? `${filtered.length} container thuộc quyền quản lý của ${currentCompany.shortName}` : `${filtered.length} container trong toàn hệ thống`}
           </p>
         </div>
-        {canCreateOffers && (
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Đăng ký Container mới</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2.5">
+          {canCreateOffers && (
+            <button
+              onClick={() => setShowAiEdoModal(true)}
+              className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-sm transition-all"
+            >
+              <Sparkles className="w-4 h-4 text-teal-100" />
+              <span>Quét e-DO Nhập Vỏ</span>
+            </button>
+          )}
+          {canCreateOffers && (
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-sm transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Đăng ký Container mới</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Alerts */}
       {successMsg && (
-        <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-semibold text-emerald-700">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
+        <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs sm:text-sm font-semibold text-emerald-800">
+          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
           {successMsg}
         </div>
       )}
       {errorMsg && (
-        <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700">
-          <AlertTriangle className="w-4 h-4 shrink-0" />
+        <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-xs sm:text-sm font-semibold text-red-800">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
           {errorMsg}
         </div>
       )}
 
       {/* Add Form Modal/Section */}
       {showAddForm && (
-        <div className="bg-white border border-brand-200 rounded-2xl p-6 space-y-4 shadow-md">
+        <div className="bg-white border border-blue-200 rounded-2xl p-6 space-y-4 shadow-md">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="font-bold text-slate-900 flex items-center gap-2 text-sm">
-              <Plus className="w-4 h-4 text-brand-600" />
+            <h3 className="font-bold text-slate-900 flex items-center gap-2 text-sm sm:text-base">
+              <Plus className="w-4 h-4 text-blue-600" />
               <span>ĐĂNG KÝ VỎ CONTAINER MỚI (CREATE)</span>
             </h3>
-            <button onClick={() => setShowAddForm(false)} className="text-slate-400 hover:text-slate-600">
+            <button onClick={() => setShowAddForm(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
               <X className="w-5 h-5" />
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Số Container ISO 6346 *</label>
+              <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-1">Số Container ISO 6346 *</label>
               <input
                 value={form.containerNumber || ''}
                 onChange={e => setForm(p => ({ ...p, containerNumber: e.target.value.toUpperCase() }))}
                 placeholder="MSKU1234567"
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-mono uppercase focus:ring-2 focus:ring-brand-500 outline-none"
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Loại Container</label>
+              <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-1">Loại Container</label>
               <select value={form.containerType} onChange={e => setForm(p => ({ ...p, containerType: e.target.value as '20GP' | '40HC' }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs outline-none focus:ring-2 focus:ring-brand-500">
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="40HC">40HC (40 foot cao)</option>
                 <option value="20GP">20GP (20 foot tiêu chuẩn)</option>
               </select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Hãng tàu</label>
+              <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-1">Hãng tàu</label>
               <select value={form.carrierId} onChange={e => setForm(p => ({ ...p, carrierId: e.target.value }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs outline-none focus:ring-2 focus:ring-brand-500">
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500">
                 {INITIAL_CARRIERS.filter(c => c.isActive).map(c => (
                   <option key={c.id} value={c.id}>{c.code} · {c.name}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Tình trạng vật lý</label>
+              <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-1">Tình trạng vật lý</label>
               <select value={form.physicalStatus} onChange={e => setForm(p => ({ ...p, physicalStatus: e.target.value as PhysicalStatus }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs outline-none focus:ring-2 focus:ring-brand-500">
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="EMPTY_AT_YARD">Rỗng tại kho (EMPTY_AT_YARD)</option>
                 <option value="EMPTY_AT_DEPOT">Rỗng tại depot (EMPTY_AT_DEPOT)</option>
                 <option value="AT_CUSTOMER">Đang tại khách hàng (AT_CUSTOMER)</option>
@@ -247,16 +316,16 @@ export const AssetsPage: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Chất lượng vỏ khai báo</label>
+              <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-1">Chất lượng vỏ khai báo</label>
               <select value={form.declaredCondition} onChange={e => setForm(p => ({ ...p, declaredCondition: e.target.value as PhysicalCondition }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs outline-none focus:ring-2 focus:ring-brand-500">
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="GOOD">Đạt chuẩn đóng hàng (GOOD)</option>
                 <option value="MINOR_DAMAGE">Hư hỏng nhẹ (MINOR_DAMAGE)</option>
                 <option value="MAJOR_DAMAGE">Hư hỏng nặng (MAJOR_DAMAGE)</option>
               </select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Vị trí hiện tại *</label>
+              <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-1">Vị trí hiện tại *</label>
               <input
                 value={form.currentLocationName || ''}
                 onChange={e => setForm(p => ({ ...p, currentLocationName: e.target.value }))}
@@ -418,17 +487,31 @@ export const AssetsPage: React.FC = () => {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-semibold text-slate-800">Bộ ảnh tình trạng ({selectedAsset.photos.length}/6 ảnh)</span>
-                  {selectedAsset.photos.length < 6 && (
-                    <button
-                      onClick={() => handleAddSamplePhotos(selectedAsset.id)}
-                      className="text-brand-600 hover:underline flex items-center gap-1 font-semibold text-[11px]"
-                    >
-                      <Upload className="w-3 h-3" />
-                      <span>Thêm bộ 6 ảnh đạt chuẩn IICL</span>
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <label className="cursor-pointer text-blue-600 hover:underline flex items-center gap-1 font-semibold text-xs">
+                      <UploadCloud className="w-3.5 h-3.5" />
+                      <span>Tải ảnh từ máy</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => handleRealUpload(e, selectedAsset.id)}
+                      />
+                    </label>
+                    {selectedAsset.photos.length < 6 && (
+                      <button
+                        onClick={() => handleAddSamplePhotos(selectedAsset.id)}
+                        className="text-slate-600 hover:text-slate-800 flex items-center gap-1 text-xs font-medium"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Ảnh mẫu</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+
+                <div className="grid grid-cols-3 gap-2 mb-3">
                   {selectedAsset.photos.map((url, idx) => (
                     <div key={idx} className="h-24 rounded-lg overflow-hidden bg-slate-100 border border-slate-200">
                       <img src={url} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-cover" />
@@ -437,6 +520,40 @@ export const AssetsPage: React.FC = () => {
                   {selectedAsset.photos.length === 0 && (
                     <div className="col-span-3 py-6 text-center text-slate-400 border border-dashed rounded-xl">
                       Chưa có ảnh chụp container
+                    </div>
+                  )}
+                </div>
+
+                {/* AI Inspection Card */}
+                <div className="p-3.5 rounded-xl border border-teal-200 bg-teal-50/50 space-y-2 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-teal-900 flex items-center gap-1.5 text-xs sm:text-sm">
+                      <Sparkles className="w-4 h-4 text-teal-600" />
+                      AI Giám Định Chất Lượng Vỏ Cont (IICL-5)
+                    </span>
+                    <button
+                      type="button"
+                      disabled={isAiInspecting || selectedAsset.photos.length === 0}
+                      onClick={() => handleAiInspection(selectedAsset.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all ${
+                        isAiInspecting
+                          ? 'bg-teal-400 cursor-not-allowed'
+                          : selectedAsset.photos.length === 0
+                          ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                          : 'bg-teal-600 hover:bg-teal-500 shadow-sm'
+                      }`}
+                    >
+                      {isAiInspecting ? 'Đang quét AI...' : 'Bắt đầu quét AI'}
+                    </button>
+                  </div>
+                  {inspectionResult && (
+                    <div className="text-xs text-teal-900 bg-white/90 p-2.5 rounded-xl border border-teal-200">
+                      <div className="flex items-center justify-between font-bold">
+                        <span>Kết quả: {inspectionResult.text}</span>
+                        <span className="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md font-mono">
+                          {inspectionResult.score}/100
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -469,23 +586,23 @@ export const AssetsPage: React.FC = () => {
 
       {/* Filter and Search */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[220px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+        <div className="relative flex-1 min-w-[240px]">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Tìm theo số container, hãng tàu, vị trí..."
-            className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-brand-500 outline-none bg-white"
+            className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
           />
         </div>
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
           {['all', 'EMPTY_AT_YARD', 'EMPTY_AT_DEPOT', 'AT_CUSTOMER', 'IN_TRANSIT'].map(s => (
             <button
               key={s}
               onClick={() => setFilterStatus(s)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-colors ${
                 filterStatus === s 
-                  ? 'bg-slate-900 text-white border-slate-900' 
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
               }`}
             >
@@ -500,10 +617,10 @@ export const AssetsPage: React.FC = () => {
 
       {/* Assets Grid Cards */}
       {filtered.length === 0 ? (
-        <div className="text-center py-16 space-y-3 bg-white border border-slate-200 rounded-2xl p-8">
+        <div className="text-center py-16 space-y-3 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
           <Boxes className="w-12 h-12 text-slate-300 mx-auto" />
-          <h3 className="text-base font-bold text-slate-700">Không có container nào</h3>
-          <p className="text-xs text-slate-500">{search ? 'Không tìm thấy kết quả phù hợp.' : 'Hãy đăng ký container đầu tiên.'}</p>
+          <h3 className="text-base font-bold text-slate-800">Không có container nào</h3>
+          <p className="text-xs sm:text-sm text-slate-500">{search ? 'Không tìm thấy kết quả phù hợp.' : 'Hãy đăng ký container đầu tiên.'}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -520,7 +637,7 @@ export const AssetsPage: React.FC = () => {
               >
                 <div>
                   {/* Photo Header */}
-                  <div className="relative h-36 bg-slate-100 overflow-hidden">
+                  <div className="relative h-40 bg-slate-100 overflow-hidden">
                     {asset.photos.length > 0 ? (
                       <img src={asset.photos[0]} alt={asset.containerNumber} className="w-full h-full object-cover" />
                     ) : (
@@ -529,26 +646,26 @@ export const AssetsPage: React.FC = () => {
                       </div>
                     )}
                     <div className="absolute top-2.5 left-2.5 flex gap-1.5 flex-wrap">
-                      <ConditionBadge condition={asset.declaredCondition} size="xs" />
+                      <ConditionBadge condition={asset.declaredCondition} size="sm" />
                       {asset.isLocked && (
-                        <span className="inline-flex items-center gap-1 rounded-full text-[10px] font-bold px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200">
-                          <Lock className="w-2.5 h-2.5" /> Đang giữ chỗ
+                        <span className="inline-flex items-center gap-1 rounded-full text-xs font-bold px-2.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 shadow-sm">
+                          <Lock className="w-3 h-3" /> Đang giữ chỗ
                         </span>
                       )}
                     </div>
-                    <span className="absolute bottom-2 right-2 text-[10px] font-bold bg-black/60 text-white rounded-md px-2 py-0.5">
+                    <span className="absolute bottom-2 right-2 text-xs font-bold bg-slate-900/80 text-white rounded-lg px-2.5 py-1 backdrop-blur-sm">
                       {asset.photos.length}/6 ảnh
                     </span>
                   </div>
 
                   {/* Content */}
-                  <div className="p-4 space-y-2.5 text-xs">
+                  <div className="p-4 space-y-2.5 text-xs sm:text-sm">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <span className="font-bold text-slate-900 font-mono text-sm">{asset.containerNumber}</span>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="text-slate-500 font-semibold">{asset.carrierCode} · {asset.containerType}</span>
-                          <PhysicalStatusBadge status={asset.physicalStatus} size="xs" />
+                        <span className="font-bold text-slate-900 font-mono text-base">{asset.containerNumber}</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-slate-600 font-semibold">{asset.carrierCode} · {asset.containerType}</span>
+                          <PhysicalStatusBadge status={asset.physicalStatus} size="sm" />
                         </div>
                       </div>
                     </div>
@@ -574,12 +691,12 @@ export const AssetsPage: React.FC = () => {
                 </div>
 
                 {/* Card Actions (Full CRUD) */}
-                <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
+                <div className="p-3.5 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
                   <button
                     onClick={() => setSelectedAsset(asset)}
-                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-semibold flex items-center gap-1"
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs sm:text-sm font-semibold flex items-center gap-1.5 shadow-sm"
                   >
-                    <Eye className="w-3 h-3 text-slate-500" />
+                    <Eye className="w-3.5 h-3.5 text-slate-500" />
                     <span>Chi tiết</span>
                   </button>
 
@@ -588,17 +705,17 @@ export const AssetsPage: React.FC = () => {
                       <>
                         <button
                           onClick={() => handleStartEdit(asset)}
-                          className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600"
+                          className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 shadow-sm"
                           title="Sửa thông tin"
                         >
-                          <Edit2 className="w-3.5 h-3.5" />
+                          <Edit2 className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(asset.id)}
-                          className="p-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-600"
+                          className="p-2 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 shadow-sm"
                           title="Xóa container"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </>
                     )}
@@ -609,6 +726,13 @@ export const AssetsPage: React.FC = () => {
           })}
         </div>
       )}
+
+      {/* AI eDO Scanner Modal */}
+      <AiEdoScannerModal
+        isOpen={showAiEdoModal}
+        onClose={() => setShowAiEdoModal(false)}
+        onApplyData={handleApplyEdo}
+      />
     </div>
   );
 };

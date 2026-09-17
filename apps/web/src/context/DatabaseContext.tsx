@@ -113,7 +113,10 @@ interface DatabaseContextType {
   sendChatMessage: (threadId: string, body: string) => ActionResult;
 
   // Notifications
+  myNotifications: Notification[];
   markNotificationRead: (notifId: string) => void;
+  markAllNotificationsRead: () => void;
+  deleteNotification: (notifId: string) => void;
   unreadNotificationCount: number;
 
   // Demo utilities
@@ -166,7 +169,15 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   });
   const [cases, setCases] = useState<CaseIssue[]>(INITIAL_CASES);
   const [auditLogs, setAuditLogs] = useState<AuditEvent[]>(INITIAL_AUDIT_LOGS);
-  const [notifications, setNotifications] = useState<Notification[]>(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<Notification[]>(() => {
+    try {
+      const stored = localStorage.getItem('econt_notifications_v2');
+      if (stored) return JSON.parse(stored);
+    } catch (e) {
+      console.error(e);
+    }
+    return INITIAL_NOTIFICATIONS;
+  });
   const [chatThreads, setChatThreads] = useState<ChatThread[]>(INITIAL_CHAT_THREADS);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
   const [onlineConfig, setOnlineConfig] = useState<OnlineDbConfig>(() => onlineDb.getConfig());
@@ -235,6 +246,15 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [currentRole, currentCompany.id, currentUserEmail]);
 
   // Notification helper
+  const persistNotifications = useCallback((newNotifs: Notification[]) => {
+    setNotifications(newNotifs);
+    try {
+      localStorage.setItem('econt_notifications_v2', JSON.stringify(newNotifs));
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
   const addNotification = useCallback((
     recipientCompanyId: string,
     type: Notification['type'],
@@ -253,14 +273,31 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       isRead: false,
       createdAt: new Date().toISOString(),
     };
-    setNotifications(prev => [notif, ...prev]);
+    setNotifications(prev => {
+      const updated = [notif, ...prev];
+      try {
+        localStorage.setItem('econt_notifications_v2', JSON.stringify(updated));
+      } catch (e) {
+        console.error(e);
+      }
+      return updated;
+    });
   }, []);
 
+  const myNotifications = useMemo(() => {
+    if (currentRole === 'ENTERPRISE_A') {
+      return notifications.filter(n => n.recipientCompanyId === currentCompany.id || n.recipientCompanyId === 'COMP-A01' || n.recipientCompanyId === 'ALL');
+    }
+    if (currentRole === 'ENTERPRISE_B') {
+      return notifications.filter(n => n.recipientCompanyId === currentCompany.id || n.recipientCompanyId === 'COMP-B01' || n.recipientCompanyId === 'ALL');
+    }
+    // OPS sees Ops-targeted notifications or all system alerts
+    return notifications.filter(n => n.recipientCompanyId === 'COMP-OPS' || n.recipientCompanyId === 'OPS' || n.recipientCompanyId === 'ALL' || n.type === 'OPS_ALERT' || !n.recipientCompanyId.startsWith('COMP-'));
+  }, [notifications, currentRole, currentCompany.id]);
+
   const unreadNotificationCount = useMemo(() => {
-    return notifications.filter(
-      n => !n.isRead && n.recipientCompanyId === currentCompany.id
-    ).length;
-  }, [notifications, currentCompany.id]);
+    return myNotifications.filter(n => !n.isRead).length;
+  }, [myNotifications]);
 
   // ==================== ASSET ACTIONS ====================
 
@@ -1364,8 +1401,20 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // ==================== NOTIFICATIONS ====================
 
   const markNotificationRead = useCallback((notifId: string) => {
-    setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, isRead: true } : n));
-  }, []);
+    const updated = notifications.map(n => n.id === notifId ? { ...n, isRead: true } : n);
+    persistNotifications(updated);
+  }, [notifications, persistNotifications]);
+
+  const markAllNotificationsRead = useCallback(() => {
+    const idsToMark = new Set(myNotifications.map(n => n.id));
+    const updated = notifications.map(n => idsToMark.has(n.id) ? { ...n, isRead: true } : n);
+    persistNotifications(updated);
+  }, [notifications, myNotifications, persistNotifications]);
+
+  const deleteNotification = useCallback((notifId: string) => {
+    const updated = notifications.filter(n => n.id !== notifId);
+    persistNotifications(updated);
+  }, [notifications, persistNotifications]);
 
   // ==================== DEMO RESET ====================
 
@@ -1376,16 +1425,16 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     persistTransactions(INITIAL_TRANSACTIONS);
     setCases(INITIAL_CASES);
     setAuditLogs(INITIAL_AUDIT_LOGS);
-    setNotifications(INITIAL_NOTIFICATIONS);
+    persistNotifications(INITIAL_NOTIFICATIONS);
     setChatThreads(INITIAL_CHAT_THREADS);
     setChatMessages(INITIAL_CHAT_MESSAGES);
-  }, [persistAssets, persistOffers, persistRequests, persistTransactions]);
+  }, [persistAssets, persistOffers, persistRequests, persistTransactions, persistNotifications]);
 
   // ==================== CONTEXT VALUE ====================
 
   const value: DatabaseContextType = {
     companies, assets, offers, requests, transactions, cases, auditLogs,
-    notifications, chatThreads, chatMessages,
+    notifications, myNotifications, chatThreads, chatMessages,
     addAsset, updateAsset, deleteAsset,
     addOffer, updateOffer, submitOfferForReview, withdrawOffer, deleteOffer, opsReviewOffer,
     addRequest, updateRequest, submitRequestForReview, withdrawRequest, deleteRequest, opsReviewRequest,
@@ -1398,7 +1447,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     toggleHold, addCase, updateCase, deleteCase, resolveCase, closeCase,
     cancelTransaction,
     startChatThread, sendChatMessage,
-    markNotificationRead, unreadNotificationCount,
+    markNotificationRead, markAllNotificationsRead, deleteNotification, unreadNotificationCount,
     resetToDemoData,
     onlineConfig, isSyncing, lastSyncMessage, syncAllToOnlineDb, updateOnlineConfig,
   };

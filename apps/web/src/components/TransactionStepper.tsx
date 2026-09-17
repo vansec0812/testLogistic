@@ -126,13 +126,13 @@ export const TransactionStepper: React.FC<TransactionStepperProps> = ({ transact
                     )}
                   </div>
                   <div className={`mt-1.5 text-center ${isCurrent ? 'block' : 'hidden md:block'}`}>
-                    <p className={`text-[10px] font-semibold leading-tight ${
-                      isCurrent ? 'text-brand-700' : isCompleted ? 'text-slate-500' : 'text-slate-300'
+                    <p className={`text-xs font-bold leading-tight ${
+                      isCurrent ? 'text-brand-700' : isCompleted ? 'text-slate-600' : 'text-slate-400'
                     }`}>
                       {step.label}
                     </p>
-                    <p className={`text-[9px] leading-tight mt-0.5 ${
-                      isCurrent ? 'text-brand-500' : 'text-slate-300'
+                    <p className={`text-xs leading-tight mt-0.5 ${
+                      isCurrent ? 'text-brand-600 font-medium' : 'text-slate-400'
                     }`}>
                       {step.sublabel}
                     </p>

@@ -3,10 +3,11 @@
 // Main routing, layout, and provider setup
 // ==============================================================================
 
-import React, { useState, Suspense } from 'react';
-import { AuthProvider } from './context/AuthContext';
+import React, { useState, useEffect, Suspense } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { DatabaseProvider } from './context/DatabaseContext';
-import { Navbar } from './components/Navbar';
+import { Sidebar } from './components/Sidebar';
+import { TopHeader } from './components/TopHeader';
 
 // Eager imports (always needed)
 import { DashboardPage } from './pages/DashboardPage';
@@ -34,6 +35,21 @@ function LoadingSpinner() {
 function AppContent() {
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [selectedTxnId, setSelectedTxnId] = useState<string | undefined>(undefined);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const { currentRole } = useAuth();
+
+  // Strict role-based navigation guard
+  useEffect(() => {
+    if (currentRole === 'ENTERPRISE_A') {
+      if (['requests', 'ops', 'finance', 'database'].includes(currentTab)) {
+        setCurrentTab('dashboard');
+      }
+    } else if (currentRole === 'ENTERPRISE_B') {
+      if (['assets', 'offers', 'ops', 'finance', 'database'].includes(currentTab)) {
+        setCurrentTab('dashboard');
+      }
+    }
+  }, [currentRole, currentTab]);
 
   const renderPage = () => {
     switch (currentTab) {
@@ -63,13 +79,29 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <Navbar currentTab={currentTab} setCurrentTab={setCurrentTab} />
-      <main className="max-w-[1480px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <Suspense fallback={<LoadingSpinner />}>
-          {renderPage()}
-        </Suspense>
-      </main>
+    <div className="min-h-screen bg-slate-100 flex">
+      {/* Vertical Sidebar */}
+      <Sidebar
+        currentTab={currentTab}
+        setCurrentTab={setCurrentTab}
+        isMobileOpen={isMobileOpen}
+        setIsMobileOpen={setIsMobileOpen}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 lg:pl-64 flex flex-col min-w-0 min-h-screen">
+        <TopHeader
+          currentTab={currentTab}
+          setCurrentTab={setCurrentTab}
+          setSelectedTxnId={setSelectedTxnId}
+          setIsMobileOpen={setIsMobileOpen}
+        />
+        <main className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <Suspense fallback={<LoadingSpinner />}>
+            {renderPage()}
+          </Suspense>
+        </main>
+      </div>
     </div>
   );
 }

@@ -39,64 +39,64 @@ function MatchCandidateCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-bold text-slate-900 font-mono">{offer.asset.containerNumber}</span>
-            <span className="text-xs text-slate-500">{offer.asset.carrierCode} · {offer.asset.containerType}</span>
+            <span className="text-xs text-slate-600 font-medium">{offer.asset.carrierCode} · {offer.asset.containerType}</span>
             <ConditionBadge condition={offer.asset.declaredCondition} size="xs" />
             {requiresLocationRefresh && (
-              <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-1.5 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />
+              <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-0.5 flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5" />
                 Vị trí {Math.round(locationAgeHours)}h · Cần A xác nhận
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span>{offer.pickupLocationName} · <strong className="text-brand-600">{formatDistance(distanceKm)}</strong></span>
+          <p className="text-xs text-slate-600 mt-1.5 flex items-center gap-1.5">
+            <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
+            <span>{offer.pickupLocationName} · <strong className="text-cyan-700">{formatDistance(distanceKm)}</strong></span>
           </p>
         </div>
 
         {/* Match Score */}
         <div className="text-right shrink-0">
           <div className={`inline-flex items-center justify-center w-11 h-11 rounded-xl font-bold font-mono text-base ${
-            scoreM >= 80 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-            scoreM >= 60 ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+            scoreM >= 80 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm' :
+            scoreM >= 60 ? 'bg-amber-50 text-amber-700 border border-amber-200 shadow-sm' :
             'bg-slate-50 text-slate-600 border border-slate-200'
           }`}>
             {scoreM}
           </div>
-          <p className="text-[10px] text-slate-400 mt-0.5">Điểm ghép M</p>
+          <p className="text-xs text-slate-500 font-medium mt-1">Điểm ghép M</p>
         </div>
       </div>
 
       {/* Score breakdown */}
       <div className="grid grid-cols-3 gap-2 text-center text-xs">
-        <div className="bg-slate-50 rounded-xl p-2 border border-slate-100">
-          <p className="font-bold font-mono text-slate-800">{scoreD}</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">📍 Cự ly ({distanceKm}km)</p>
+        <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
+          <p className="font-bold font-mono text-slate-800 text-sm">{scoreD}</p>
+          <p className="text-xs text-slate-500 mt-0.5">📍 Cự ly ({distanceKm}km)</p>
         </div>
-        <div className="bg-slate-50 rounded-xl p-2 border border-slate-100">
-          <p className="font-bold font-mono text-slate-800">{scoreT}</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">⏱️ Thời gian</p>
+        <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
+          <p className="font-bold font-mono text-slate-800 text-sm">{scoreT}</p>
+          <p className="text-xs text-slate-500 mt-0.5">⏱️ Thời gian</p>
         </div>
-        <div className="bg-slate-50 rounded-xl p-2 border border-slate-100">
-          <p className="font-bold font-mono text-slate-800">{scoreC}</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">✅ Chất lượng</p>
+        <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
+          <p className="font-bold font-mono text-slate-800 text-sm">{scoreC}</p>
+          <p className="text-xs text-slate-500 mt-0.5">✅ Chất lượng</p>
         </div>
       </div>
 
       {/* Savings preview */}
-      <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+      <div className="flex items-center justify-between text-xs pt-1.5 border-t border-slate-100">
         <div>
-          <span className="text-slate-500">Bên B tiết kiệm: </span>
-          <span className={`font-bold font-mono ${quote.negativeSavingB ? 'text-red-500' : 'text-emerald-700'}`}>
+          <span className="text-slate-600">Bên B tiết kiệm: </span>
+          <span className={`font-bold font-mono text-sm ${quote.negativeSavingB ? 'text-red-500' : 'text-emerald-700'}`}>
             {formatVnd(Math.abs(quote.sBVnd))}
           </span>
         </div>
         <button
           onClick={() => setShowPricing(!showPricing)}
-          className="text-brand-600 hover:underline text-[11px] font-semibold flex items-center gap-0.5"
+          className="text-cyan-700 hover:underline text-xs font-bold flex items-center gap-1"
         >
           {showPricing ? 'Ẩn báo giá' : 'Chi tiết báo giá'}
-          {showPricing ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          {showPricing ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         </button>
       </div>
 
@@ -105,14 +105,14 @@ function MatchCandidateCard({
       )}
 
       {/* Action */}
-      <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-        <span className="text-[11px] text-slate-400 truncate">
+      <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
+        <span className="text-xs text-slate-500 font-medium truncate">
           Chủ vỏ: {offer.companyName}
         </span>
         <button
           onClick={onHold}
           disabled={requiresLocationRefresh}
-          className="px-3.5 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+          className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
         >
           <Sparkles className="w-3.5 h-3.5" />
           <span>Giữ chỗ 30 phút</span>
@@ -359,20 +359,20 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
-              <label className="text-slate-700 font-semibold block mb-1">Số Booking (từ hãng tàu) *</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Số Booking (từ hãng tàu) *</label>
               <input
                 value={form.bookingNumber || ''}
                 onChange={e => setForm(p => ({ ...p, bookingNumber: e.target.value.toUpperCase() }))}
                 placeholder="MSKBKG2026-981..."
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 font-mono uppercase outline-none focus:ring-2 focus:ring-cyan-500"
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase outline-none focus:ring-2 focus:ring-cyan-500 bg-white"
               />
             </div>
             <div>
-              <label className="text-slate-700 font-semibold block mb-1">Hãng tàu cấp vỏ *</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Hãng tàu cấp vỏ *</label>
               <select 
                 value={form.carrierId} 
                 onChange={e => setForm(p => ({ ...p, carrierId: e.target.value }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 outline-none focus:ring-2 focus:ring-cyan-500"
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white"
               >
                 {INITIAL_CARRIERS.filter(c => c.isActive).map(c => (
                   <option key={c.id} value={c.id}>{c.code} · {c.name}</option>
@@ -380,86 +380,86 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
               </select>
             </div>
             <div>
-              <label className="text-slate-700 font-semibold block mb-1">Loại container</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Loại container</label>
               <select 
                 value={form.containerType} 
                 onChange={e => setForm(p => ({ ...p, containerType: e.target.value as '20GP' | '40HC' }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 outline-none focus:ring-2 focus:ring-cyan-500"
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white"
               >
                 <option value="40HC">40HC (40 foot cao)</option>
                 <option value="20GP">20GP (20 foot tiêu chuẩn)</option>
               </select>
             </div>
             <div>
-              <label className="text-slate-700 font-semibold block mb-1">Địa điểm nhận cont / đóng hàng *</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Địa điểm nhận cont / đóng hàng *</label>
               <input
                 value={form.deliveryLocationName || ''}
                 onChange={e => setForm(p => ({ ...p, deliveryLocationName: e.target.value }))}
                 placeholder="Kho KCN VSIP 1, Bình Dương..."
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 outline-none focus:ring-2 focus:ring-cyan-500"
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white"
               />
             </div>
             <div>
-              <label className="text-slate-700 font-semibold block mb-1">Lấy cont sớm nhất</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Lấy cont sớm nhất</label>
               <input 
                 type="datetime-local"
                 onChange={e => setForm(p => ({ ...p, pickupWindowStart: new Date(e.target.value).toISOString() }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 outline-none focus:ring-2 focus:ring-cyan-500" 
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white" 
               />
             </div>
             <div>
-              <label className="text-slate-700 font-semibold block mb-1">Lấy cont muộn nhất</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Lấy cont muộn nhất</label>
               <input 
                 type="datetime-local"
                 onChange={e => setForm(p => ({ ...p, pickupWindowEnd: new Date(e.target.value).toISOString() }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 outline-none focus:ring-2 focus:ring-cyan-500" 
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white" 
               />
             </div>
             <div>
-              <label className="text-slate-700 font-semibold block mb-1">Thời hạn Cut-off booking</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Thời hạn Cut-off booking</label>
               <input 
                 type="datetime-local"
                 onChange={e => setForm(p => ({ ...p, cutOffTime: new Date(e.target.value).toISOString() }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 outline-none focus:ring-2 focus:ring-cyan-500" 
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white" 
               />
             </div>
             <div>
-              <label className="text-slate-700 font-semibold block mb-1">Bán kính quét ghép đôi tối đa (Dmax: km)</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Bán kính quét ghép đôi tối đa (Dmax: km)</label>
               <input 
                 type="number" 
                 min="5" 
                 max="100" 
                 value={form.maxDistanceKm || 40}
                 onChange={e => setForm(p => ({ ...p, maxDistanceKm: parseInt(e.target.value) || 40 }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 outline-none focus:ring-2 focus:ring-cyan-500" 
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white" 
               />
             </div>
             <div>
-              <label className="text-slate-700 font-semibold block mb-1">Chi phí lấy baseline T_B (VND)</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Chi phí lấy baseline T_B (VND)</label>
               <input 
                 type="number" 
                 value={form.baselinePickupCostVnd || 3400000}
                 onChange={e => setForm(p => ({ ...p, baselinePickupCostVnd: parseInt(e.target.value) || 3400000 }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 outline-none focus:ring-2 focus:ring-cyan-500" 
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white" 
               />
-              <p className="text-[11px] text-slate-400 mt-1">Cước nếu xe phải chạy lên depot lấy cont thông thường</p>
+              <p className="text-xs text-slate-500 mt-1">Cước nếu xe phải chạy lên depot lấy cont thông thường</p>
             </div>
             <div>
-              <label className="text-slate-700 font-semibold block mb-1">Loại hàng xuất khẩu</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Loại hàng xuất khẩu</label>
               <input 
                 value={form.cargoType || ''}
                 onChange={e => setForm(p => ({ ...p, cargoType: e.target.value }))}
                 placeholder="Hàng dệt may, nông sản, linh kiện điện tử..."
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 outline-none focus:ring-2 focus:ring-cyan-500" 
+                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white" 
               />
             </div>
           </div>
 
-          <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
+          <div className="flex gap-2 justify-end pt-3 border-t border-slate-100">
             <button onClick={() => setShowAddForm(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl">
               Hủy
             </button>
-            <button onClick={handleAddRequest} className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold rounded-xl shadow-sm">
+            <button onClick={handleAddRequest} className="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white text-xs sm:text-sm font-bold rounded-xl shadow-sm transition-all">
               Tạo Nhu Cầu & Tự Động Quét Ghép Đôi
             </button>
           </div>
@@ -553,7 +553,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-900 text-sm">TỰ ĐỘNG TÌM THẤY CONTAINER GHÉP ĐÔI!</h3>
-                  <p className="text-[11px] text-slate-500">Booking: {autoMatchModalReq.bookingNumber} ({autoMatchModalReq.carrierCode})</p>
+                  <p className="text-xs text-slate-600 font-medium">Booking: {autoMatchModalReq.bookingNumber} ({autoMatchModalReq.carrierCode})</p>
                 </div>
               </div>
               <button onClick={() => setAutoMatchModalReq(null)} className="text-slate-400 hover:text-slate-600">
@@ -604,9 +604,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
             <button
               key={s}
               onClick={() => setFilterStatus(s)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all ${
                 filterStatus === s 
-                  ? 'bg-slate-900 text-white border-slate-900' 
+                  ? 'bg-cyan-600 text-white border-cyan-600 shadow-sm' 
                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
               }`}
             >
@@ -649,10 +649,10 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                     <RequestStatusBadge status={req.status} size="xs" />
                   </div>
                   <div className="text-xs text-slate-600 mt-1.5 flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
                     <span>{req.deliveryLocationName}</span>
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-3 flex-wrap">
+                  <div className="text-xs text-slate-500 mt-1.5 flex items-center gap-3 flex-wrap">
                     <span>Lấy: {formatDateTime(req.pickupWindowStart)} → {formatDateTime(req.pickupWindowEnd)}</span>
                     <span>Cut-off: {formatDateTime(req.cutOffTime)}</span>
                     <span className="font-mono font-semibold text-slate-700">T_B: {formatVnd(req.baselinePickupCostVnd)}</span>
@@ -664,12 +664,12 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                 {req.status === 'OPEN' && autoMatchResult && (
                   <div className="text-right">
                     {autoMatchResult.candidates.length > 0 ? (
-                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5 shadow-sm">
+                      <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5 shadow-sm">
                         <Sparkles className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
                         <span>Tự động khớp {autoMatchResult.candidates.length} vỏ</span>
                       </span>
                     ) : (
-                      <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-50 text-slate-500 border border-slate-200">
+                      <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-slate-50 text-slate-500 border border-slate-200">
                         Đang quét nguồn cont...
                       </span>
                     )}
@@ -679,18 +679,18 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
 
               {/* Real-time Top Auto-Match Highlight Card */}
               {req.status === 'OPEN' && bestMatch && !isMatching && (
-                <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3">
+                <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-sm">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-mono font-bold text-sm shadow-sm">
                       {bestMatch.scoreM}
                     </div>
                     <div className="text-xs">
                       <div className="flex items-center gap-2">
-                        <strong className="text-slate-900 font-mono">{bestMatch.offer.asset.containerNumber}</strong>
+                        <strong className="text-slate-900 font-mono text-sm">{bestMatch.offer.asset.containerNumber}</strong>
                         <span className="text-emerald-800 font-bold">Top Ghép Đôi Tối Ưu</span>
                       </div>
-                      <p className="text-[11px] text-slate-600 mt-0.5">
-                        Cách {bestMatch.distanceKm}km ({bestMatch.offer.pickupLocationName}) · Tiết kiệm: <strong className="font-mono text-emerald-700">{formatVnd(Math.abs(bestMatch.quote.sBVnd))}</strong>
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        Cách {bestMatch.distanceKm}km ({bestMatch.offer.pickupLocationName}) · Tiết kiệm: <strong className="font-mono text-emerald-700 font-bold">{formatVnd(Math.abs(bestMatch.quote.sBVnd))}</strong>
                       </p>
                     </div>
                   </div>
@@ -698,7 +698,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                   <button
                     onClick={() => handleHoldReservation(bestMatch, req)}
                     disabled={bestMatch.requiresLocationRefresh}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
                   >
                     <Lock className="w-3.5 h-3.5" />
                     <span>Giữ chỗ ngay (30 phút)</span>
@@ -720,9 +720,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                   {(req.status === 'DRAFT' || req.status === 'CHANGES_REQUIRED') && currentRole === 'ENTERPRISE_B' && (
                     <button
                       onClick={() => { submitRequestForReview(req.id); showMsg('Đã gửi xác minh Booking tới Ops.'); }}
-                      className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm"
+                      className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm"
                     >
-                      <Send className="w-3 h-3" />
+                      <Send className="w-3.5 h-3.5" />
                       <span>Gửi xác minh Booking</span>
                     </button>
                   )}
@@ -731,7 +731,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                   {req.status === 'OPEN' && (
                     <button
                       onClick={() => setMatchingForId(isMatching ? null : req.id)}
-                      className="px-3 py-1.5 rounded-lg border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                      className="px-3.5 py-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
                     >
                       <Sparkles className="w-3.5 h-3.5" />
                       <span>{isMatching ? 'Ẩn danh sách ứng viên' : `Xem tất cả ${autoMatchResult?.candidates.length || 0} ứng viên`}</span>
@@ -743,13 +743,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => opsReviewRequest(req.id, 'APPROVE', 'Booking hợp lệ từ hãng tàu')}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm"
+                        className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm"
                       >
                         Xác nhận Booking (OPEN)
                       </button>
                       <button
                         onClick={() => opsReviewRequest(req.id, 'REJECT', 'Số booking không hợp lệ')}
-                        className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-semibold"
+                        className="px-3.5 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs font-semibold"
                       >
                         Từ chối
                       </button>
@@ -762,27 +762,27 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                   {!['HELD', 'ALLOCATED', 'FULFILLED'].includes(req.status) && (
                     <button
                       onClick={() => handleStartEdit(req)}
-                      className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-xs"
+                      className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-xs shadow-sm transition-colors"
                       title="Chỉnh sửa Nhu cầu"
                     >
-                      <Edit2 className="w-3.5 h-3.5" />
+                      <Edit2 className="w-4 h-4" />
                     </button>
                   )}
 
                   {['DRAFT', 'WITHDRAWN', 'CHANGES_REQUIRED'].includes(req.status) && (
                     <button
                       onClick={() => handleDeleteRequest(req.id)}
-                      className="p-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 text-xs"
+                      className="p-2 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 text-xs shadow-sm transition-colors"
                       title="Xóa Nhu cầu"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   )}
 
                   {!['HELD', 'ALLOCATED', 'FULFILLED', 'WITHDRAWN', 'EXPIRED'].includes(req.status) && currentRole === 'ENTERPRISE_B' && (
                     <button
                       onClick={() => setWithdrawId(req.id)}
-                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-[11px] font-semibold"
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold shadow-sm transition-colors"
                     >
                       Rút nhu cầu
                     </button>
@@ -792,13 +792,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
 
               {/* Full Matching candidates view */}
               {isMatching && activeMatchResults && (
-                <div className="pt-3 border-t border-brand-100 space-y-3 bg-slate-50/50 p-4 rounded-xl">
+                <div className="pt-3 border-t border-blue-100 space-y-3 bg-slate-50/70 p-4 rounded-xl">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-brand-800">
+                    <span className="text-xs font-bold text-slate-800">
                       Tìm thấy {activeMatchResults.candidates.length} vỏ container phù hợp ({activeMatchResults.eliminatedCount} bị loại do khoảng cách / hãng)
                     </span>
                     {activeMatchResults.dataWarnings.length > 0 && (
-                      <span className="text-[10px] text-amber-600 font-semibold">
+                      <span className="text-xs text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                         ⚠️ {activeMatchResults.dataWarnings[0]}
                       </span>
                     )}
