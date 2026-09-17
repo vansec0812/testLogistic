@@ -25,7 +25,7 @@ export const AssetsPage: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showAiEdoModal, setShowAiEdoModal] = useState(false);
   const [isAiInspecting, setIsAiInspecting] = useState(false);
-  const [inspectionResult, setInspectionResult] = useState<{ score: number; text: string } | null>(null);
+  const [inspectionResult, setInspectionResult] = useState<{ score?: number; text: string; status: string; requiresOpsReview: boolean } | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<ContainerAsset | null>(null);
   const [editingAsset, setEditingAsset] = useState<ContainerAsset | null>(null);
   const [successMsg, setSuccessMsg] = useState('');
@@ -40,6 +40,7 @@ export const AssetsPage: React.FC = () => {
     currentLatitude: 10.78,
     currentLongitude: 106.78,
   });
+  const [formPhotos, setFormPhotos] = useState<string[]>([]);
 
   // Edit form state
   const [editForm, setEditForm] = useState<Partial<ContainerAsset>>({});
@@ -88,11 +89,15 @@ export const AssetsPage: React.FC = () => {
       currentDepotReturnId: form.currentDepotReturnId,
       freeTimeDetentionEnd: form.freeTimeDetentionEnd,
       freeTimeSource: form.freeTimeSource,
+      photos: formPhotos,
+      hasEdoDocument: form.hasEdoDocument,
+      edoVerificationStatus: form.edoVerificationStatus,
     });
     if (result.success) {
       showMsg(result.message);
       setShowAddForm(false);
       setForm({ containerType: '40HC', physicalStatus: 'EMPTY_AT_YARD', declaredCondition: 'GOOD', carrierId: 'CARR-MSK', currentLatitude: 10.78, currentLongitude: 106.78 });
+      setFormPhotos([]);
     } else {
       showMsg(result.message, true);
     }
@@ -139,13 +144,22 @@ export const AssetsPage: React.FC = () => {
   };
 
   const handleApplyEdo = (data: ExtractedEdoData) => {
+    const carrierAliases: Record<string, string> = {
+      MAERSK: 'MSK',
+      CMA_CGM: 'CMA',
+      EVERGREEN: 'EMC',
+    };
+    const matchedCarrier = INITIAL_CARRIERS.find(c => c.code === (carrierAliases[data.carrierCode] || data.carrierCode));
     setForm(p => ({
       ...p,
       containerNumber: data.containerNumber,
-      carrierId: `CARR-${data.carrierCode.slice(0, 3)}`,
+      carrierId: matchedCarrier?.id || p.carrierId || 'CARR-MSK',
       containerType: data.containerType,
       currentLocationName: data.returnDepot,
       freeTimeDetentionEnd: data.expiryDate,
+      freeTimeSource: `eDO/Booking ${data.edoNumber}`,
+      hasEdoDocument: true,
+      edoVerificationStatus: 'UNVERIFIED',
       physicalStatus: 'EMPTY_AT_YARD',
       declaredCondition: 'GOOD',
     }));
@@ -177,18 +191,64 @@ export const AssetsPage: React.FC = () => {
     });
   };
 
-  const handleAiInspection = (assetId: string) => {
+  const handleFormPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const acceptedFiles = Array.from(files).filter(file => file.type.startsWith('image/') && file.size <= 10 * 1024 * 1024);
+    if (acceptedFiles.length !== files.length) {
+      showMsg('Chỉ nhận ảnh hợp lệ tối đa 10MB mỗi tệp.', true);
+    }
+    acceptedFiles.slice(0, Math.max(0, 6 - formPhotos.length)).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setFormPhotos(prev => [...prev, reader.result as string].slice(0, 6));
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleAiInspection = async (assetId: string) => {
+    const asset = assets.find(a => a.id === assetId);
+    if (!asset || asset.photos.length === 0) return;
     setIsAiInspecting(true);
     setInspectionResult(null);
-    setTimeout(() => {
+
+    try {
+      const { inspectContainerWithAI } = await import('../services/aiService');
+      const result = await inspectContainerWithAI(asset.photos);
+
+      if (result.success) {
+        setInspectionResult({
+          score: result.score,
+          text: result.summary || 'Đã hoàn tất phân tích ảnh',
+          status: result.status,
+          requiresOpsReview: result.requiresOpsReview,
+        });
+        const aiInspection = {
+          status: result.status,
+          score: result.score,
+          condition: result.condition,
+          summary: result.summary || 'Đã hoàn tất phân tích ảnh',
+          details: result.details || [],
+          requiresOpsReview: result.requiresOpsReview,
+          inspectedAt: new Date().toISOString(),
+        } as const;
+        updateAsset(assetId, { aiInspection });
+        setSelectedAsset({ ...asset, aiInspection });
+
+        if (result.requiresOpsReview) {
+          showMsg('AI phát hiện dấu hiệu cần xác minh. Đã chuyển hàng đợi Ops kiểm tra thủ công.', true);
+        } else {
+          showMsg(`AI không phát hiện bất thường (${result.score ?? '—'}/100). Offer vẫn chờ Ops duyệt.`);
+        }
+      } else {
+        showMsg(result.error || 'Lỗi giám định AI', true);
+      }
+    } catch {
+      showMsg('Không thể kết nối dịch vụ AI. Vui lòng thử lại hoặc chuyển Ops kiểm tra thủ công.', true);
+    } finally {
       setIsAiInspecting(false);
-      setInspectionResult({
-        score: 98,
-        text: 'IICL-5 Đạt chuẩn đóng hàng xuất khẩu (Vách kín sáng 100%, sàn sạch, tỷ lệ rỉ sét < 1%)',
-      });
-      updateAsset(assetId, { declaredCondition: 'GOOD' });
-      showMsg('AI Inspection: Container đạt chuẩn giám định chất lượng IICL-5!');
-    }, 1200);
+    }
   };
 
   // Upload simulation to reach 6 photos for IICL checklist
@@ -351,6 +411,35 @@ export const AssetsPage: React.FC = () => {
                 className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-brand-500 outline-none"
               />
             </div>
+          </div>
+          {/* Photo Upload Section */}
+          <div className="col-span-full border-t border-slate-100 pt-4 mt-2">
+            <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-2 flex items-center gap-2">
+              <Camera className="w-4 h-4 text-blue-600" />
+              Ảnh tình trạng container ({formPhotos.length}/6)
+            </label>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-3">
+              {formPhotos.map((url, idx) => (
+                <div key={idx} className="relative h-20 rounded-lg overflow-hidden bg-slate-100 border border-slate-200">
+                  <img src={url} alt={`Ảnh ${idx+1}`} className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => setFormPhotos(prev => prev.filter((_, i) => i !== idx))}
+                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs hover:bg-red-600"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+            {formPhotos.length < 6 && (
+              <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-dashed border-blue-300 bg-blue-50/50 text-blue-700 text-xs sm:text-sm font-semibold cursor-pointer hover:bg-blue-100 transition-colors">
+                <UploadCloud className="w-4 h-4" />
+                <span>Tải ảnh container từ máy (tối đa 6 ảnh, 6 góc IICL)</span>
+                <input type="file" accept="image/*" multiple className="hidden" onChange={handleFormPhotoUpload} />
+              </label>
+            )}
+            <p className="text-xs text-slate-400 mt-1.5">Khuyến nghị: Chụp 6 góc (mặt trước, sau, trái, phải, sàn, trần) để đạt chuẩn IICL-5</p>
           </div>
           <div className="flex gap-2 justify-end pt-2">
             <button onClick={() => setShowAddForm(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl">
@@ -547,13 +636,14 @@ export const AssetsPage: React.FC = () => {
                     </button>
                   </div>
                   {inspectionResult && (
-                    <div className="text-xs text-teal-900 bg-white/90 p-2.5 rounded-xl border border-teal-200">
+                    <div className={`text-xs bg-white/90 p-2.5 rounded-xl border ${inspectionResult.requiresOpsReview ? 'border-amber-300 text-amber-900' : 'border-teal-200 text-teal-900'}`}>
                       <div className="flex items-center justify-between font-bold">
                         <span>Kết quả: {inspectionResult.text}</span>
-                        <span className="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md font-mono">
-                          {inspectionResult.score}/100
+                        <span className={`${inspectionResult.requiresOpsReview ? 'text-amber-700 bg-amber-100' : 'text-emerald-700 bg-emerald-100'} px-2 py-0.5 rounded-md font-mono whitespace-nowrap`}>
+                          {inspectionResult.score == null ? 'Chờ Ops' : `${inspectionResult.score}/100`}
                         </span>
                       </div>
+                      {inspectionResult.requiresOpsReview && <p className="mt-1 font-semibold">Trạng thái: chờ Ops kiểm tra thủ công trước khi tạo Offer.</p>}
                     </div>
                   )}
                 </div>

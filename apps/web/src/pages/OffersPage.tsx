@@ -220,6 +220,11 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
           <AlertTriangle className="w-4 h-4 shrink-0" />{errorMsg}
         </div>
       )}
+      {currentRole === 'ENTERPRISE_A' && currentCompany.verificationStatus !== 'VERIFIED' && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-800">
+          <Shield className="w-4 h-4 shrink-0" /> Hồ sơ doanh nghiệp đang chờ Ops xác minh. Chưa thể tạo hoặc gửi Offer.
+        </div>
+      )}
 
       {/* Add Form */}
       {showAddForm && currentRole === 'ENTERPRISE_A' && (

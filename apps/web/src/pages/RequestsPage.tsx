@@ -13,7 +13,7 @@ import { formatVnd, formatDistance, formatDateTime, formatRelativeTime } from '.
 import {
   Search, Plus, AlertTriangle, CheckCircle2, X, Clock, MapPin,
   Sparkles, Send, TrendingDown, ChevronDown, ChevronUp, AlertCircle,
-  Ship, Target, BarChart3, Star, Edit2, Trash2, Eye, Lock, ArrowRight, Check
+  Ship, Target, BarChart3, Star, Edit2, Trash2, Eye, Lock, ArrowRight, Check, Shield
 } from 'lucide-react';
 import { findMatchesForRequest } from '../services/matchingEngine';
 import { INITIAL_CARRIERS } from '../data/mockData';
@@ -341,6 +341,11 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
       {errorMsg && (
         <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700">
           <AlertTriangle className="w-4 h-4 shrink-0" />{errorMsg}
+        </div>
+      )}
+      {currentRole === 'ENTERPRISE_B' && currentCompany.verificationStatus !== 'VERIFIED' && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-800">
+          <Shield className="w-4 h-4 shrink-0" /> Hồ sơ doanh nghiệp đang chờ Ops xác minh. Chưa thể tạo hoặc gửi Request.
         </div>
       )}
 

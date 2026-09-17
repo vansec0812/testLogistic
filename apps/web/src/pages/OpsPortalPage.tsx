@@ -50,6 +50,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
 }) => {
   const { 
     companies, 
+    assets,
     offers, 
     requests, 
     transactions, 
@@ -62,11 +63,13 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
     toggleHold,
     addCompany,
     updateCompany,
-    deleteCompany
+    deleteCompany,
+    opsReviewAsset
   } = useDatabase();
   const { currentRole, currentUserEmail } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'carrier' | 'offers' | 'requests' | 'cases' | 'companies'>('carrier');
+  const [activeTab, setActiveTab] = useState<'carrier' | 'offers' | 'requests' | 'cases' | 'companies' | 'ai-inspection'>('carrier');
+  const [assetReviewNotes, setAssetReviewNotes] = useState<Record<string, string>>({});
 
   // Carrier approval inputs
   const [carrierModalTxnId, setCarrierModalTxnId] = useState<string | null>(null);
@@ -109,6 +112,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
   const underReviewOffers = offers.filter(o => o.status === 'UNDER_REVIEW');
   const underReviewRequests = requests.filter(r => r.status === 'UNDER_REVIEW');
   const openCases = cases.filter(c => c.status === 'OPEN' || c.status === 'IN_REVIEW');
+  const aiReviewAssets = assets.filter(a => a.aiInspection?.requiresOpsReview && ['ANOMALY', 'ERROR'].includes(a.aiInspection.status));
 
   const handleCarrierSubmit = (action: 'approve' | 'reject') => {
     if (!carrierModalTxnId) return;
@@ -170,13 +174,13 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
           </button>
           <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5" />
-            <span>{carrierPendingTxns.length + underReviewOffers.length + underReviewRequests.length + openCases.length} tác vụ</span>
+            <span>{carrierPendingTxns.length + underReviewOffers.length + underReviewRequests.length + aiReviewAssets.length + openCases.length} tác vụ</span>
           </span>
         </div>
       </div>
 
       {/* 2. Top Metric Counters */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <button
           onClick={() => setActiveTab('carrier')}
           className={`p-5 rounded-2xl border text-left transition-all ${
@@ -232,6 +236,22 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveTab('ai-inspection')}
+          className={`p-5 rounded-2xl border text-left transition-all ${
+            activeTab === 'ai-inspection'
+              ? 'bg-violet-50/50 border-violet-300 shadow-sm ring-1 ring-violet-200'
+              : 'bg-white border-slate-200 hover:border-slate-300'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">AI CHỜ OPS</span>
+            <Sparkles className="w-5 h-5 text-violet-600" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-bold font-mono text-slate-900 mt-2">{aiReviewAssets.length}</div>
+          <p className="text-xs text-violet-700 font-medium mt-1">Kiểm tra ảnh bất thường</p>
+        </button>
+
+        <button
           onClick={() => setActiveTab('cases')}
           className={`p-5 rounded-2xl border text-left transition-all ${
             activeTab === 'cases'
@@ -283,6 +303,16 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
             }`}
           >
             Xác minh Booking ({underReviewRequests.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('ai-inspection')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
+              activeTab === 'ai-inspection'
+                ? 'bg-white text-slate-900 shadow-sm border border-slate-200'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            AI kiểm tra ảnh ({aiReviewAssets.length})
           </button>
           <button
             onClick={() => setActiveTab('cases')}
@@ -463,6 +493,69 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                         className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm"
                       >
                         Xác nhận Booking (OPEN)
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab: AI image review queue */}
+        {activeTab === 'ai-inspection' && (
+          <div className="p-5 space-y-4">
+            <div className="p-4 rounded-xl bg-violet-50 border border-violet-200 text-xs text-violet-900">
+              AI chỉ phát hiện dấu hiệu và đưa ra điểm gợi ý. Ops phải đối chiếu bộ ảnh, ghi kết luận và quyết định trước khi Offer được sử dụng.
+            </div>
+            {aiReviewAssets.length === 0 ? (
+              <div className="py-12 text-center text-slate-400 text-xs">Không có container nào đang chờ Ops kiểm tra ảnh.</div>
+            ) : (
+              <div className="space-y-4">
+                {aiReviewAssets.map(asset => (
+                  <div key={asset.id} className="p-5 rounded-2xl border border-violet-200 bg-violet-50/30 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-slate-900">{asset.containerNumber}</span>
+                        <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">AI cần Ops</span>
+                        <span className="text-xs text-slate-500">{asset.carrierCode} · {asset.containerType}</span>
+                      </div>
+                      <span className="text-xs text-slate-500">Chủ quản lý: {asset.currentCustodianName}</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-slate-700">
+                      <div>Bộ ảnh: <strong>{asset.photos.length}/6 ảnh</strong></div>
+                      <div>Điểm AI: <strong>{asset.aiInspection?.score == null ? 'Không có' : `${asset.aiInspection.score}/100`}</strong></div>
+                      <div>Thời điểm: <strong>{asset.aiInspection?.inspectedAt ? formatDateTime(asset.aiInspection.inspectedAt) : '—'}</strong></div>
+                    </div>
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 text-xs text-slate-700">
+                      <strong>Nhận định AI:</strong> {asset.aiInspection?.summary}
+                      {asset.aiInspection?.details?.length ? <ul className="list-disc pl-5 mt-1">{asset.aiInspection.details.map((detail, index) => <li key={index}>{detail}</li>)}</ul> : null}
+                    </div>
+                    <textarea
+                      value={assetReviewNotes[asset.id] || ''}
+                      onChange={e => setAssetReviewNotes(prev => ({ ...prev, [asset.id]: e.target.value }))}
+                      placeholder="Ops ghi kết luận: đã xem đủ ảnh, tình trạng thực tế, yêu cầu bổ sung nếu có..."
+                      rows={2}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-violet-500"
+                    />
+                    <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                      <button
+                        onClick={() => {
+                          const result = opsReviewAsset(asset.id, 'REJECT', assetReviewNotes[asset.id] || 'Ảnh chưa đủ rõ hoặc tình trạng không đạt; yêu cầu bổ sung và kiểm tra lại.');
+                          alert(result.message);
+                        }}
+                        className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 text-xs font-semibold"
+                      >
+                        Từ chối / kiểm tra lại
+                      </button>
+                      <button
+                        onClick={() => {
+                          const result = opsReviewAsset(asset.id, 'APPROVE', assetReviewNotes[asset.id] || 'Ops đã đối chiếu bộ ảnh và xác nhận kết quả.');
+                          alert(result.message);
+                        }}
+                        className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm"
+                      >
+                        Ops xác nhận
                       </button>
                     </div>
                   </div>

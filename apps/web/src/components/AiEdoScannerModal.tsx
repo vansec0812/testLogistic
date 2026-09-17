@@ -3,25 +3,14 @@
 // Tuân thủ quy chuẩn SRS v1.0 & plan.md §6.2 (EXT-AI-OCR)
 // ==============================================================================
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   FileText, Sparkles, UploadCloud, CheckCircle2, AlertCircle,
-  X, Check, RefreshCw, FileCheck, ArrowRight, ShieldCheck, Eye, Key
+  X, Check, RefreshCw, FileCheck, ArrowRight, ShieldCheck, Eye
 } from 'lucide-react';
 import { CarrierCode, ContainerType } from '../types';
-import { extractEdoWithGemini } from '../services/geminiService';
-
-export interface ExtractedEdoData {
-  containerNumber: string;
-  carrierCode: CarrierCode;
-  edoNumber: string;
-  returnDepot: string;
-  expiryDate: string;
-  consignee: string;
-  containerType: ContainerType;
-  sealNumber?: string;
-  confidenceScore: number;
-}
+import { extractEdoWithAI, ExtractedEdoData } from '../services/aiService';
+export type { ExtractedEdoData } from '../services/aiService';
 
 interface AiEdoScannerModalProps {
   isOpen: boolean;
@@ -105,16 +94,24 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [extractedResult, setExtractedResult] = useState<ExtractedEdoData | null>(null);
-  const [geminiApiKey, setGeminiApiKey] = useState('');
-  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const [scanNotice, setScanNotice] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scanTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (scanTimerRef.current !== null) window.clearTimeout(scanTimerRef.current);
+  }, []);
 
   if (!isOpen) return null;
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const allowed = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
+    if (!allowed.includes(file.type) || file.size > 15 * 1024 * 1024) {
+      setScanNotice('Tệp không hợp lệ. Chỉ nhận PDF/PNG/JPG/WebP tối đa 15MB.');
+      return;
+    }
     setSelectedFile(file);
     setActiveSampleId('');
     setExtractedResult(null);
@@ -144,54 +141,34 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
     setExtractedResult(null);
     setScanNotice('');
 
-    // Nếu người dùng tải file thật từ máy tính lên: Ưu tiên gọi trực tiếp Google Gemini 1.5 Flash
+    // Tệp thật luôn đi qua ECont API. Nếu API lỗi, không tự tạo dữ liệu thay thế.
     if (selectedFile) {
       setScanProgress(40);
-      const geminiRes = await extractEdoWithGemini(selectedFile, geminiApiKey);
-      if (geminiRes.success && geminiRes.data) {
+      const aiRes = await extractEdoWithAI(selectedFile);
+      if (aiRes.success && aiRes.data) {
         setScanProgress(100);
         setIsScanning(false);
-        setExtractedResult(geminiRes.data);
-        setScanNotice('✓ Đã nhận diện trực tiếp thành công qua Google Gemini 1.5 Flash Vision API.');
+        setExtractedResult(aiRes.data);
+        setScanNotice('✓ Đã trích xuất qua ECont AI OCR API. Vui lòng đối chiếu trước khi áp dụng.');
         return;
       } else {
-        setScanNotice(geminiRes.error ? `⚠️ ${geminiRes.error} → Chuyển sang trích xuất OCR mẫu.` : '');
+        setIsScanning(false);
+        setScanNotice(`⚠️ ${aiRes.error || 'AI không trả về kết quả hợp lệ.'} Không tạo dữ liệu thay thế.`);
+        return;
       }
     }
 
-    // Mô phỏng tiến trình OCR phân tích thực thể tài liệu mẫu
-    const steps = [
-      { progress: 35, delay: 350 },
-      { progress: 65, delay: 750 },
-      { progress: 90, delay: 1100 },
-      { progress: 100, delay: 1400 },
-    ];
-
-    steps.forEach(({ progress, delay }) => {
-      setTimeout(() => {
-        setScanProgress(progress);
-        if (progress === 100) {
-          setIsScanning(false);
-          // Lấy dữ liệu từ mẫu đã chọn hoặc cấu trúc mặc định
-          const sample = SAMPLE_EDO_DOCS.find(s => s.id === activeSampleId);
-          if (sample) {
-            setExtractedResult(sample.data);
-          } else {
-            setExtractedResult({
-              containerNumber: 'EMCU9218471',
-              carrierCode: 'EVERGREEN',
-              edoNumber: `EDO-EVG-${Date.now().toString().slice(-6)}`,
-              returnDepot: 'ICD Transimex Thủ Đức',
-              expiryDate: '2026-09-29',
-              consignee: 'Hưng Thịnh Logistics Co., Ltd',
-              containerType: '40HC',
-              sealNumber: 'EVG-88129',
-              confidenceScore: 98.1,
-            });
-          }
-        }
-      }, delay);
-    });
+    // Chứng từ mẫu chỉ dùng cho demo, không đại diện cho dữ liệu thật.
+    setScanProgress(65);
+    scanTimerRef.current = window.setTimeout(() => {
+      const sample = SAMPLE_EDO_DOCS.find(s => s.id === activeSampleId);
+      setScanProgress(100);
+      setIsScanning(false);
+      if (sample) {
+        setExtractedResult({ ...sample.data, source: 'DEMO_SAMPLE' });
+        setScanNotice('Đây là dữ liệu chứng từ mẫu. Hãy tải file thật để gọi AI OCR API.');
+      }
+    }, 900);
   };
 
   const handleApply = () => {
@@ -228,41 +205,15 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
         </div>
 
         <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
-          {/* Gemini AI Powered Indicator */}
+          {/* AI status */}
           <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
               <span className="text-xs font-bold text-slate-800">
-                Google Gemini 1.5 Flash Vision API
-              </span>
-              <span className="text-xs text-blue-700 bg-blue-100 px-2 py-0.5 rounded font-mono font-semibold">
-                Model: gemini-1.5-flash
+                ECont AI OCR API · Kết quả cần đối chiếu
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowApiKeyInput(!showApiKeyInput)}
-              className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
-            >
-              <Key className="w-3.5 h-3.5" />
-              <span>{showApiKeyInput ? 'Ẩn cấu hình Key' : 'Nhập API Key'}</span>
-            </button>
           </div>
-
-          {showApiKeyInput && (
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700 block">
-                Google Gemini API Key (hoặc thiết lập biến VITE_GEMINI_API_KEY trong .env):
-              </label>
-              <input
-                type="password"
-                value={geminiApiKey}
-                onChange={e => setGeminiApiKey(e.target.value)}
-                placeholder="AIzaSy..."
-                className="w-full px-3.5 py-2 rounded-lg border border-slate-200 text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-              />
-            </div>
-          )}
 
           {scanNotice && (
             <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-xs font-semibold text-blue-800 flex items-center gap-2">
@@ -482,4 +433,3 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
     </div>
   );
 };
-
