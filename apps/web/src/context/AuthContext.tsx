@@ -1,11 +1,19 @@
 // ==============================================================================
-// ECont Authentication & Role Switcher Context
-// Cho phép chuyển đổi tức thì giữa 5 vai trò thực tế
+// ECont Authentication & Role Context - Version 2.0
+// Demo role switcher - Production: thay bằng JWT/Supabase session server-side
 // ==============================================================================
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { UserRole, Company } from '../types';
 import { INITIAL_COMPANIES } from '../data/mockData';
+
+interface RoleBadge {
+  label: string;
+  color: string;
+  bgColor: string;
+  desc: string;
+  icon: string;
+}
 
 interface AuthContextType {
   currentRole: UserRole;
@@ -13,91 +21,135 @@ interface AuthContextType {
   currentCompany: Company;
   currentUserEmail: string;
   currentUserName: string;
-  roleBadge: { label: string; color: string; desc: string };
+  currentUserId: string;
+  roleBadge: RoleBadge;
+  // Quyền theo role - để UI biết hiển thị gì (server vẫn check riêng)
+  canCreateOffers: boolean;
+  canCreateRequests: boolean;
+  canOpsReview: boolean;
+  canFinanceReconcile: boolean;
+  canAdmin: boolean;
+  // Kiểm tra xem user có phải là Bên A hay B trong giao dịch cụ thể không
+  isPartyA: (companyAId: string) => boolean;
+  isPartyB: (companyBId: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const ROLE_INFO: Record<UserRole, { label: string; color: string; desc: string }> = {
+const ROLE_INFO: Record<UserRole, RoleBadge> = {
   ENTERPRISE_A: {
-    label: 'Doanh nghiệp A (Chủ nguồn vỏ)',
-    color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
-    desc: 'Hưng Thịnh Logistics — Quản lý cont rỗng nhập khẩu cần trả vỏ'
+    label: 'Bên A · Đơn vị quản lý nguồn vỏ',
+    color: 'text-emerald-700 border-emerald-300',
+    bgColor: 'bg-emerald-50',
+    desc: 'Hưng Thịnh Logistics — Quản lý cont rỗng nhập khẩu cần trả vỏ',
+    icon: '🏭',
   },
   ENTERPRISE_B: {
-    label: 'Doanh nghiệp B (Chủ nhu cầu vỏ)',
-    color: 'bg-blue-500/20 text-blue-400 border-blue-500/40',
-    desc: 'Toàn Cầu Export Corp — Tìm vỏ cont đóng hàng xuất khẩu'
+    label: 'Bên B · Đơn vị có nhu cầu',
+    color: 'text-blue-700 border-blue-300',
+    bgColor: 'bg-blue-50',
+    desc: 'Toàn Cầu Export Corp — Tìm vỏ cont đóng hàng xuất khẩu',
+    icon: '📦',
   },
   OPS: {
-    label: 'Vận hành nền tảng (Ops)',
-    color: 'bg-amber-500/20 text-amber-400 border-amber-500/40',
-    desc: 'Điều phối viên ECont — Thẩm định DN, duyệt RU hãng tàu, xử lý sự cố'
+    label: 'Vận hành (Ops)',
+    color: 'text-amber-700 border-amber-300',
+    bgColor: 'bg-amber-50',
+    desc: 'Điều phối viên ECont — Thẩm định DN, duyệt RU, xử lý sự cố',
+    icon: '⚙️',
   },
   FINANCE: {
     label: 'Tài chính & Đối soát',
-    color: 'bg-purple-500/20 text-purple-400 border-purple-500/40',
-    desc: 'Kế toán ECont — Đối soát ngân hàng, thu hộ RU, hoàn tiền'
+    color: 'text-purple-700 border-purple-300',
+    bgColor: 'bg-purple-50',
+    desc: 'Kế toán ECont — Đối soát ngân hàng, thu hộ RU, hoàn tiền',
+    icon: '💰',
   },
   SUPER_ADMIN: {
     label: 'Quản trị hệ thống',
-    color: 'bg-rose-500/20 text-rose-400 border-rose-500/40',
-    desc: 'Quản trị viên cấp cao — Cấu hình CSDL Online, audit log và hệ thống'
-  }
+    color: 'text-rose-700 border-rose-300',
+    bgColor: 'bg-rose-50',
+    desc: 'Quản trị viên — Cấu hình hệ thống, audit log, toàn quyền',
+    icon: '🛡️',
+  },
+};
+
+// Demo user mapping theo role
+const ROLE_USERS: Record<UserRole, { companyIndex: number; email: string; name: string; userId: string }> = {
+  ENTERPRISE_A: {
+    companyIndex: 0,
+    email: 'hung.nguyen@hungthinhlog.vn',
+    name: 'Nguyễn Văn Hưng (Giám đốc Điều vận)',
+    userId: 'USR-A01',
+  },
+  ENTERPRISE_B: {
+    companyIndex: 1,
+    email: 'mai.tran@toancaugroups.vn',
+    name: 'Trần Thị Mai (Trưởng phòng XNK)',
+    userId: 'USR-B01',
+  },
+  OPS: {
+    companyIndex: 0, // Ops thuộc ECont, dùng company đầu tiên làm placeholder
+    email: 'ops.lead@econt.vn',
+    name: 'Vũ Minh Trí (Trưởng ban Điều phối)',
+    userId: 'USR-OPS01',
+  },
+  FINANCE: {
+    companyIndex: 0,
+    email: 'finance@econt.vn',
+    name: 'Đặng Thu Thảo (Kế toán trưởng)',
+    userId: 'USR-FIN01',
+  },
+  SUPER_ADMIN: {
+    companyIndex: 0,
+    email: 'admin@econt.vn',
+    name: 'Quản trị viên Hệ thống',
+    userId: 'USR-ADMIN01',
+  },
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentRole, setCurrentRole] = useState<UserRole>(() => {
-    return (localStorage.getItem('econt_active_role') as UserRole) || 'ENTERPRISE_A';
+    const saved = localStorage.getItem('econt_active_role') as UserRole;
+    return saved && Object.keys(ROLE_INFO).includes(saved) ? saved : 'ENTERPRISE_A';
   });
+
   useEffect(() => {
     localStorage.setItem('econt_active_role', currentRole);
   }, [currentRole]);
 
-  const setRole = (role: UserRole) => {
-    setCurrentRole(role);
-  };
+  const setRole = (role: UserRole) => setCurrentRole(role);
 
-  // Xác định thông tin công ty dựa trên vai trò hiện tại
-  let currentCompany = INITIAL_COMPANIES[0]; // Bên A
-  let currentUserEmail = 'hung.nguyen@hungthinhlog.vn';
-  let currentUserName = 'Nguyễn Văn Hưng (Giám đốc Điều vận)';
+  const value = useMemo((): AuthContextType => {
+    const userInfo = ROLE_USERS[currentRole];
+    const currentCompany = INITIAL_COMPANIES[userInfo.companyIndex];
 
-  if (currentRole === 'ENTERPRISE_B') {
-    currentCompany = INITIAL_COMPANIES[1]; // Bên B
-    currentUserEmail = 'mai.tran@toancaugroups.vn';
-    currentUserName = 'Trần Thị Mai (Trưởng phòng XNK)';
-  } else if (currentRole === 'OPS') {
-    currentUserEmail = 'ops.lead@econt.vn';
-    currentUserName = 'Vũ Minh Trí (Trưởng ban Điều phối)';
-  } else if (currentRole === 'FINANCE') {
-    currentUserEmail = 'finance@econt.vn';
-    currentUserName = 'Đặng Thu Thảo (Kế toán trưởng)';
-  } else if (currentRole === 'SUPER_ADMIN') {
-    currentUserEmail = 'admin@econt.vn';
-    currentUserName = 'Quản trị viên Hệ thống';
-  }
+    return {
+      currentRole,
+      setRole,
+      currentCompany,
+      currentUserEmail: userInfo.email,
+      currentUserName: userInfo.name,
+      currentUserId: userInfo.userId,
+      roleBadge: ROLE_INFO[currentRole],
+      canCreateOffers: currentRole === 'ENTERPRISE_A',
+      canCreateRequests: currentRole === 'ENTERPRISE_B',
+      canOpsReview: currentRole === 'OPS' || currentRole === 'SUPER_ADMIN',
+      canFinanceReconcile: currentRole === 'FINANCE' || currentRole === 'SUPER_ADMIN',
+      canAdmin: currentRole === 'SUPER_ADMIN',
+      isPartyA: (companyAId: string) =>
+        currentRole === 'ENTERPRISE_A' && currentCompany.id === companyAId,
+      isPartyB: (companyBId: string) =>
+        currentRole === 'ENTERPRISE_B' && currentCompany.id === companyBId,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentRole]);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        currentRole,
-        setRole,
-        currentCompany,
-        currentUserEmail,
-        currentUserName,
-        roleBadge: ROLE_INFO[currentRole]
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = (): AuthContextType => {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
   return ctx;
 };

@@ -1,50 +1,151 @@
 // ==============================================================================
-// Utility Functions: Tiền tệ VND, Thời gian UTC+7, Định dạng chuỗi
-// Tuân thủ quy định: Tiền VND nguyên, hiển thị rõ ràng, không làm tròn sai số
+// ECont Utility Functions
 // ==============================================================================
 
-import { type ClassValue, clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
-
-export function formatVnd(amount: number): string {
+/**
+ * Format tiền VND (integer) - KHÔNG dùng toFixed() hay float arithmetic
+ */
+export function formatVnd(amount: number | undefined | null): string {
+  if (amount === undefined || amount === null) return '—';
   return new Intl.NumberFormat('vi-VN', {
     style: 'currency',
     currency: 'VND',
-    maximumFractionDigits: 0
-  }).format(amount);
+    maximumFractionDigits: 0,
+  }).format(Math.round(amount));
 }
 
-export function formatDateTime(isoString: string): string {
+/**
+ * Format số thuần VND có đơn vị
+ */
+export function formatVndShort(amount: number | undefined | null): string {
+  if (amount === undefined || amount === null) return '—';
+  const v = Math.round(amount);
+  if (v >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(1)} tỷ ₫`;
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)} triệu ₫`;
+  if (v >= 1_000) return `${(v / 1000).toFixed(0)}k ₫`;
+  return `${v} ₫`;
+}
+
+/**
+ * Format ISO timestamp thành chuỗi ngày giờ Việt Nam (UTC+7)
+ */
+export function formatDateTime(isoStr: string | undefined | null): string {
+  if (!isoStr) return '—';
   try {
-    const d = new Date(isoString);
     return new Intl.DateTimeFormat('vi-VN', {
       timeZone: 'Asia/Ho_Chi_Minh',
-      year: 'numeric',
-      month: '2-digit',
       day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
-    }).format(d);
+      minute: '2-digit',
+    }).format(new Date(isoStr));
   } catch {
-    return isoString;
+    return '—';
   }
 }
 
-export function formatDateOnly(isoString: string): string {
+/**
+ * Format chỉ ngày
+ */
+export function formatDate(isoStr: string | undefined | null): string {
+  if (!isoStr) return '—';
   try {
-    const d = new Date(isoString);
     return new Intl.DateTimeFormat('vi-VN', {
       timeZone: 'Asia/Ho_Chi_Minh',
-      year: 'numeric',
+      day: '2-digit',
       month: '2-digit',
-      day: '2-digit'
-    }).format(d);
+      year: 'numeric',
+    }).format(new Date(isoStr));
   } catch {
-    return isoString;
+    return '—';
   }
 }
 
+/**
+ * Format khoảng thời gian tương đối (vd: "2 giờ trước", "còn 30 phút")
+ */
+export function formatRelativeTime(isoStr: string | undefined | null, future = false): string {
+  if (!isoStr) return '—';
+  try {
+    const diffMs = new Date(isoStr).getTime() - Date.now();
+    const absDiffMs = Math.abs(diffMs);
+    const isFuture = diffMs > 0;
+
+    const minutes = Math.round(absDiffMs / 60000);
+    const hours = Math.floor(absDiffMs / 3600000);
+    const days = Math.floor(absDiffMs / 86400000);
+
+    let label: string;
+    if (absDiffMs < 60000) {
+      label = 'vừa xong';
+    } else if (minutes < 60) {
+      label = `${minutes} phút`;
+    } else if (hours < 24) {
+      label = `${hours} giờ`;
+    } else {
+      label = `${days} ngày`;
+    }
+
+    if (label === 'vừa xong') return label;
+    return isFuture ? `còn ${label}` : `${label} trước`;
+  } catch {
+    return '—';
+  }
+}
+
+/**
+ * Format countdown timer (đếm ngược còn bao nhiêu: "28:45" - mm:ss hoặc "2h 15p")
+ */
+export function formatCountdown(isoDeadline: string | undefined | null): {
+  display: string;
+  isUrgent: boolean;
+  isExpired: boolean;
+  remainMs: number;
+} {
+  if (!isoDeadline) return { display: '—', isUrgent: false, isExpired: false, remainMs: 0 };
+  const remainMs = new Date(isoDeadline).getTime() - Date.now();
+  if (remainMs <= 0) {
+    return { display: 'HẾT HẠN', isUrgent: true, isExpired: true, remainMs: 0 };
+  }
+  const hours = Math.floor(remainMs / 3600000);
+  const minutes = Math.floor((remainMs % 3600000) / 60000);
+  const seconds = Math.floor((remainMs % 60000) / 1000);
+
+  let display: string;
+  if (hours > 0) {
+    display = `${hours}h ${minutes}p`;
+  } else {
+    display = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  return {
+    display,
+    isUrgent: remainMs < 30 * 60000, // < 30 phút
+    isExpired: false,
+    remainMs,
+  };
+}
+
+/**
+ * Format khoảng cách
+ */
+export function formatDistance(km: number): string {
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(1)} km`;
+}
+
+/**
+ * Rút gọn chuỗi nếu quá dài
+ */
+export function truncate(str: string, max = 50): string {
+  if (!str) return '';
+  return str.length > max ? str.slice(0, max) + '…' : str;
+}
+
+/**
+ * Tạo class names an toàn (tương tự clsx)
+ */
+export function cn(...classes: (string | undefined | null | false)[]): string {
+  return classes.filter(Boolean).join(' ');
+}

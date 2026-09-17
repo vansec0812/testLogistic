@@ -1,34 +1,37 @@
 // ==============================================================================
-// ECont Initial Dataset (Seed Data)
-// Dữ liệu mẫu chuẩn hóa theo thực tế ngành Logistics & Cảng biển Việt Nam
+// ECont Mock Data - Version 2.0
+// Dữ liệu mẫu phong phú theo thực tế ngành Logistics & Cảng biển Việt Nam
+// Tuân thủ SRS v1.0, agent.md và plan.md
 // ==============================================================================
 
 import {
-  Company,
-  Carrier,
-  Depot,
-  ContainerAsset,
-  Offer,
-  ContainerRequest,
-  Transaction,
-  CaseIssue,
-  AuditEvent
+  Company, Carrier, Depot, ContainerAsset, Offer, Booking, ContainerRequest,
+  Transaction, Agreement, CarrierApproval, PaymentOrder, DispatchPermit,
+  Inspection, HandoverRecord, CaseIssue, Rating, AuditEvent, Notification,
+  ChatThread, ChatMessage
 } from '../types';
 import { calculateCheckDigit } from '../services/iso6346';
 import { calculateQuote } from '../services/pricingEngine';
 
-// Helper tạo mã cont chuẩn ISO
+// Helper tạo mã cont chuẩn ISO 6346
 function makeIsoCont(prefix: string, serial6: string): string {
   const first10 = prefix.toUpperCase() + serial6;
   const cd = calculateCheckDigit(first10) ?? 0;
   return first10 + cd;
 }
 
+const now = Date.now();
+const h = (hours: number) => new Date(now + hours * 3600000).toISOString();
+const hAgo = (hours: number) => new Date(now - hours * 3600000).toISOString();
+const dAgo = (days: number) => new Date(now - days * 86400000).toISOString();
+
+// ==================== COMPANIES ====================
+
 export const INITIAL_COMPANIES: Company[] = [
   {
     id: 'COMP-A01',
     taxCode: '0314589234',
-    companyName: 'Công ty TNHH Tiếp Vận Hưng Thịnh (Bên A - Chủ nguồn vỏ)',
+    companyName: 'Công ty TNHH Tiếp Vận Hưng Thịnh',
     shortName: 'Hưng Thịnh Logistics',
     businessType: 'FORWARDER',
     address: 'Khu Công Nghiệp Cát Lái 2, P. Thạnh Mỹ Lợi, TP. Thủ Đức, TP.HCM',
@@ -36,14 +39,16 @@ export const INITIAL_COMPANIES: Company[] = [
     representativePhone: '0903123456',
     representativeEmail: 'hung.nguyen@hungthinhlog.vn',
     verificationStatus: 'VERIFIED',
+    verifiedAt: dAgo(90),
     trustScoreA: 94,
     trustScoreB: 88,
-    totalCompletedDeals: 28
+    totalCompletedAsA: 28,
+    totalCompletedAsB: 5,
   },
   {
     id: 'COMP-B01',
     taxCode: '0316789123',
-    companyName: 'Công ty Cổ phần Xuất Nhập Khẩu Toàn Cầu (Bên B - Cần mượn vỏ)',
+    companyName: 'Công ty Cổ phần Xuất Nhập Khẩu Toàn Cầu',
     shortName: 'Toàn Cầu Export Corp',
     businessType: 'FACTORY',
     address: 'Lô B3, KCN Sóng Thần 1, TP. Dĩ An, Tỉnh Bình Dương',
@@ -51,88 +56,90 @@ export const INITIAL_COMPANIES: Company[] = [
     representativePhone: '0918765432',
     representativeEmail: 'mai.tran@toancaugroups.vn',
     verificationStatus: 'VERIFIED',
+    verifiedAt: dAgo(45),
     trustScoreA: 85,
     trustScoreB: 92,
-    totalCompletedDeals: 34
+    totalCompletedAsA: 3,
+    totalCompletedAsB: 34,
   },
   {
     id: 'COMP-C01',
     taxCode: '0309876541',
     companyName: 'Công ty TNHH Vận Tải & Dịch Vụ Cảng Biển Miền Nam',
     shortName: 'Cảng Miền Nam Logistics',
-    businessType: 'TRUCKER',
+    businessType: 'FORWARDER',
     address: 'Đường Nguyễn Thị Định, P. Cát Lái, TP. Thủ Đức, TP.HCM',
     representativeName: 'Lê Hoàng Nam',
     representativePhone: '0982334455',
     representativeEmail: 'nam.le@cangmiennam.com',
     verificationStatus: 'VERIFIED',
-    totalCompletedDeals: 52
-  }
+    verifiedAt: dAgo(120),
+    trustScoreA: 87,
+    trustScoreB: 79,
+    totalCompletedAsA: 52,
+    totalCompletedAsB: 12,
+  },
+  {
+    id: 'COMP-PENDING01',
+    taxCode: '0323456789',
+    companyName: 'Công ty TNHH Xuất Nhập Khẩu Phú Quốc Xanh',
+    shortName: 'Phú Quốc Green Trade',
+    businessType: 'FACTORY',
+    address: '25 Đường số 9, KCN Vĩnh Lộc B, Bình Chánh, TP.HCM',
+    representativeName: 'Phạm Thanh Tuấn',
+    representativePhone: '0901234567',
+    representativeEmail: 'tuan.pham@phuquocgreen.vn',
+    verificationStatus: 'PENDING_VERIFICATION',
+    totalCompletedAsA: 0,
+    totalCompletedAsB: 0,
+  },
 ];
 
+// ==================== CARRIERS ====================
+
 export const INITIAL_CARRIERS: Carrier[] = [
-  {
-    id: 'CARR-MSK',
-    code: 'MSK',
-    name: 'Maersk Line A/S',
-    defaultRuFeeVnd: 1200000,
-    ruPolicyUrl: 'https://www.maersk.com/local-information/vietnam/empty-reuse'
-  },
-  {
-    id: 'CARR-CMA',
-    code: 'CMA',
-    name: 'CMA CGM Group',
-    defaultRuFeeVnd: 1300000,
-    ruPolicyUrl: 'https://www.cma-cgm.com/local/vietnam'
-  },
-  {
-    id: 'CARR-ONE',
-    code: 'ONE',
-    name: 'Ocean Network Express (ONE)',
-    defaultRuFeeVnd: 1100000,
-    ruPolicyUrl: 'https://vn.one-line.com'
-  },
-  {
-    id: 'CARR-EMC',
-    code: 'EMC',
-    name: 'Evergreen Marine Corp',
-    defaultRuFeeVnd: 1200000,
-    ruPolicyUrl: 'https://www.evergreen-marine.com'
-  }
+  { id: 'CARR-MSK', code: 'MSK', name: 'Maersk Line A/S', defaultRuFeeVnd: 1200000, isActive: true,
+    ruPolicyNotes: 'RU được chấp thuận theo từng case; cần nộp đơn qua email agent Maersk Vietnam.' },
+  { id: 'CARR-CMA', code: 'CMA', name: 'CMA CGM Group', defaultRuFeeVnd: 1300000, isActive: true,
+    ruPolicyNotes: 'Quy trình RU qua cổng CMA CGM eBusiness Portal; phí thanh toán trước khi nhận phiếu.' },
+  { id: 'CARR-ONE', code: 'ONE', name: 'Ocean Network Express (ONE)', defaultRuFeeVnd: 1100000, isActive: true,
+    ruPolicyNotes: 'Liên hệ ONE Vietnam office; RU được cấp trong 2-3 ngày làm việc.' },
+  { id: 'CARR-EMC', code: 'EMC', name: 'Evergreen Marine Corp', defaultRuFeeVnd: 1200000, isActive: true,
+    ruPolicyNotes: 'Áp dụng từng trường hợp; cần có booking và e-DO hợp lệ.' },
+  { id: 'CARR-COSCO', code: 'COSCO', name: 'COSCO Shipping Lines', defaultRuFeeVnd: 1150000, isActive: true,
+    ruPolicyNotes: 'Quy trình RU qua đại lý COSCO Vietnam.' },
 ];
+
+// ==================== DEPOTS ====================
 
 export const INITIAL_DEPOTS: Depot[] = [
   {
-    id: 'DEPOT-TC01',
-    code: 'TC-CATLAI',
-    name: 'Depot Tân Cảng Cát Lái',
-    carrierId: 'CARR-MSK',
+    id: 'DEPOT-TC01', code: 'TC-CATLAI', name: 'Depot Tân Cảng Cát Lái',
     address: 'Cổng B, Cảng Cát Lái, P. Cát Lái, TP. Thủ Đức, TP.HCM',
-    latitude: 10.7584,
-    longitude: 106.7932,
-    operatingHours: '24/7'
+    latitude: 10.7584, longitude: 106.7932, operatingHours: '24/7',
+    supportedCarriers: ['MSK', 'CMA', 'ONE'],
   },
   {
-    id: 'DEPOT-PL01',
-    code: 'ICD-PHUOCLONG',
-    name: 'ICD Phước Long 3',
-    carrierId: 'CARR-CMA',
+    id: 'DEPOT-PL01', code: 'ICD-PHUOCLONG', name: 'ICD Phước Long 3',
     address: 'Đường Song Hành Xa Lộ Hà Nội, P. Phước Long A, TP. Thủ Đức',
-    latitude: 10.8225,
-    longitude: 106.7681,
-    operatingHours: '06:00 - 22:00'
+    latitude: 10.8225, longitude: 106.7681, operatingHours: '06:00 - 22:00',
+    supportedCarriers: ['CMA', 'EMC'],
   },
   {
-    id: 'DEPOT-SOTRANS',
-    code: 'ICD-SOTRANS',
-    name: 'ICD Sotrans Thủ Đức',
-    carrierId: 'CARR-ONE',
+    id: 'DEPOT-SOTRANS', code: 'ICD-SOTRANS', name: 'ICD Sotrans Thủ Đức',
     address: 'Km 9 Xa Lộ Hà Nội, P. Trường Thọ, TP. Thủ Đức, TP.HCM',
-    latitude: 10.8351,
-    longitude: 106.7612,
-    operatingHours: '07:00 - 21:00'
-  }
+    latitude: 10.8351, longitude: 106.7612, operatingHours: '07:00 - 21:00',
+    supportedCarriers: ['ONE', 'COSCO'],
+  },
+  {
+    id: 'DEPOT-TANAMEXCO', code: 'DEPOT-TANAMEXCO', name: 'Depot Tanamexco Nhơn Trạch',
+    address: 'KCN Nhơn Trạch 2, Huyện Nhơn Trạch, Đồng Nai',
+    latitude: 10.7123, longitude: 106.9012, operatingHours: '06:00 - 20:00',
+    supportedCarriers: ['MSK', 'COSCO'],
+  },
 ];
+
+// ==================== ASSETS ====================
 
 export const INITIAL_ASSETS: ContainerAsset[] = [
   {
@@ -143,19 +150,33 @@ export const INITIAL_ASSETS: ContainerAsset[] = [
     carrierCode: 'MSK',
     currentCustodianId: 'COMP-A01',
     currentCustodianName: 'Hưng Thịnh Logistics',
-    physicalCondition: 'GOOD',
-    conditionNotes: 'Sàn gỗ sạch, không thủng nóc, cửa đóng khít, đủ chốt seal.',
+    physicalStatus: 'EMPTY_AT_YARD',
+    declaredCondition: 'GOOD',
+    reviewedCondition: 'GOOD',
+    conditionNotes: 'Sàn gỗ sạch, không thủng nóc, cửa đóng khít, đủ chốt seal. Đạt chuẩn xuất khẩu thực phẩm.',
     currentDepotReturnId: 'DEPOT-TC01',
     currentDepotName: 'Depot Tân Cảng Cát Lái',
     currentLocationName: 'Kho Ngoại quan Tân Cảng, TP. Thủ Đức',
     currentLatitude: 10.7812,
     currentLongitude: 106.7845,
-    freeTimeDetentionEnd: new Date(Date.now() + 4 * 86400000).toISOString(), // Còn 4 ngày free detention
+    locationObservedAt: hAgo(2),
+    locationVerifiedAt: hAgo(1),
+    freeTimeDetentionEnd: h(96),
+    freeTimeSource: 'e-DO MSKU-VN-2026-48291',
     photos: [
       'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=600&auto=format&fit=crop&q=80'
+      'https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1494412651409-8963ce7935a7?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1611269154421-4e27233ac5c7?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1547082299-de196ea013d6?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&auto=format&fit=crop&q=80',
     ],
-    isLocked: false
+    hasEdoDocument: true,
+    edoVerificationStatus: 'VERIFIED',
+    isLocked: true,
+    activeAllocationId: 'RES-TXN-2026-0042',
+    createdAt: dAgo(15),
+    updatedAt: hAgo(1),
   },
   {
     id: 'ASSET-02',
@@ -165,18 +186,31 @@ export const INITIAL_ASSETS: ContainerAsset[] = [
     carrierCode: 'CMA',
     currentCustodianId: 'COMP-A01',
     currentCustodianName: 'Hưng Thịnh Logistics',
-    physicalCondition: 'GOOD',
-    conditionNotes: 'Cont chuẩn thực phẩm, sạch sẽ, không mùi hôi.',
+    physicalStatus: 'EMPTY_AT_YARD',
+    declaredCondition: 'GOOD',
+    reviewedCondition: 'GOOD',
+    conditionNotes: 'Cont chuẩn thực phẩm, sạch sẽ, không mùi hôi. Gioăng cửa mới thay tháng 8/2026.',
     currentDepotReturnId: 'DEPOT-PL01',
     currentDepotName: 'ICD Phước Long 3',
     currentLocationName: 'Kho ICD Transimex, Thủ Đức, TP.HCM',
     currentLatitude: 10.8241,
     currentLongitude: 106.7712,
-    freeTimeDetentionEnd: new Date(Date.now() + 3 * 86400000).toISOString(),
+    locationObservedAt: hAgo(5),
+    freeTimeDetentionEnd: h(72),
+    freeTimeSource: 'e-DO CMA-VN-2026-77219',
     photos: [
-      'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600&auto=format&fit=crop&q=80'
+      'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1494412651409-8963ce7935a7?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1611269154421-4e27233ac5c7?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1547082299-de196ea013d6?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&auto=format&fit=crop&q=80',
     ],
-    isLocked: false
+    hasEdoDocument: true,
+    edoVerificationStatus: 'VERIFIED',
+    isLocked: false,
+    createdAt: dAgo(10),
+    updatedAt: hAgo(5),
   },
   {
     id: 'ASSET-03',
@@ -186,18 +220,88 @@ export const INITIAL_ASSETS: ContainerAsset[] = [
     carrierCode: 'ONE',
     currentCustodianId: 'COMP-A01',
     currentCustodianName: 'Hưng Thịnh Logistics',
-    physicalCondition: 'MINOR_DAMAGE',
-    conditionNotes: 'Có vết xước nhẹ ngoài vách phải, không rách tôn, kín nước 100%.',
+    physicalStatus: 'EMPTY_AT_YARD',
+    declaredCondition: 'MINOR_DAMAGE',
+    conditionNotes: 'Có vết xước nhẹ ngoài vách phải, không rách tôn, kín nước 100%. Phù hợp hàng khô.',
     currentDepotReturnId: 'DEPOT-SOTRANS',
     currentDepotName: 'ICD Sotrans Thủ Đức',
     currentLocationName: 'Kho Cảng Phú Hữu, TP. Thủ Đức',
     currentLatitude: 10.7932,
     currentLongitude: 106.8124,
-    freeTimeDetentionEnd: new Date(Date.now() + 5 * 86400000).toISOString(),
+    locationObservedAt: hAgo(28),
+    freeTimeDetentionEnd: h(120),
+    freeTimeSource: 'e-DO ONE-VN-2026-10248',
+    photos: [
+      'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=600&auto=format&fit=crop&q=80',
+    ],
+    hasEdoDocument: true,
+    edoVerificationStatus: 'NEEDS_INFO',
+    isLocked: false,
+    createdAt: dAgo(7),
+    updatedAt: hAgo(28),
+  },
+  {
+    id: 'ASSET-04',
+    containerNumber: makeIsoCont('EMCU', '381947'),
+    containerType: '40HC',
+    carrierId: 'CARR-EMC',
+    carrierCode: 'EMC',
+    currentCustodianId: 'COMP-A01',
+    currentCustodianName: 'Hưng Thịnh Logistics',
+    physicalStatus: 'AT_CUSTOMER',
+    declaredCondition: 'GOOD',
+    conditionNotes: 'Đang tại kho khách hàng. Dự kiến rỗng sau 16/09/2026.',
+    currentDepotReturnId: 'DEPOT-PL01',
+    currentDepotName: 'ICD Phước Long 3',
+    currentLocationName: 'KCN Bình Dương 1, Thủ Dầu Một',
+    currentLatitude: 10.9654,
+    currentLongitude: 106.6982,
+    locationObservedAt: dAgo(2),
     photos: [],
-    isLocked: false
-  }
+    hasEdoDocument: false,
+    edoVerificationStatus: 'UNVERIFIED',
+    isLocked: false,
+    createdAt: dAgo(20),
+    updatedAt: dAgo(2),
+  },
+  {
+    id: 'ASSET-05',
+    containerNumber: makeIsoCont('MSKU', '219743'),
+    containerType: '20GP',
+    carrierId: 'CARR-MSK',
+    carrierCode: 'MSK',
+    currentCustodianId: 'COMP-C01',
+    currentCustodianName: 'Cảng Miền Nam Logistics',
+    physicalStatus: 'EMPTY_AT_DEPOT',
+    declaredCondition: 'GOOD',
+    conditionNotes: 'Rỗng tại depot MSK, sẵn sàng cho RU.',
+    currentDepotReturnId: 'DEPOT-TC01',
+    currentDepotName: 'Depot Tân Cảng Cát Lái',
+    currentLocationName: 'Depot Tân Cảng Cát Lái',
+    currentLatitude: 10.7584,
+    currentLongitude: 106.7932,
+    locationObservedAt: hAgo(4),
+    locationVerifiedAt: hAgo(3),
+    freeTimeDetentionEnd: h(48),
+    freeTimeSource: 'e-DO MSKU-VN-2026-50112',
+    photos: [
+      'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1494412651409-8963ce7935a7?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1611269154421-4e27233ac5c7?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1547082299-de196ea013d6?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&auto=format&fit=crop&q=80',
+    ],
+    hasEdoDocument: true,
+    edoVerificationStatus: 'VERIFIED',
+    isLocked: false,
+    createdAt: dAgo(5),
+    updatedAt: hAgo(3),
+  },
 ];
+
+// ==================== OFFERS ====================
 
 export const INITIAL_OFFERS: Offer[] = [
   {
@@ -206,17 +310,25 @@ export const INITIAL_OFFERS: Offer[] = [
     asset: INITIAL_ASSETS[0],
     companyId: 'COMP-A01',
     companyName: 'Hưng Thịnh Logistics',
-    status: 'AVAILABLE',
+    status: 'HELD',
+    version: 3,
+    reviewerNotes: 'Hồ sơ đầy đủ, ảnh 6 góc rõ, cont đạt chuẩn xuất khẩu. APPROVED.',
+    reviewedBy: 'ops.lead@econt.vn',
+    reviewedAt: dAgo(2),
     pickupLocationName: 'Kho Ngoại quan Tân Cảng, TP. Thủ Đức',
     pickupLatitude: 10.7812,
     pickupLongitude: 106.7845,
-    availableFrom: new Date(Date.now() - 3600000).toISOString(),
-    availableTo: new Date(Date.now() + 3 * 86400000).toISOString(),
+    availableFrom: hAgo(3),
+    availableTo: h(72),
     expectedDepotId: 'DEPOT-TC01',
     expectedDepotName: 'Depot Tân Cảng Cát Lái',
     baselineDepotCostVnd: 3000000,
-    reviewNotes: 'Đã thẩm định: Hạn detention hợp lệ, cont đạt chuẩn xuất khẩu.',
-    createdAt: new Date(Date.now() - 24 * 3600000).toISOString()
+    vehicleRequirements: 'Xe đầu kéo 40 feet, tải trọng tối thiểu 30 tấn',
+    photoUrls: INITIAL_ASSETS[0].photos,
+    photoChecklistComplete: true,
+    edoDocumentIds: ['DOC-E01'],
+    createdAt: dAgo(3),
+    updatedAt: hAgo(1),
   },
   {
     id: 'OFR-2026-002',
@@ -225,18 +337,75 @@ export const INITIAL_OFFERS: Offer[] = [
     companyId: 'COMP-A01',
     companyName: 'Hưng Thịnh Logistics',
     status: 'AVAILABLE',
+    version: 1,
+    reviewerNotes: 'Đã thẩm định hình ảnh 6 góc cont. Hạn detention còn 3 ngày, đủ điều kiện.',
+    reviewedBy: 'ops.lead@econt.vn',
+    reviewedAt: hAgo(6),
     pickupLocationName: 'Kho ICD Transimex, Thủ Đức, TP.HCM',
     pickupLatitude: 10.8241,
     pickupLongitude: 106.7712,
-    availableFrom: new Date(Date.now() - 7200000).toISOString(),
-    availableTo: new Date(Date.now() + 2 * 86400000).toISOString(),
+    availableFrom: hAgo(7),
+    availableTo: h(60),
     expectedDepotId: 'DEPOT-PL01',
     expectedDepotName: 'ICD Phước Long 3',
     baselineDepotCostVnd: 2800000,
-    reviewNotes: 'Đã thẩm định hình ảnh 6 góc cont.',
-    createdAt: new Date(Date.now() - 12 * 3600000).toISOString()
-  }
+    vehicleRequirements: 'Xe đầu kéo 40 feet',
+    photoUrls: INITIAL_ASSETS[1].photos,
+    photoChecklistComplete: true,
+    edoDocumentIds: ['DOC-E02'],
+    createdAt: dAgo(1),
+    updatedAt: hAgo(6),
+  },
+  {
+    id: 'OFR-2026-003',
+    assetId: 'ASSET-05',
+    asset: INITIAL_ASSETS[4],
+    companyId: 'COMP-C01',
+    companyName: 'Cảng Miền Nam Logistics',
+    status: 'AVAILABLE',
+    version: 2,
+    reviewerNotes: 'Cont đang tại depot MSK, xác nhận rỗng. Hạn 2 ngày.',
+    reviewedBy: 'ops2@econt.vn',
+    reviewedAt: hAgo(3),
+    pickupLocationName: 'Depot Tân Cảng Cát Lái',
+    pickupLatitude: 10.7584,
+    pickupLongitude: 106.7932,
+    availableFrom: hAgo(4),
+    availableTo: h(44),
+    expectedDepotId: 'DEPOT-TC01',
+    expectedDepotName: 'Depot Tân Cảng Cát Lái',
+    baselineDepotCostVnd: 2500000,
+    photoUrls: INITIAL_ASSETS[4].photos,
+    photoChecklistComplete: true,
+    edoDocumentIds: ['DOC-E03'],
+    createdAt: dAgo(2),
+    updatedAt: hAgo(3),
+  },
+  {
+    id: 'OFR-2026-004',
+    assetId: 'ASSET-03',
+    asset: INITIAL_ASSETS[2],
+    companyId: 'COMP-A01',
+    companyName: 'Hưng Thịnh Logistics',
+    status: 'UNDER_REVIEW',
+    version: 1,
+    pickupLocationName: 'Kho Cảng Phú Hữu, TP. Thủ Đức',
+    pickupLatitude: 10.7932,
+    pickupLongitude: 106.8124,
+    availableFrom: h(2),
+    availableTo: h(96),
+    expectedDepotId: 'DEPOT-SOTRANS',
+    expectedDepotName: 'ICD Sotrans Thủ Đức',
+    baselineDepotCostVnd: 2600000,
+    photoUrls: INITIAL_ASSETS[2].photos,
+    photoChecklistComplete: false,
+    edoDocumentIds: [],
+    createdAt: hAgo(3),
+    updatedAt: hAgo(1),
+  },
 ];
+
+// ==================== REQUESTS ====================
 
 export const INITIAL_REQUESTS: ContainerRequest[] = [
   {
@@ -247,17 +416,23 @@ export const INITIAL_REQUESTS: ContainerRequest[] = [
     carrierCode: 'MSK',
     containerType: '40HC',
     bookingNumber: 'MSK-VN-984210',
-    status: 'OPEN',
+    status: 'ALLOCATED',
+    version: 2,
+    reviewerNotes: 'Booking xác minh hợp lệ, cut-off còn 72h.',
+    reviewedBy: 'ops.lead@econt.vn',
+    reviewedAt: hAgo(4),
     deliveryLocationName: 'Nhà máy May Toàn Cầu, KCN Sóng Thần 1, Dĩ An, Bình Dương',
     deliveryLatitude: 10.8924,
     deliveryLongitude: 106.7451,
-    pickupWindowStart: new Date(Date.now() + 7200000).toISOString(),
-    pickupWindowEnd: new Date(Date.now() + 48 * 3600000).toISOString(),
-    cutOffTime: new Date(Date.now() + 72 * 3600000).toISOString(),
+    pickupWindowStart: h(2),
+    pickupWindowEnd: h(48),
+    cutOffTime: h(72),
     maxDistanceKm: 45.0,
     cargoType: 'Hàng dệt may xuất khẩu đi Mỹ',
+    cargoRequirements: 'Hàng sạch khô, không mùi, yêu cầu sàn gỗ nguyên vẹn',
     baselinePickupCostVnd: 3400000,
-    createdAt: new Date(Date.now() - 8 * 3600000).toISOString()
+    createdAt: hAgo(8),
+    updatedAt: hAgo(4),
   },
   {
     id: 'REQ-2026-002',
@@ -268,50 +443,107 @@ export const INITIAL_REQUESTS: ContainerRequest[] = [
     containerType: '40HC',
     bookingNumber: 'CMA-VN-771290',
     status: 'OPEN',
+    version: 1,
+    reviewerNotes: 'Booking CMA hợp lệ. OPEN.',
+    reviewedBy: 'ops2@econt.vn',
+    reviewedAt: hAgo(2),
     deliveryLocationName: 'Kho Nông sản KCN Nhơn Trạch 2, Đồng Nai',
     deliveryLatitude: 10.7251,
     deliveryLongitude: 106.8912,
-    pickupWindowStart: new Date(Date.now() + 10800000).toISOString(),
-    pickupWindowEnd: new Date(Date.now() + 36 * 3600000).toISOString(),
-    cutOffTime: new Date(Date.now() + 60 * 3600000).toISOString(),
+    pickupWindowStart: h(3),
+    pickupWindowEnd: h(36),
+    cutOffTime: h(60),
     maxDistanceKm: 35.0,
     cargoType: 'Hạt điều & Cà phê rang xay xuất khẩu EU',
+    cargoRequirements: 'Không mùi hóa chất, không côn trùng, yêu cầu kiểm tra nghiêm ngặt',
     baselinePickupCostVnd: 3200000,
-    createdAt: new Date(Date.now() - 4 * 3600000).toISOString()
-  }
+    createdAt: hAgo(4),
+    updatedAt: hAgo(2),
+  },
+  {
+    id: 'REQ-2026-003',
+    companyId: 'COMP-B01',
+    companyName: 'Toàn Cầu Export Corp',
+    carrierId: 'CARR-MSK',
+    carrierCode: 'MSK',
+    containerType: '20GP',
+    bookingNumber: 'MSK-VN-100234',
+    status: 'OPEN',
+    version: 1,
+    reviewerNotes: 'Đã xác minh booking 20GP. OPEN.',
+    reviewedBy: 'ops.lead@econt.vn',
+    reviewedAt: hAgo(1),
+    deliveryLocationName: 'Kho Cà Phê Trung Nguyên, KCN Tây Bắc Củ Chi',
+    deliveryLatitude: 11.0124,
+    deliveryLongitude: 106.4982,
+    pickupWindowStart: h(8),
+    pickupWindowEnd: h(32),
+    cutOffTime: h(56),
+    maxDistanceKm: 50.0,
+    cargoType: 'Cà phê rang xay xuất khẩu Nhật Bản',
+    cargoRequirements: 'Cont sạch, không mùi hóa học, ưu tiên GOOD condition',
+    baselinePickupCostVnd: 2800000,
+    createdAt: hAgo(2),
+    updatedAt: hAgo(1),
+  },
 ];
 
-// Tạo 1 giao dịch mẫu ở trạng thái NEGOTIATING để trải nghiệm liền
-const sampleQuote = calculateQuote({
+// ==================== TRANSACTIONS ====================
+
+const sampleQuote1 = calculateQuote({
   tAVnd: 3000000,
   tBVnd: 3400000,
   fRuVnd: 1200000,
   shareAlpha: 0.5,
   truckingAbVnd: 800000,
   extrasAVnd: 0,
-  extrasBVnd: 0
+  extrasBVnd: 0,
 });
+
+const sampleAgreement1: Agreement = {
+  id: 'AGR-001-V2',
+  transactionId: 'TXN-2026-0042',
+  version: 2,
+  contentHash: 'sha256-abc123def456',
+  createdAt: hAgo(3),
+  companyAAcceptedAt: hAgo(2),
+  companyAAcceptedBy: 'hung.nguyen@hungthinhlog.vn',
+  companyACompanyId: 'COMP-A01',
+  companyBAcceptedAt: hAgo(1.5),
+  companyBAcceptedBy: 'mai.tran@toancaugroups.vn',
+  companyBCompanyId: 'COMP-B01',
+};
 
 export const INITIAL_TRANSACTIONS: Transaction[] = [
   {
     id: 'TXN-2026-0042',
-    offerId: INITIAL_OFFERS[0].id,
-    requestId: INITIAL_REQUESTS[0].id,
-    assetId: INITIAL_ASSETS[0].id,
+    offerId: 'OFR-2026-001',
+    requestId: 'REQ-2026-001',
+    assetId: 'ASSET-01',
     companyAId: 'COMP-A01',
     companyAName: 'Hưng Thịnh Logistics',
     companyBId: 'COMP-B01',
     companyBName: 'Toàn Cầu Export Corp',
     asset: INITIAL_ASSETS[0],
-    status: 'NEGOTIATING',
+    status: 'PENDING_CARRIER',
+    rowVersion: 5,
     isOnHold: false,
-    dueAt: new Date(Date.now() + 28 * 60000).toISOString(), // 28 phút giữ chỗ còn lại
-    nextAction: 'Hai bên A và B xem xét nội dung Thỏa thuận tái sử dụng và bấm Ký chấp thuận.',
-    agreementVersion: 1,
-    quote: sampleQuote,
-    createdAt: new Date(Date.now() - 15 * 60000).toISOString()
-  }
+    dueAt: h(4),
+    nextAction: 'Bộ phận Vận hành (Ops) đang liên hệ hãng tàu Maersk để xin duyệt RU. Dự kiến có kết quả trong 4 giờ.',
+    allowedActions: [],
+    blockingReasons: [],
+    currentAgreementVersion: 2,
+    agreements: [sampleAgreement1],
+    quote: sampleQuote1,
+    carrierApproval: undefined,
+    paymentOrderA: undefined,
+    paymentOrderB: undefined,
+    createdAt: hAgo(6),
+    updatedAt: hAgo(1.5),
+  },
 ];
+
+// ==================== CASES ====================
 
 export const INITIAL_CASES: CaseIssue[] = [
   {
@@ -319,34 +551,256 @@ export const INITIAL_CASES: CaseIssue[] = [
     transactionId: 'TXN-2026-0042',
     openedByCompanyId: 'COMP-B01',
     openedByCompanyName: 'Toàn Cầu Export Corp',
+    assignedToOpsEmail: 'ops.lead@econt.vn',
     caseType: 'DAMAGE_DISPUTE',
     title: 'Nghi ngờ rách ron cao su cánh cửa trái',
     description: 'Biên bản kiểm tra ghi nhận gioăng cửa hơi hở 3cm, yêu cầu Ops xem xét trước khi nhận cont.',
     status: 'RESOLVED',
-    resolutionSummary: 'Ops đã đối chiếu ảnh gốc và xác nhận vệt xước ngoài, đã kiểm tra phun nước không lọt sáng/nước. Đồng ý cho phép tiếp tục.',
-    resolvedAt: new Date(Date.now() - 3600000).toISOString(),
-    createdAt: new Date(Date.now() - 7200000).toISOString()
-  }
+    priority: 'HIGH',
+    evidenceFileIds: [],
+    resolution: {
+      summary: 'Ops đã đối chiếu ảnh gốc và xác nhận vệt xước ngoài, đã kiểm tra phun nước không lọt sáng/nước. Đồng ý cho phép tiếp tục.',
+      faultParty: 'NONE',
+      resolvedBy: 'ops.lead@econt.vn',
+      resolvedAt: hAgo(1),
+    },
+    closedAt: hAgo(1),
+    createdAt: hAgo(7),
+    updatedAt: hAgo(1),
+  },
+  {
+    id: 'CASE-002',
+    assetId: 'ASSET-03',
+    openedByCompanyId: 'COMP-A01',
+    openedByCompanyName: 'Hưng Thịnh Logistics',
+    assignedToOpsEmail: 'ops2@econt.vn',
+    caseType: 'DOCUMENT_FRAUD',
+    title: 'Cần xác minh e-DO hồ sơ ASSET-03',
+    description: 'Số tham chiếu e-DO cần được xác nhận lại với hãng tàu ONE. Hồ sơ hiện trong trạng thái NEEDS_INFO.',
+    status: 'IN_REVIEW',
+    priority: 'MEDIUM',
+    evidenceFileIds: [],
+    createdAt: hAgo(3),
+    updatedAt: hAgo(1),
+  },
 ];
+
+// ==================== AUDIT LOGS ====================
 
 export const INITIAL_AUDIT_LOGS: AuditEvent[] = [
   {
     id: 'AUD-001',
-    timestamp: new Date(Date.now() - 3600000).toISOString(),
-    actorEmail: 'system@econt.vn',
+    correlationId: 'corr-hold-42',
+    timestamp: hAgo(6),
+    actorEmail: 'mai.tran@toancaugroups.vn',
+    actorCompanyId: 'COMP-B01',
+    actorRole: 'ENTERPRISE_B',
     action: 'HOLD_RESERVATION_CREATED',
-    entityName: 'Reservation',
-    entityId: 'RES-001',
-    details: 'Đã tạo khóa giữ chỗ nguyên tử 30 phút cho Asset ' + INITIAL_ASSETS[0].containerNumber
+    entityType: 'Reservation',
+    entityId: 'RES-TXN-2026-0042',
+    aggregateVersion: 1,
+    details: `Đã tạo khóa giữ chỗ nguyên tử 30 phút cho Asset ${INITIAL_ASSETS[0].containerNumber}`,
+    requestId: 'req-abc001',
   },
   {
     id: 'AUD-002',
-    timestamp: new Date(Date.now() - 1800000).toISOString(),
-    actorEmail: 'ops.admin@econt.vn',
-    action: 'OFFER_VERIFIED_APPROVED',
-    entityName: 'Offer',
-    entityId: INITIAL_OFFERS[0].id,
-    details: 'Thẩm định hồ sơ cont đạt chuẩn xuất khẩu.'
-  }
+    correlationId: 'corr-offer-review-01',
+    timestamp: dAgo(2),
+    actorEmail: 'ops.lead@econt.vn',
+    actorRole: 'OPS',
+    action: 'OFFER_APPROVED',
+    entityType: 'Offer',
+    entityId: 'OFR-2026-001',
+    aggregateVersion: 3,
+    details: 'Ops thẩm định hồ sơ cont đạt chuẩn xuất khẩu. APPROVE_LISTING.',
+    requestId: 'req-ops002',
+  },
+  {
+    id: 'AUD-003',
+    correlationId: 'corr-agr-accept-a',
+    timestamp: hAgo(2),
+    actorEmail: 'hung.nguyen@hungthinhlog.vn',
+    actorCompanyId: 'COMP-A01',
+    actorRole: 'ENTERPRISE_A',
+    action: 'AGREEMENT_ACCEPTED',
+    entityType: 'Agreement',
+    entityId: 'AGR-001-V2',
+    aggregateVersion: 2,
+    details: 'Bên A ký chấp thuận Thỏa thuận v2. Hash: sha256-abc123def456',
+    requestId: 'req-agr003',
+  },
+  {
+    id: 'AUD-004',
+    correlationId: 'corr-agr-accept-b',
+    timestamp: hAgo(1.5),
+    actorEmail: 'mai.tran@toancaugroups.vn',
+    actorCompanyId: 'COMP-B01',
+    actorRole: 'ENTERPRISE_B',
+    action: 'AGREEMENT_ACCEPTED',
+    entityType: 'Agreement',
+    entityId: 'AGR-001-V2',
+    aggregateVersion: 2,
+    details: 'Bên B ký chấp thuận Thỏa thuận v2. Hash: sha256-abc123def456',
+    requestId: 'req-agr004',
+  },
+  {
+    id: 'AUD-005',
+    correlationId: 'corr-txn-transition',
+    timestamp: hAgo(1),
+    actorEmail: 'system@econt.vn',
+    actorRole: 'SYSTEM',
+    action: 'TRANSACTION_STATUS_CHANGED',
+    entityType: 'Transaction',
+    entityId: 'TXN-2026-0042',
+    aggregateVersion: 5,
+    details: 'Chuyển NEGOTIATING → PENDING_CARRIER. Hai acceptance hợp lệ.',
+    requestId: 'req-sys005',
+  },
 ];
 
+// ==================== NOTIFICATIONS ====================
+
+export const INITIAL_NOTIFICATIONS: Notification[] = [
+  {
+    id: 'NOTIF-001',
+    recipientCompanyId: 'COMP-A01',
+    type: 'TRANSACTION_UPDATE',
+    title: 'Giao dịch TXN-2026-0042 đang chờ hãng tàu',
+    body: 'Cả hai bên đã ký thỏa thuận. Bộ phận Ops đang liên hệ Maersk xin RU.',
+    relatedEntityId: 'TXN-2026-0042',
+    relatedEntityType: 'Transaction',
+    isRead: false,
+    createdAt: hAgo(1),
+    expiresAt: h(23),
+  },
+  {
+    id: 'NOTIF-002',
+    recipientCompanyId: 'COMP-B01',
+    type: 'DEADLINE_ALERT',
+    title: '⚠️ Hạn giữ chỗ còn 4 giờ — TXN-2026-0042',
+    body: 'Nếu hãng tàu không duyệt trong 4 giờ, giao dịch sẽ EXPIRED.',
+    relatedEntityId: 'TXN-2026-0042',
+    relatedEntityType: 'Transaction',
+    isRead: false,
+    createdAt: hAgo(0.5),
+    expiresAt: h(4),
+  },
+  {
+    id: 'NOTIF-003',
+    recipientCompanyId: 'COMP-B01',
+    type: 'TRANSACTION_UPDATE',
+    title: 'Có Offer 40HC Maersk phù hợp với REQ-2026-003',
+    body: 'Tìm thấy 1 Offer phù hợp với nhu cầu 20GP Maersk của bạn. Điểm phù hợp: 87/100.',
+    relatedEntityId: 'REQ-2026-003',
+    relatedEntityType: 'Request',
+    isRead: true,
+    createdAt: hAgo(1),
+  },
+];
+
+// ==================== CHAT ====================
+
+export const INITIAL_CHAT_THREADS: ChatThread[] = [
+  {
+    id: 'CHAT-001',
+    companyAId: 'COMP-A01',
+    companyAName: 'Hưng Thịnh Logistics',
+    companyBId: 'COMP-B01',
+    companyBName: 'Toàn Cầu Export Corp',
+    offerId: 'OFR-2026-001',
+    requestId: 'REQ-2026-001',
+    transactionId: 'TXN-2026-0042',
+    contextLabel: 'Giao dịch TXN-2026-0042 · MSKU8421093 ↔ MSK-VN-984210',
+    contextType: 'TRANSACTION',
+    createdAt: hAgo(8),
+    updatedAt: hAgo(0.5),
+    lastMessageAt: hAgo(0.5),
+    unreadCountA: 0,
+    unreadCountB: 1,
+  },
+  {
+    id: 'CHAT-002',
+    companyAId: 'COMP-A01',
+    companyAName: 'Hưng Thịnh Logistics',
+    companyBId: 'COMP-B01',
+    companyBName: 'Toàn Cầu Export Corp',
+    offerId: 'OFR-2026-002',
+    requestId: 'REQ-2026-002',
+    contextLabel: 'Quan tâm · CMAU5192834 ↔ CMA-VN-771290',
+    contextType: 'PRE_BOOKING',
+    createdAt: hAgo(3),
+    updatedAt: hAgo(2),
+    lastMessageAt: hAgo(2),
+    unreadCountA: 1,
+    unreadCountB: 0,
+  },
+];
+
+export const INITIAL_CHAT_MESSAGES: ChatMessage[] = [
+  {
+    id: 'MSG-001',
+    clientId: 'cli-msg-001',
+    threadId: 'CHAT-001',
+    senderCompanyId: 'COMP-B01',
+    senderCompanyName: 'Toàn Cầu Export Corp',
+    senderRole: 'B',
+    senderName: 'Trần Thị Mai',
+    body: 'Xin chào Anh Hưng! Chúng tôi quan tâm đến cont MSKU8421093 của quý công ty cho booking MSK-VN-984210. Cont có đang sẵn sàng để lấy hôm nay không?',
+    createdAt: hAgo(7),
+  },
+  {
+    id: 'MSG-002',
+    clientId: 'cli-msg-002',
+    threadId: 'CHAT-001',
+    senderCompanyId: 'COMP-A01',
+    senderCompanyName: 'Hưng Thịnh Logistics',
+    senderRole: 'A',
+    senderName: 'Nguyễn Văn Hưng',
+    body: 'Chào Chị Mai! Cont vẫn đang tại kho Tân Cảng và sẵn sàng. Condition GOOD, đã kiểm tra 6 góc đầy đủ. Chúng tôi đồng ý trao đổi thêm thông tin để tiến hành.',
+    createdAt: hAgo(6.5),
+  },
+  {
+    id: 'MSG-003',
+    clientId: 'cli-msg-003',
+    threadId: 'CHAT-001',
+    senderCompanyId: 'COMP-B01',
+    senderCompanyName: 'Toàn Cầu Export Corp',
+    senderRole: 'B',
+    senderName: 'Trần Thị Mai',
+    body: 'Tuyệt vời! Chúng tôi đã tiến hành giữ chỗ qua hệ thống. Mong Ops ECont sớm xử lý hồ sơ RU với Maersk. Hạn cut-off của chúng tôi là sau 3 ngày.',
+    createdAt: hAgo(5.5),
+  },
+  {
+    id: 'MSG-004',
+    clientId: 'cli-msg-004',
+    threadId: 'CHAT-001',
+    senderCompanyId: 'COMP-A01',
+    senderCompanyName: 'Hưng Thịnh Logistics',
+    senderRole: 'A',
+    senderName: 'Nguyễn Văn Hưng',
+    body: 'Chúng tôi đã ký Thỏa thuận v2. Hiện đang trong trạng thái chờ hãng tàu. Nếu Ops cần thêm thông tin gì từ phía A, chúng tôi sẵn sàng cung cấp.',
+    createdAt: hAgo(0.5),
+  },
+  {
+    id: 'MSG-005',
+    clientId: 'cli-msg-005',
+    threadId: 'CHAT-002',
+    senderCompanyId: 'COMP-B01',
+    senderCompanyName: 'Toàn Cầu Export Corp',
+    senderRole: 'B',
+    senderName: 'Trần Thị Mai',
+    body: 'Xin chào! Chúng tôi đang cần 40HC CMA cho booking CMA-VN-771290. Cont của quý vị có thể lấy được trước ngày mai không?',
+    createdAt: hAgo(3),
+  },
+  {
+    id: 'MSG-006',
+    clientId: 'cli-msg-006',
+    threadId: 'CHAT-002',
+    senderCompanyId: 'COMP-A01',
+    senderCompanyName: 'Hưng Thịnh Logistics',
+    senderRole: 'A',
+    senderName: 'Nguyễn Văn Hưng',
+    body: 'Cont CMAU5192834 sẵn sàng lấy từ sáng mai 07:00. Kho tại ICD Transimex. Chị muốn xem thêm ảnh kiểm tra không?',
+    createdAt: hAgo(2),
+  },
+];

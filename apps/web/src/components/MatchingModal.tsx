@@ -1,5 +1,5 @@
 // ==============================================================================
-// ECont Matching Engine Modal
+// ECont Matching Engine Modal - Version 2.0
 // Hiển thị danh sách ứng viên ghép đôi theo thuật toán SRS mục 5.2 kèm nút Giữ chỗ nguyên tử
 // ==============================================================================
 
@@ -7,19 +7,17 @@ import React, { useState } from 'react';
 import { ContainerRequest, MatchCandidate } from '../types';
 import { useDatabase } from '../context/DatabaseContext';
 import { findMatchesForRequest } from '../services/matchingEngine';
-import { formatVnd, formatDateTime } from '../lib/utils';
+import { formatVnd, formatDistance } from '../lib/utils';
 import { RouteVisualizer } from './RouteVisualizer';
 import { PricingBreakdownCard } from './PricingBreakdownCard';
 import { 
   Sparkles, 
   X, 
   Lock, 
-  CheckCircle2, 
   AlertTriangle, 
-  Navigation, 
-  ArrowRight,
-  ShieldCheck,
-  TrendingUp
+  CheckCircle2,
+  MapPin,
+  Clock
 } from 'lucide-react';
 
 interface MatchingModalProps {
@@ -34,21 +32,24 @@ export const MatchingModal: React.FC<MatchingModalProps> = ({
   onGoToTransaction
 }) => {
   const { offers, holdAtomicReservation } = useDatabase();
-  const [selectedCandidate, setSelectedCandidate] = useState<MatchCandidate | null>(null);
   const [isHolding, setIsHolding] = useState(false);
 
   // Chạy thuật toán Matching
-  const candidates = findMatchesForRequest(request, offers);
+  const matchResult = findMatchesForRequest(request, offers.filter(o => o.status === 'AVAILABLE'));
+  const candidates = matchResult.candidates;
 
   const handleHold = (candidate: MatchCandidate) => {
     setIsHolding(true);
     const res = holdAtomicReservation(candidate, request);
     setIsHolding(false);
 
-    if (res.success && res.transactionId) {
+    if (res.success) {
+      const data = res.data as { transactionId: string } | undefined;
       alert(res.message);
       onClose();
-      onGoToTransaction(res.transactionId);
+      if (data?.transactionId) {
+        onGoToTransaction(data.transactionId);
+      }
     } else {
       alert(res.message || 'Không thể giữ chỗ.');
     }
@@ -80,12 +81,23 @@ export const MatchingModal: React.FC<MatchingModalProps> = ({
 
         {/* Content list */}
         <div className="p-6 overflow-y-auto space-y-6">
+          {matchResult.dataWarnings.length > 0 && (
+            <div className="p-3 rounded-lg bg-amber-950/60 border border-amber-800 text-amber-300 text-xs space-y-1">
+              {matchResult.dataWarnings.map((w, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{w}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {candidates.length === 0 ? (
             <div className="text-center py-12 space-y-3">
               <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
               <h4 className="text-base font-semibold text-white">Không tìm thấy vỏ cont phù hợp</h4>
               <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Hiện chưa có Offer nào thỏa mãn đồng thời: Khớp hãng tàu ({request.carrierCode}), cùng loại ({request.containerType}), trong bán kính {request.maxDistanceKm}km và khả thi về giờ cắt máng.
+                Hiện chưa có Offer nào thỏa mãn đồng thời: Khớp hãng tàu ({request.carrierCode}), cùng loại ({request.containerType}), trong bán kính {request.maxDistanceKm}km và khả thi về giờ cắt máng ({matchResult.eliminatedCount} vỏ bị loại).
               </p>
             </div>
           ) : (
@@ -129,8 +141,8 @@ export const MatchingModal: React.FC<MatchingModalProps> = ({
 
                     <button
                       onClick={() => handleHold(cand)}
-                      disabled={isHolding}
-                      className="ml-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-emerald-950 transition-all"
+                      disabled={isHolding || cand.requiresLocationRefresh}
+                      className="ml-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-emerald-950 transition-all"
                     >
                       <Lock className="w-3.5 h-3.5" />
                       <span>GIỮ CHỖ 30 PHÚT (ATOMIC HOLD)</span>
@@ -146,11 +158,11 @@ export const MatchingModal: React.FC<MatchingModalProps> = ({
                   </div>
                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
                     <div className="text-slate-400 text-[11px]">Độ giãn thời gian T</div>
-                    <div className="font-mono font-bold text-emerald-400 mt-0.5">{cand.scoreT}/100 (Khả thi)</div>
+                    <div className="font-mono font-bold text-emerald-400 mt-0.5">{cand.scoreT}/100 ({cand.timeFeasible ? 'Khả thi' : 'Không khả thi'})</div>
                   </div>
                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
                     <div className="text-slate-400 text-[11px]">Chất lượng vỏ C</div>
-                    <div className="font-mono font-bold text-blue-400 mt-0.5">{cand.scoreC}/100 ({cand.offer.asset.physicalCondition})</div>
+                    <div className="font-mono font-bold text-blue-400 mt-0.5">{cand.scoreC}/100 ({cand.offer.asset.declaredCondition})</div>
                   </div>
                 </div>
 
@@ -158,7 +170,7 @@ export const MatchingModal: React.FC<MatchingModalProps> = ({
                 <RouteVisualizer
                   locationA={cand.offer.pickupLocationName}
                   locationB={request.deliveryLocationName}
-                  depotReturn={cand.offer.expectedDepotName}
+                  depotReturn={cand.offer.expectedDepotName || 'Depot chỉ định'}
                   distanceKm={cand.distanceKm}
                   timeFeasible={cand.timeFeasible}
                   scoreD={cand.scoreD}
@@ -166,7 +178,7 @@ export const MatchingModal: React.FC<MatchingModalProps> = ({
                 />
 
                 {/* Financial breakdown preview */}
-                <PricingBreakdownCard quote={cand.quote} showFixtureCheck={false} />
+                <PricingBreakdownCard quote={cand.quote} context="match_preview" />
               </div>
             ))
           )}
@@ -175,4 +187,3 @@ export const MatchingModal: React.FC<MatchingModalProps> = ({
     </div>
   );
 };
-

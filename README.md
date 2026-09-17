@@ -45,7 +45,6 @@ Frontend có sẵn dữ liệu demo và lưu trạng thái trong `localStorage`,
 ```text
 apps/web/                     React frontend
 supabase/migrations/          SQL schema cho Supabase
-plan(2).md                    Kế hoạch triển khai
+plan.md                       Kế hoạch đầy đủ theo SRS v1.0 (bản hiện hành)
 agent(2).md                   Quy ước làm việc cho agent
 ```
-

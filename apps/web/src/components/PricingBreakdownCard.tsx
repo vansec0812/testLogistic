@@ -1,173 +1,189 @@
 // ==============================================================================
-// ECont Pricing & Savings Breakdown Card
-// Hiển thị trực quan toàn bộ công thức tài chính và mức tiết kiệm chuẩn SRS
+// ECont PricingBreakdownCard - Version 2.0
+// Hiển thị bảng báo giá minh bạch theo SRS công thức tiết kiệm
 // ==============================================================================
 
 import React, { useState } from 'react';
 import { Quote } from '../types';
 import { formatVnd } from '../lib/utils';
-import { Calculator, CheckCircle2, Info, ArrowRight, Shield } from 'lucide-react';
-import { verifySrsFixture } from '../services/pricingEngine';
+import { ChevronDown, ChevronUp, Info, TrendingDown, TrendingUp, AlertCircle } from 'lucide-react';
 
-interface PricingCardProps {
+interface PricingBreakdownCardProps {
   quote: Quote;
-  showFixtureCheck?: boolean;
+  showDetails?: boolean;
+  context?: 'match_preview' | 'transaction_detail' | 'settlement';
 }
 
-export const PricingBreakdownCard: React.FC<PricingCardProps> = ({ quote, showFixtureCheck = true }) => {
-  const [fixtureResult, setFixtureResult] = useState<{ passed: boolean; message: string } | null>(null);
+function StatusChip({ status }: { status: 'FIRM' | 'ESTIMATE' | 'MISSING' }) {
+  if (status === 'FIRM') {
+    return <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-1">CHÍNH XÁC</span>;
+  }
+  if (status === 'ESTIMATE') {
+    return <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded px-1">ƯỚC TÍNH</span>;
+  }
+  return <span className="text-[9px] font-bold text-slate-400 bg-slate-100 border border-slate-200 rounded px-1">THIẾU DỮ LIỆU</span>;
+}
 
-  const runFixtureTest = () => {
-    const res = verifySrsFixture();
-    if (res.passed) {
-      setFixtureResult({
-        passed: true,
-        message: 'PASS 100%: Khớp hoàn toàn với bảng thử nghiệm SRS! (A tiết kiệm 1.800.000đ, B tiết kiệm 1.700.000đ, A nộp 1.200.000đ, B nộp 900.000đ).'
-      });
-    } else {
-      setFixtureResult({
-        passed: false,
-        message: 'FAIL: Sai lệch so với công thức chuẩn.'
-      });
-    }
-  };
+export const PricingBreakdownCard: React.FC<PricingBreakdownCardProps> = ({
+  quote,
+  showDetails: initialShowDetails = false,
+  context = 'transaction_detail',
+}) => {
+  const [showDetails, setShowDetails] = useState(initialShowDetails);
+
+  const totalSaving = Math.max(quote.sAVnd, 0) + Math.max(quote.sBVnd, 0);
+  const totalEcont = quote.econtCollectedFromA + quote.econtCollectedFromB;
+  const hasMissingData = quote.tAStatus === 'MISSING' || quote.tBStatus === 'MISSING' || quote.fRuStatus === 'MISSING';
+  const hasEstimateData = quote.tAStatus === 'ESTIMATE' || quote.tBStatus === 'ESTIMATE' || quote.truckingStatus === 'ESTIMATE';
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-800">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-emerald-950 border border-emerald-700/60 flex items-center justify-center text-emerald-400">
-            <Calculator className="w-4 h-4" />
-          </div>
+    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+      {/* Header: Summary */}
+      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-100 px-4 py-3">
+        <div className="flex items-center justify-between">
           <div>
-            <h4 className="text-sm font-bold text-white uppercase tracking-tight">
-              BẢNG BÓC TÁCH CHI PHÍ & MỨC TIẾT KIỆM (SRS MỤC 5.2)
-            </h4>
-            <p className="text-[11px] text-slate-400">
-              Công thức minh bạch: Phí nền tảng ECont chỉ thu trên phần tiết kiệm dương
+            <p className="text-xs text-emerald-700 font-semibold flex items-center gap-1.5">
+              <TrendingDown className="w-3.5 h-3.5" />
+              Tổng tiết kiệm ròng hai bên
+            </p>
+            <p className="text-xl font-bold text-emerald-700 mt-0.5 font-mono">
+              {formatVnd(totalSaving)}
+            </p>
+            {hasMissingData && (
+              <p className="text-[10px] text-amber-600 flex items-center gap-1 mt-1">
+                <AlertCircle className="w-3 h-3" />
+                Một số thông số chưa có — báo giá sẽ chính xác hơn sau khi hai bên xác nhận
+              </p>
+            )}
+            {!hasMissingData && hasEstimateData && (
+              <p className="text-[10px] text-amber-500 flex items-center gap-1 mt-1">
+                <Info className="w-3 h-3" />
+                Một số thông số là ước tính — sẽ được chốt sau Carrier Approval
+              </p>
+            )}
+          </div>
+          <button
+            onClick={() => setShowDetails(!showDetails)}
+            className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-600 transition-colors"
+          >
+            {showDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Summary row: A savings vs B savings */}
+      <div className="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100">
+        <div className="px-4 py-3">
+          <p className="text-xs text-slate-500">Bên A tiết kiệm ròng</p>
+          <p className={`text-base font-bold font-mono mt-0.5 ${quote.negativeSavingA ? 'text-red-600' : 'text-slate-800'}`}>
+            {quote.negativeSavingA ? '- ' : ''}{formatVnd(Math.abs(quote.sAVnd))}
+          </p>
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            Vs phương án hạ về depot ({formatVnd(quote.tAVnd)})
+          </p>
+        </div>
+        <div className="px-4 py-3">
+          <p className="text-xs text-slate-500">Bên B tiết kiệm ròng</p>
+          <p className={`text-base font-bold font-mono mt-0.5 ${quote.negativeSavingB ? 'text-red-600' : 'text-slate-800'}`}>
+            {quote.negativeSavingB ? '- ' : ''}{formatVnd(Math.abs(quote.sBVnd))}
+          </p>
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            Vs phương án lấy từ depot ({formatVnd(quote.tBVnd)})
+          </p>
+        </div>
+      </div>
+
+      {/* ECont collected */}
+      <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-slate-500">ECont thu (phí RU + phí nền tảng)</p>
+            <p className="text-sm font-bold text-slate-700 font-mono mt-0.5">
+              A: {formatVnd(quote.econtCollectedFromA)} · B: {formatVnd(quote.econtCollectedFromB)}
             </p>
           </div>
+          <div className="text-right">
+            <p className="text-xs text-slate-400">Tổng ECont</p>
+            <p className="text-sm font-bold text-brand-700 font-mono">{formatVnd(totalEcont)}</p>
+          </div>
         </div>
-
-        {showFixtureCheck && (
-          <button
-            onClick={runFixtureTest}
-            className="px-2.5 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors"
-          >
-            <Shield className="w-3.5 h-3.5 text-brand-400" />
-            <span>Kiểm tra Fixture SRS</span>
-          </button>
-        )}
       </div>
 
-      {fixtureResult && (
-        <div className={`mb-4 p-3 rounded-lg text-xs flex items-start gap-2 border ${
-          fixtureResult.passed ? 'bg-emerald-950/60 border-emerald-700 text-emerald-300' : 'bg-rose-950/60 border-rose-700 text-rose-300'
-        }`}>
-          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
-          <div>
-            <span className="font-bold">KẾT QUẢ KIỂM CHỨNG TỰ ĐỘNG: </span>
-            <span>{fixtureResult.message}</span>
+      {/* Detailed breakdown (collapsible) */}
+      {showDetails && (
+        <div className="px-4 py-3 space-y-3 text-xs">
+          <p className="font-semibold text-slate-600 uppercase tracking-wide text-[10px]">Chi tiết công thức</p>
+
+          {/* Input parameters */}
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase">Thông số đầu vào</p>
+            <Row label="T_A · Cước hạ cont về depot (Bên A)" value={formatVnd(quote.tAVnd)} status={quote.tAStatus} />
+            <Row label="T_B · Cước lấy cont từ depot (Bên B)" value={formatVnd(quote.tBVnd)} status={quote.tBStatus} />
+            <Row label="F_RU · Phí duyệt RU hãng tàu" value={formatVnd(quote.fRuVnd)} status={quote.fRuStatus} />
+            <Row label={`α · Tỷ lệ Bên A gánh F_RU`} value={`${(quote.shareAlpha * 100).toFixed(0)}%`} />
+            <Row label="Cước xe A→B (Bên B tự bố trí)" value={formatVnd(quote.truckingAbVnd)} status={quote.truckingStatus} note="B thanh toán riêng" />
+            {quote.extrasAVnd > 0 && <Row label="Chi phí phát sinh A" value={formatVnd(quote.extrasAVnd)} />}
+            {quote.extrasBVnd > 0 && <Row label="Chi phí phát sinh B" value={formatVnd(quote.extrasBVnd)} />}
           </div>
+
+          {/* Calculation steps */}
+          <div className="space-y-1.5 border-t border-dashed border-slate-200 pt-2">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase">Tính toán</p>
+            <Row label="R_A0 · Chi phí mới phát sinh A" value={formatVnd(quote.rA0Vnd)} note="α×F_RU + extras_A" />
+            <Row label="R_B0 · Chi phí mới phát sinh B" value={formatVnd(quote.rB0Vnd)} note="trucking + (1-α)×F_RU + extras_B" />
+            <Row label="G_A · Tiết kiệm gộp A" value={formatVnd(quote.gAVnd)} highlight={quote.gAVnd < 0 ? 'negative' : 'positive'} />
+            <Row label="G_B · Tiết kiệm gộp B" value={formatVnd(quote.gBVnd)} highlight={quote.gBVnd < 0 ? 'negative' : 'positive'} />
+            <Row label="F_A · Phí nền tảng A (25% × max(G_A,0))" value={formatVnd(quote.fAVnd)} />
+            <Row label="F_B · Phí nền tảng B (15% × max(G_B,0))" value={formatVnd(quote.fBVnd)} />
+          </div>
+
+          {/* Results */}
+          <div className="space-y-1.5 border-t border-dashed border-slate-200 pt-2">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase">Kết quả</p>
+            <Row label="S_A · Tiết kiệm ròng A" value={formatVnd(quote.sAVnd)} highlight={quote.sAVnd < 0 ? 'negative' : 'positive'} bold />
+            <Row label="S_B · Tiết kiệm ròng B" value={formatVnd(quote.sBVnd)} highlight={quote.sBVnd < 0 ? 'negative' : 'positive'} bold />
+            <Row label="ECont thu từ A" value={formatVnd(quote.econtCollectedFromA)} note="α×F_RU + F_A" />
+            <Row label="ECont thu từ B" value={formatVnd(quote.econtCollectedFromB)} note="(1-α)×F_RU + F_B" />
+          </div>
+
+          {/* SRS fixture note */}
+          {context === 'transaction_detail' && (
+            <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
+              <p className="text-[10px] text-blue-600">
+                <Info className="w-3 h-3 inline mr-1" />
+                Công thức theo SRS v1.0 §5.2. Báo giá mang tính ràng buộc khi cả hai bên ký Thỏa thuận (Agreement).
+              </p>
+            </div>
+          )}
         </div>
       )}
-
-      {/* 2 cột so sánh A và B */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* CỘT BÊN A */}
-        <div className="bg-slate-950 rounded-lg p-4 border border-slate-800/80">
-          <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
-            <span className="text-xs font-bold text-emerald-400 uppercase tracking-wide">
-              BÊN A — CHỦ NGUỒN VỎ
-            </span>
-            <span className="text-xs font-mono text-slate-400">T_A: {formatVnd(quote.tAVnd)}</span>
-          </div>
-
-          <div className="space-y-2 text-xs">
-            <div className="flex justify-between text-slate-400">
-              <span>Cước hạ depot cũ (T_A):</span>
-              <span className="font-mono text-slate-200">{formatVnd(quote.tAVnd)}</span>
-            </div>
-            <div className="flex justify-between text-slate-400">
-              <span>Phí RU phải gánh (α = {quote.shareAlpha}):</span>
-              <span className="font-mono text-slate-200">-{formatVnd(quote.rA0Vnd)}</span>
-            </div>
-            <div className="flex justify-between text-slate-300 pt-1 border-t border-slate-800/60">
-              <span>Tiết kiệm gộp (G_A):</span>
-              <span className="font-mono font-semibold text-emerald-400">+{formatVnd(quote.gAVnd)}</span>
-            </div>
-            <div className="flex justify-between text-slate-400">
-              <span>Phí dịch vụ ECont (25% G_A):</span>
-              <span className="font-mono text-amber-400">-{formatVnd(quote.fAVnd)}</span>
-            </div>
-
-            <div className="mt-3 p-2.5 rounded bg-emerald-950/40 border border-emerald-800/60 flex items-center justify-between">
-              <div>
-                <div className="text-[11px] text-emerald-300 font-semibold uppercase">TIẾT KIỆM THỰC TẾ (S_A):</div>
-                <div className="text-xs text-slate-400">A nộp ECont: {formatVnd(quote.econtCollectedFromA)}</div>
-              </div>
-              <div className="text-base font-bold font-mono text-emerald-400">
-                +{formatVnd(quote.sAVnd)}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* CỘT BÊN B */}
-        <div className="bg-slate-950 rounded-lg p-4 border border-slate-800/80">
-          <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
-            <span className="text-xs font-bold text-blue-400 uppercase tracking-wide">
-              BÊN B — CHỦ NHU CẦU VỎ
-            </span>
-            <span className="text-xs font-mono text-slate-400">T_B: {formatVnd(quote.tBVnd)}</span>
-          </div>
-
-          <div className="space-y-2 text-xs">
-            <div className="flex justify-between text-slate-400">
-              <span>Cước lấy cont depot cũ (T_B):</span>
-              <span className="font-mono text-slate-200">{formatVnd(quote.tBVnd)}</span>
-            </div>
-            <div className="flex justify-between text-slate-400">
-              <span>Cước xe kéo A→B:</span>
-              <span className="font-mono text-slate-200">-{formatVnd(quote.truckingAbVnd)}</span>
-            </div>
-            <div className="flex justify-between text-slate-400">
-              <span>Phí RU phải gánh (1 - α):</span>
-              <span className="font-mono text-slate-200">-{formatVnd((1 - quote.shareAlpha) * quote.fRuVnd)}</span>
-            </div>
-            <div className="flex justify-between text-slate-300 pt-1 border-t border-slate-800/60">
-              <span>Tiết kiệm gộp (G_B):</span>
-              <span className="font-mono font-semibold text-blue-400">+{formatVnd(quote.gBVnd)}</span>
-            </div>
-            <div className="flex justify-between text-slate-400">
-              <span>Phí dịch vụ ECont (15% G_B):</span>
-              <span className="font-mono text-amber-400">-{formatVnd(quote.fBVnd)}</span>
-            </div>
-
-            <div className="mt-3 p-2.5 rounded bg-blue-950/40 border border-blue-800/60 flex items-center justify-between">
-              <div>
-                <div className="text-[11px] text-blue-300 font-semibold uppercase">TIẾT KIỆM THỰC TẾ (S_B):</div>
-                <div className="text-xs text-slate-400">B nộp ECont: {formatVnd(quote.econtCollectedFromB)}</div>
-              </div>
-              <div className="text-base font-bold font-mono text-blue-400">
-                +{formatVnd(quote.sBVnd)}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Ghi chú thanh toán */}
-      <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
-        <div className="flex items-center gap-1.5">
-          <Info className="w-3.5 h-3.5 text-brand-400" />
-          <span>Tổng mức tiết kiệm xã hội từ việc tái sử dụng cont này:</span>
-        </div>
-        <span className="font-mono font-bold text-emerald-400 text-sm">
-          +{formatVnd(quote.sAVnd + quote.sBVnd)} (Tránh 2 chuyến xe rỗng)
-        </span>
-      </div>
     </div>
   );
 };
 
+function Row({
+  label, value, status, note, highlight, bold
+}: {
+  label: string;
+  value: string;
+  status?: 'FIRM' | 'ESTIMATE' | 'MISSING';
+  note?: string;
+  highlight?: 'positive' | 'negative';
+  bold?: boolean;
+}) {
+  const valueColor =
+    highlight === 'positive' ? 'text-emerald-600' :
+    highlight === 'negative' ? 'text-red-600' :
+    'text-slate-800';
+
+  return (
+    <div className="flex items-start justify-between gap-2">
+      <div className="flex-1 min-w-0">
+        <span className={`leading-snug ${bold ? 'font-semibold text-slate-700' : 'text-slate-500'}`}>{label}</span>
+        {status && <span className="ml-1"><StatusChip status={status} /></span>}
+        {note && <span className="text-slate-400 ml-1">({note})</span>}
+      </div>
+      <span className={`font-mono shrink-0 ${bold ? 'font-bold' : 'font-medium'} ${valueColor}`}>{value}</span>
+    </div>
+  );
+}

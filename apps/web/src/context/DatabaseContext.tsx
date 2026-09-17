@@ -1,31 +1,33 @@
 // ==============================================================================
-// ECont Database Context & State Management
-// Quản lý kho dữ liệu nghiệp vụ, vòng đời giao dịch 7 bước và đồng bộ CSDL Online
+// ECont Database Context & Business Logic - Version 2.0
+// State management với đầy đủ actions, guards và audit trail
 // ==============================================================================
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import {
-  Company,
-  ContainerAsset,
-  Offer,
-  ContainerRequest,
-  Transaction,
-  CaseIssue,
-  AuditEvent,
-  MatchCandidate
+  Company, ContainerAsset, Offer, ContainerRequest, Transaction, Agreement,
+  CarrierApproval, PaymentOrder, DispatchPermit, Inspection, HandoverRecord,
+  CaseIssue, AuditEvent, Notification, ChatThread, ChatMessage, MatchCandidate,
+  Quote, CreateAssetForm, CreateOfferForm, CreateRequestForm, TransactionStatus
 } from '../types';
 import {
-  INITIAL_COMPANIES,
-  INITIAL_ASSETS,
-  INITIAL_OFFERS,
-  INITIAL_REQUESTS,
-  INITIAL_TRANSACTIONS,
-  INITIAL_CASES,
-  INITIAL_AUDIT_LOGS
+  INITIAL_COMPANIES, INITIAL_ASSETS, INITIAL_OFFERS, INITIAL_REQUESTS,
+  INITIAL_TRANSACTIONS, INITIAL_CASES, INITIAL_AUDIT_LOGS,
+  INITIAL_NOTIFICATIONS, INITIAL_CHAT_THREADS, INITIAL_CHAT_MESSAGES,
+  INITIAL_CARRIERS,
 } from '../data/mockData';
-import { canTransitionTo } from '../services/stateMachine';
+import { canTransitionTo, getAllowedActions } from '../services/stateMachine';
+import { calculateQuote } from '../services/pricingEngine';
 import { onlineDb, OnlineDbConfig } from '../services/onlineDbClient';
 import { useAuth } from './AuthContext';
+
+// ==================== CONTEXT TYPE ====================
+
+interface ActionResult {
+  success: boolean;
+  message: string;
+  data?: unknown;
+}
 
 interface DatabaseContextType {
   companies: Company[];
@@ -35,25 +37,52 @@ interface DatabaseContextType {
   transactions: Transaction[];
   cases: CaseIssue[];
   auditLogs: AuditEvent[];
-  onlineConfig: OnlineDbConfig;
-  isSyncing: boolean;
-  lastSyncMessage: string;
+  notifications: Notification[];
+  chatThreads: ChatThread[];
+  chatMessages: ChatMessage[];
+
+  // Asset actions
+  addAsset: (form: CreateAssetForm) => ActionResult;
+  updateAsset: (assetId: string, updates: Partial<ContainerAsset>) => ActionResult;
+  deleteAsset: (assetId: string) => ActionResult;
+
+  // Offer actions
+  addOffer: (form: CreateOfferForm) => ActionResult;
+  updateOffer: (offerId: string, updates: Partial<Offer>) => ActionResult;
+  submitOfferForReview: (offerId: string) => ActionResult;
+  withdrawOffer: (offerId: string, reason: string) => ActionResult;
+  deleteOffer: (offerId: string) => ActionResult;
+  opsReviewOffer: (offerId: string, decision: 'APPROVE' | 'REQUEST_CHANGES' | 'REJECT', notes: string) => ActionResult;
+
+  // Request actions
+  addRequest: (form: CreateRequestForm) => ActionResult;
+  updateRequest: (requestId: string, updates: Partial<ContainerRequest>) => ActionResult;
+  submitRequestForReview: (requestId: string) => ActionResult;
+  withdrawRequest: (requestId: string, reason: string) => ActionResult;
+  deleteRequest: (requestId: string) => ActionResult;
+  opsReviewRequest: (requestId: string, decision: 'APPROVE' | 'REQUEST_CHANGES' | 'REJECT', notes: string) => ActionResult;
+
+  // Company actions
+  addCompany: (comp: Omit<Company, 'id' | 'totalCompletedAsA' | 'totalCompletedAsB'>) => ActionResult;
+  updateCompany: (id: string, updates: Partial<Company>) => ActionResult;
+  deleteCompany: (id: string) => ActionResult;
+
+  // Reservation & Transaction
+  holdAtomicReservation: (candidate: MatchCandidate, request: ContainerRequest) => ActionResult;
+  acceptAgreement: (transactionId: string) => ActionResult;
+  requestAgreementChange: (transactionId: string, reason: string) => ActionResult;
   
-  // Actions nghiệp vụ
-  addAsset: (asset: Omit<ContainerAsset, 'id' | 'isLocked'>) => ContainerAsset | null;
-  updateAsset: (assetId: string, asset: Omit<ContainerAsset, 'id' | 'isLocked'>) => { success: boolean; message: string };
-  deleteAsset: (assetId: string) => { success: boolean; message: string };
-  addOffer: (offer: Omit<Offer, 'id' | 'createdAt'>) => Offer | null;
-  updateOffer: (offerId: string, offer: Omit<Offer, 'id' | 'createdAt'>) => { success: boolean; message: string };
-  deleteOffer: (offerId: string) => { success: boolean; message: string };
-  addRequest: (req: Omit<ContainerRequest, 'id' | 'createdAt'>) => ContainerRequest | null;
-  updateRequest: (requestId: string, req: Omit<ContainerRequest, 'id' | 'createdAt'>) => { success: boolean; message: string };
-  deleteRequest: (requestId: string) => { success: boolean; message: string };
-  holdAtomicReservation: (candidate: MatchCandidate, request: ContainerRequest) => { success: boolean; transactionId?: string; message?: string };
-  acceptAgreement: (transactionId: string) => { success: boolean; message: string };
-  opsApproveCarrier: (transactionId: string, refNumber: string, evidenceFileName: string) => { success: boolean; message: string };
-  settlePayment: (transactionId: string, party: 'A' | 'B', bankRef: string) => { success: boolean; message: string };
-  submitInspection: (transactionId: string, inspectionData: {
+  // Carrier
+  opsApproveCarrier: (transactionId: string, refNumber: string, evidenceFileName: string, validUntil: string) => ActionResult;
+  opsRejectCarrier: (transactionId: string, reason: string) => ActionResult;
+
+  // Payment
+  settlePayment: (transactionId: string, party: 'A' | 'B', bankRef: string, amount: number) => ActionResult;
+
+  // Handover
+  generateDispatchPermit: (transactionId: string, driverName: string, truckPlate: string) => ActionResult;
+  activateInspection: (transactionId: string) => ActionResult;
+  submitInspection: (transactionId: string, data: {
     inspectorName: string;
     checklistFloor: boolean;
     checklistWalls: boolean;
@@ -63,667 +92,1322 @@ interface DatabaseContextType {
     checklistUndercarriage: boolean;
     isDiscrepancyFound: boolean;
     discrepancyNotes?: string;
-  }) => { success: boolean; message: string };
-  confirmHandover: (transactionId: string) => { success: boolean; message: string };
-  toggleHold: (transactionId: string, isOnHold: boolean, reason?: string) => void;
-  resolveCase: (caseId: string, resolutionSummary: string) => void;
+    discrepancySeverity?: 'MINOR' | 'MAJOR';
+  }) => ActionResult;
+  confirmHandoverA: (transactionId: string) => ActionResult;
+  confirmHandoverB: (transactionId: string) => ActionResult;
+
+  // Hold & Case
+  toggleHold: (transactionId: string, isOnHold: boolean, reason?: string, caseId?: string) => ActionResult;
+  addCase: (c: Omit<CaseIssue, 'id' | 'createdAt' | 'updatedAt'>) => ActionResult;
+  updateCase: (caseId: string, updates: Partial<CaseIssue>) => ActionResult;
+  deleteCase: (caseId: string) => ActionResult;
+  resolveCase: (caseId: string, resolution: NonNullable<CaseIssue['resolution']>) => ActionResult;
+  closeCase: (caseId: string) => ActionResult;
+
+  // Cancel
+  cancelTransaction: (transactionId: string, reason: string) => ActionResult;
+
+  // Chat
+  startChatThread: (thread: Omit<ChatThread, 'id' | 'createdAt' | 'updatedAt'>) => string | null;
+  sendChatMessage: (threadId: string, body: string) => ActionResult;
+
+  // Notifications
+  markNotificationRead: (notifId: string) => void;
+  unreadNotificationCount: number;
+
+  // Demo utilities
   resetToDemoData: () => void;
+
+  // Online Database & Sync
+  onlineConfig: OnlineDbConfig;
+  isSyncing: boolean;
+  lastSyncMessage: string;
   syncAllToOnlineDb: () => Promise<void>;
   updateOnlineConfig: (config: Partial<OnlineDbConfig>) => void;
 }
 
 const DatabaseContext = createContext<DatabaseContextType | undefined>(undefined);
 
+// ==================== HELPERS ====================
+
+let idCounter = 1000;
+const genId = (prefix: string) => `${prefix}-${++idCounter}`;
+
+// ==================== PROVIDER ====================
+
 export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { currentRole, currentCompany, currentUserEmail } = useAuth();
+  const { currentRole, currentCompany, currentUserEmail, currentUserId } = useAuth();
 
+  // State
   const [companies, setCompanies] = useState<Company[]>(() => {
-    const saved = localStorage.getItem('econt_db_companies');
-    return saved ? JSON.parse(saved) : INITIAL_COMPANIES;
+    try { return JSON.parse(localStorage.getItem('econt_v2_companies') || '') || INITIAL_COMPANIES; }
+    catch { return INITIAL_COMPANIES; }
   });
-
+  const persistCompanies = useCallback((data: Company[]) => {
+    setCompanies(data);
+    try { localStorage.setItem('econt_v2_companies', JSON.stringify(data)); } catch { /* ok */ }
+  }, []);
   const [assets, setAssets] = useState<ContainerAsset[]>(() => {
-    const saved = localStorage.getItem('econt_db_assets');
-    return saved ? JSON.parse(saved) : INITIAL_ASSETS;
+    try { return JSON.parse(localStorage.getItem('econt_v2_assets') || '') || INITIAL_ASSETS; }
+    catch { return INITIAL_ASSETS; }
   });
-
   const [offers, setOffers] = useState<Offer[]>(() => {
-    const saved = localStorage.getItem('econt_db_offers');
-    return saved ? JSON.parse(saved) : INITIAL_OFFERS;
+    try { return JSON.parse(localStorage.getItem('econt_v2_offers') || '') || INITIAL_OFFERS; }
+    catch { return INITIAL_OFFERS; }
   });
-
   const [requests, setRequests] = useState<ContainerRequest[]>(() => {
-    const saved = localStorage.getItem('econt_db_requests');
-    return saved ? JSON.parse(saved) : INITIAL_REQUESTS;
+    try { return JSON.parse(localStorage.getItem('econt_v2_requests') || '') || INITIAL_REQUESTS; }
+    catch { return INITIAL_REQUESTS; }
   });
-
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    const saved = localStorage.getItem('econt_db_transactions');
-    return saved ? JSON.parse(saved) : INITIAL_TRANSACTIONS;
+    try { return JSON.parse(localStorage.getItem('econt_v2_transactions') || '') || INITIAL_TRANSACTIONS; }
+    catch { return INITIAL_TRANSACTIONS; }
   });
-
-  const [cases, setCases] = useState<CaseIssue[]>(() => {
-    const saved = localStorage.getItem('econt_db_cases');
-    return saved ? JSON.parse(saved) : INITIAL_CASES;
-  });
-
-  const [auditLogs, setAuditLogs] = useState<AuditEvent[]>(() => {
-    const saved = localStorage.getItem('econt_db_audit');
-    return saved ? JSON.parse(saved) : INITIAL_AUDIT_LOGS;
-  });
-
-  const [onlineConfig, setOnlineConfig] = useState<OnlineDbConfig>(onlineDb.getConfig());
+  const [cases, setCases] = useState<CaseIssue[]>(INITIAL_CASES);
+  const [auditLogs, setAuditLogs] = useState<AuditEvent[]>(INITIAL_AUDIT_LOGS);
+  const [notifications, setNotifications] = useState<Notification[]>(INITIAL_NOTIFICATIONS);
+  const [chatThreads, setChatThreads] = useState<ChatThread[]>(INITIAL_CHAT_THREADS);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
+  const [onlineConfig, setOnlineConfig] = useState<OnlineDbConfig>(() => onlineDb.getConfig());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [lastSyncMessage, setLastSyncMessage] = useState<string>('Đã kết nối CSDL Online');
+  const [lastSyncMessage, setLastSyncMessage] = useState<string>('Sẵn sàng đồng bộ trực tuyến');
 
-  // Lưu trữ persistent cache
-  useEffect(() => {
-    localStorage.setItem('econt_db_companies', JSON.stringify(companies));
-    localStorage.setItem('econt_db_assets', JSON.stringify(assets));
-    localStorage.setItem('econt_db_offers', JSON.stringify(offers));
-    localStorage.setItem('econt_db_requests', JSON.stringify(requests));
-    localStorage.setItem('econt_db_transactions', JSON.stringify(transactions));
-    localStorage.setItem('econt_db_cases', JSON.stringify(cases));
-    localStorage.setItem('econt_db_audit', JSON.stringify(auditLogs));
-  }, [companies, assets, offers, requests, transactions, cases, auditLogs]);
-
-  const addAudit = (action: string, entityName: string, entityId: string, details: string) => {
-    const newLog: AuditEvent = {
-      id: 'AUD-' + Math.random().toString(36).substring(2, 9),
-      timestamp: new Date().toISOString(),
-      actorEmail: currentUserEmail,
-      action,
-      entityName,
-      entityId,
-      details
-    };
-    setAuditLogs(prev => [newLog, ...prev]);
-  };
-
-  const updateOnlineConfig = (newCfg: Partial<OnlineDbConfig>) => {
-    onlineDb.saveConfig(newCfg);
+  const updateOnlineConfig = useCallback((cfg: Partial<OnlineDbConfig>) => {
+    onlineDb.saveConfig(cfg);
     setOnlineConfig(onlineDb.getConfig());
-  };
+  }, []);
 
-  const syncAllToOnlineDb = async () => {
+  const syncAllToOnlineDb = useCallback(async () => {
     setIsSyncing(true);
-    setLastSyncMessage('Đang đồng bộ dữ liệu lên CSDL Online...');
+    setLastSyncMessage('Đang đồng bộ dữ liệu...');
     try {
       await onlineDb.syncTable('companies', companies);
       await onlineDb.syncTable('container_assets', assets);
       await onlineDb.syncTable('offers', offers);
       await onlineDb.syncTable('container_requests', requests);
       await onlineDb.syncTable('transactions', transactions);
-      setLastSyncMessage('Đồng bộ CSDL Online thành công lúc ' + new Date().toLocaleTimeString('vi-VN'));
-    } catch {
-      setLastSyncMessage('Đã lưu dữ liệu vào bộ nhớ đệm');
+      await onlineDb.syncTable('cases', cases);
+      await onlineDb.syncTable('audit_events', auditLogs);
+      setLastSyncMessage('Đồng bộ thành công lên Supabase Cloud');
+    } catch (e: unknown) {
+      const err = e as Error;
+      setLastSyncMessage('Lỗi đồng bộ: ' + (err?.message || 'Không xác định'));
     } finally {
       setIsSyncing(false);
     }
-  };
+  }, [companies, assets, offers, requests, transactions, cases, auditLogs]);
 
-  const addAsset = (assetData: Omit<ContainerAsset, 'id' | 'isLocked'>): ContainerAsset | null => {
-    if (currentRole !== 'ENTERPRISE_A' || assetData.currentCustodianId !== currentCompany.id) {
-      return null;
+  // Persist key data
+  const persistAssets = useCallback((data: ContainerAsset[]) => {
+    setAssets(data);
+    try { localStorage.setItem('econt_v2_assets', JSON.stringify(data)); } catch { /* ok */ }
+  }, []);
+  const persistOffers = useCallback((data: Offer[]) => {
+    setOffers(data);
+    try { localStorage.setItem('econt_v2_offers', JSON.stringify(data)); } catch { /* ok */ }
+  }, []);
+  const persistRequests = useCallback((data: ContainerRequest[]) => {
+    setRequests(data);
+    try { localStorage.setItem('econt_v2_requests', JSON.stringify(data)); } catch { /* ok */ }
+  }, []);
+  const persistTransactions = useCallback((data: Transaction[]) => {
+    setTransactions(data);
+    try { localStorage.setItem('econt_v2_transactions', JSON.stringify(data)); } catch { /* ok */ }
+  }, []);
+
+  // Audit log helper
+  const addAudit = useCallback((action: string, entityType: string, entityId: string, details: string) => {
+    const event: AuditEvent = {
+      id: genId('AUD'),
+      correlationId: genId('corr'),
+      timestamp: new Date().toISOString(),
+      actorEmail: currentUserEmail,
+      actorCompanyId: currentCompany.id,
+      actorRole: currentRole,
+      action,
+      entityType,
+      entityId,
+      details,
+      requestId: genId('req'),
+    };
+    setAuditLogs(prev => [event, ...prev]);
+  }, [currentRole, currentCompany.id, currentUserEmail]);
+
+  // Notification helper
+  const addNotification = useCallback((
+    recipientCompanyId: string,
+    type: Notification['type'],
+    title: string,
+    body: string,
+    relatedEntityId?: string
+  ) => {
+    const notif: Notification = {
+      id: genId('NOTIF'),
+      recipientCompanyId,
+      type,
+      title,
+      body,
+      relatedEntityId,
+      relatedEntityType: relatedEntityId ? 'Transaction' : undefined,
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    };
+    setNotifications(prev => [notif, ...prev]);
+  }, []);
+
+  const unreadNotificationCount = useMemo(() => {
+    return notifications.filter(
+      n => !n.isRead && n.recipientCompanyId === currentCompany.id
+    ).length;
+  }, [notifications, currentCompany.id]);
+
+  // ==================== ASSET ACTIONS ====================
+
+  const addAsset = useCallback((form: CreateAssetForm): ActionResult => {
+    if (currentRole !== 'ENTERPRISE_A' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Bên A mới có thể đăng ký tài sản container.' };
     }
-
+    // Kiểm tra trùng số cont
+    const exists = assets.find(a => a.containerNumber === form.containerNumber.toUpperCase());
+    if (exists) {
+      return { success: false, message: `Số container ${form.containerNumber} đã tồn tại trong hệ thống.` };
+    }
+    const carrier = INITIAL_CARRIERS.find(c => c.id === form.carrierId);
     const newAsset: ContainerAsset = {
-      ...assetData,
-      id: 'ASSET-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
-      isLocked: false
+      ...form,
+      id: genId('ASSET'),
+      containerNumber: form.containerNumber.toUpperCase(),
+      carrierCode: carrier?.code || (form.carrierId ? form.carrierId.replace('CARR-', '') : 'UNKNOWN'),
+      currentCustodianId: currentCompany.id,
+      currentCustodianName: currentCompany.shortName,
+      reviewedCondition: undefined,
+      photos: [],
+      hasEdoDocument: false,
+      edoVerificationStatus: 'UNVERIFIED',
+      isLocked: false,
+      locationObservedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-    setAssets(prev => [newAsset, ...prev]);
-    addAudit('ASSET_CREATED', 'ContainerAsset', newAsset.id, `Đăng ký container mới ${newAsset.containerNumber}`);
-    return newAsset;
-  };
+    persistAssets([...assets, newAsset]);
+    addAudit('ASSET_CREATED', 'ContainerAsset', newAsset.id, `Đăng ký container ${newAsset.containerNumber}`);
+    return { success: true, message: `Đã đăng ký container ${newAsset.containerNumber} thành công.`, data: newAsset };
+  }, [assets, currentRole, currentCompany, persistAssets, addAudit]);
 
-  const updateAsset = (assetId: string, assetData: Omit<ContainerAsset, 'id' | 'isLocked'>) => {
-    const existing = assets.find(a => a.id === assetId);
-    if (currentRole !== 'ENTERPRISE_A' || !existing || existing.currentCustodianId !== currentCompany.id) {
-      return { success: false, message: 'Chỉ Bên A sở hữu container mới được sửa dữ liệu.' };
+  const updateAsset = useCallback((assetId: string, updates: Partial<ContainerAsset>): ActionResult => {
+    const asset = assets.find(a => a.id === assetId);
+    if (!asset) return { success: false, message: 'Không tìm thấy container.' };
+    if (asset.isLocked) return { success: false, message: 'Container đang trong giao dịch, không thể chỉnh sửa.' };
+    if (asset.currentCustodianId !== currentCompany.id && currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Bạn không có quyền chỉnh sửa container này.' };
     }
-    if (existing.isLocked || transactions.some(t => t.assetId === assetId && !['CANCELLED', 'REJECTED', 'EXPIRED'].includes(t.status))) {
-      return { success: false, message: 'Container đang được sử dụng trong giao dịch, không thể sửa.' };
+    const updated = { ...asset, ...updates, updatedAt: new Date().toISOString() };
+    persistAssets(assets.map(a => a.id === assetId ? updated : a));
+    addAudit('ASSET_UPDATED', 'ContainerAsset', assetId, `Cập nhật thông tin container ${asset.containerNumber}`);
+    return { success: true, message: 'Đã cập nhật thông tin container.' };
+  }, [assets, currentRole, currentCompany, persistAssets, addAudit]);
+
+  const deleteAsset = useCallback((assetId: string): ActionResult => {
+    const asset = assets.find(a => a.id === assetId);
+    if (!asset) return { success: false, message: 'Không tìm thấy container.' };
+    if (asset.isLocked) return { success: false, message: 'Container đang trong giao dịch, không thể xóa.' };
+    if (asset.currentCustodianId !== currentCompany.id) {
+      return { success: false, message: 'Bạn không có quyền xóa container này.' };
     }
-
-    const updatedAsset = { ...assetData, id: assetId, isLocked: existing.isLocked };
-    setAssets(prev => prev.map(a => a.id === assetId ? updatedAsset : a));
-    setOffers(prev => prev.map(o => o.assetId === assetId ? { ...o, asset: updatedAsset } : o));
-    addAudit('ASSET_UPDATED', 'ContainerAsset', assetId, `Cập nhật container ${updatedAsset.containerNumber}`);
-    return { success: true, message: 'Đã cập nhật container.' };
-  };
-
-  const deleteAsset = (assetId: string) => {
-    const existing = assets.find(a => a.id === assetId);
-    if (currentRole !== 'ENTERPRISE_A' || !existing || existing.currentCustodianId !== currentCompany.id) {
-      return { success: false, message: 'Chỉ Bên A sở hữu container mới được xóa dữ liệu.' };
+    const hasOffer = offers.some(o => o.assetId === assetId && ['UNDER_REVIEW', 'AVAILABLE', 'HELD', 'ALLOCATED'].includes(o.status));
+    if (hasOffer) {
+      return { success: false, message: 'Container đang có Offer hoạt động. Hãy rút tin trước khi xóa.' };
     }
-    if (offers.some(o => o.assetId === assetId) || transactions.some(t => t.assetId === assetId)) {
-      return { success: false, message: 'Container đã có Offer hoặc giao dịch, không thể xóa cứng.' };
+    persistAssets(assets.filter(a => a.id !== assetId));
+    addAudit('ASSET_DELETED', 'ContainerAsset', assetId, `Xóa container ${asset.containerNumber} (nháp)`);
+    return { success: true, message: `Đã xóa container ${asset.containerNumber}.` };
+  }, [assets, offers, currentCompany, persistAssets, addAudit]);
+
+  // ==================== OFFER ACTIONS ====================
+
+  const addOffer = useCallback((form: CreateOfferForm): ActionResult => {
+    if (currentRole !== 'ENTERPRISE_A' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Bên A mới có thể tạo Offer nguồn vỏ.' };
     }
-
-    setAssets(prev => prev.filter(a => a.id !== assetId));
-    addAudit('ASSET_DELETED', 'ContainerAsset', assetId, `Xóa container ${existing.containerNumber}`);
-    return { success: true, message: 'Đã xóa container.' };
-  };
-
-  const addOffer = (offerData: Omit<Offer, 'id' | 'createdAt'>): Offer | null => {
-    if (currentRole !== 'ENTERPRISE_A' || offerData.companyId !== currentCompany.id || offerData.asset.currentCustodianId !== currentCompany.id) {
-      return null;
+    const asset = assets.find(a => a.id === form.assetId);
+    if (!asset) return { success: false, message: 'Không tìm thấy container.' };
+    if (asset.currentCustodianId !== currentCompany.id) {
+      return { success: false, message: 'Container này không thuộc custody của bạn.' };
     }
-
+    if (asset.physicalStatus !== 'EMPTY_AT_YARD' && asset.physicalStatus !== 'EMPTY_AT_DEPOT') {
+      return { success: false, message: 'Chỉ có thể tạo Offer cho container rỗng (EMPTY_AT_YARD/DEPOT).' };
+    }
+    const existingOffer = offers.find(
+      o => o.assetId === form.assetId && ['DRAFT', 'UNDER_REVIEW', 'AVAILABLE', 'HELD', 'ALLOCATED'].includes(o.status)
+    );
+    if (existingOffer) {
+      return { success: false, message: `Container đã có Offer đang hoạt động (${existingOffer.id}).` };
+    }
     const newOffer: Offer = {
-      ...offerData,
-      id: 'OFR-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
-      createdAt: new Date().toISOString()
+      id: genId('OFR'),
+      assetId: form.assetId,
+      asset,
+      companyId: currentCompany.id,
+      companyName: currentCompany.shortName,
+      status: 'DRAFT',
+      version: 1,
+      pickupLocationName: form.pickupLocationName,
+      pickupLatitude: form.pickupLatitude,
+      pickupLongitude: form.pickupLongitude,
+      availableFrom: form.availableFrom,
+      availableTo: form.availableTo,
+      expectedDepotId: form.expectedDepotId,
+      expectedDepotName: undefined,
+      baselineDepotCostVnd: form.baselineDepotCostVnd,
+      vehicleRequirements: form.vehicleRequirements,
+      photoUrls: asset.photos,
+      photoChecklistComplete: asset.photos.length >= 6,
+      edoDocumentIds: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-    setOffers(prev => [newOffer, ...prev]);
-    addAudit('OFFER_CREATED', 'Offer', newOffer.id, `Khởi tạo Offer nguồn cung cho cont ${newOffer.asset.containerNumber}`);
-    return newOffer;
-  };
+    persistOffers([...offers, newOffer]);
+    addAudit('OFFER_CREATED', 'Offer', newOffer.id, `Tạo nháp Offer cho container ${asset.containerNumber}`);
+    return { success: true, message: 'Đã tạo nháp Offer thành công.', data: newOffer };
+  }, [assets, offers, currentRole, currentCompany, persistOffers, addAudit]);
 
-  const updateOffer = (offerId: string, offerData: Omit<Offer, 'id' | 'createdAt'>) => {
-    const existing = offers.find(o => o.id === offerId);
-    if (currentRole !== 'ENTERPRISE_A' || !existing || existing.companyId !== currentCompany.id || existing.asset.currentCustodianId !== currentCompany.id) {
-      return { success: false, message: 'Chỉ Bên A sở hữu Offer mới được sửa dữ liệu.' };
+  const updateOffer = useCallback((offerId: string, updates: Partial<Offer>): ActionResult => {
+    const offer = offers.find(o => o.id === offerId);
+    if (!offer) return { success: false, message: 'Không tìm thấy Offer.' };
+    if (offer.companyId !== currentCompany.id) {
+      return { success: false, message: 'Bạn không có quyền chỉnh sửa Offer này.' };
     }
-    if (existing.status !== 'AVAILABLE' || transactions.some(t => t.offerId === offerId)) {
-      return { success: false, message: 'Offer đã được giữ chỗ hoặc đã xử lý, không thể sửa.' };
+    if (['HELD', 'ALLOCATED', 'FULFILLED'].includes(offer.status)) {
+      return { success: false, message: `Offer đang ở trạng thái ${offer.status}, không thể chỉnh sửa trực tiếp.` };
     }
+    // Sửa trường trọng yếu → UNDER_REVIEW
+    const majorChanges = ['pickupLatitude', 'pickupLongitude', 'baselineDepotCostVnd', 'availableFrom', 'availableTo'];
+    const hasMajorChange = Object.keys(updates).some(k => majorChanges.includes(k));
+    const newStatus = (offer.status === 'AVAILABLE' && hasMajorChange) ? 'UNDER_REVIEW' : offer.status;
+    const updated = {
+      ...offer, ...updates,
+      status: newStatus,
+      version: offer.version + (hasMajorChange ? 1 : 0),
+      updatedAt: new Date().toISOString()
+    };
+    persistOffers(offers.map(o => o.id === offerId ? updated : o));
+    addAudit('OFFER_UPDATED', 'Offer', offerId, hasMajorChange ? 'Sửa trường trọng yếu → UNDER_REVIEW' : 'Cập nhật thông tin Offer');
+    return { success: true, message: hasMajorChange ? 'Offer đã được gửi lại để review.' : 'Đã cập nhật Offer.' };
+  }, [offers, currentCompany, persistOffers, addAudit]);
 
-    setOffers(prev => prev.map(o => o.id === offerId ? { ...offerData, id: offerId, createdAt: existing.createdAt } : o));
-    addAudit('OFFER_UPDATED', 'Offer', offerId, `Cập nhật Offer cho cont ${offerData.asset.containerNumber}`);
-    return { success: true, message: 'Đã cập nhật Offer.' };
-  };
-
-  const deleteOffer = (offerId: string) => {
-    const existing = offers.find(o => o.id === offerId);
-    if (currentRole !== 'ENTERPRISE_A' || !existing || existing.companyId !== currentCompany.id) {
-      return { success: false, message: 'Chỉ Bên A sở hữu Offer mới được xóa dữ liệu.' };
+  const submitOfferForReview = useCallback((offerId: string): ActionResult => {
+    const offer = offers.find(o => o.id === offerId);
+    if (!offer) return { success: false, message: 'Không tìm thấy Offer.' };
+    if (offer.status !== 'DRAFT' && offer.status !== 'CHANGES_REQUIRED') {
+      return { success: false, message: `Chỉ có thể gửi review từ DRAFT hoặc CHANGES_REQUIRED (hiện: ${offer.status}).` };
     }
-    if (existing.status !== 'AVAILABLE' || transactions.some(t => t.offerId === offerId)) {
-      return { success: false, message: 'Offer đã được giữ chỗ hoặc có giao dịch, không thể xóa.' };
+    if (!offer.photoChecklistComplete) {
+      return { success: false, message: 'Cần tối thiểu 6 ảnh (6 góc) trước khi gửi review.' };
     }
+    persistOffers(offers.map(o => o.id === offerId ? { ...o, status: 'UNDER_REVIEW', updatedAt: new Date().toISOString() } : o));
+    addAudit('OFFER_SUBMITTED_FOR_REVIEW', 'Offer', offerId, 'Gửi Offer để Ops thẩm định');
+    return { success: true, message: 'Đã gửi Offer để Ops thẩm định.' };
+  }, [offers, persistOffers, addAudit]);
 
-    setOffers(prev => prev.filter(o => o.id !== offerId));
-    addAudit('OFFER_DELETED', 'Offer', offerId, `Xóa Offer cho cont ${existing.asset.containerNumber}`);
-    return { success: true, message: 'Đã xóa Offer.' };
-  };
-
-  const addRequest = (reqData: Omit<ContainerRequest, 'id' | 'createdAt'>): ContainerRequest | null => {
-    if (currentRole !== 'ENTERPRISE_B' || reqData.companyId !== currentCompany.id) {
-      return null;
+  const withdrawOffer = useCallback((offerId: string, reason: string): ActionResult => {
+    const offer = offers.find(o => o.id === offerId);
+    if (!offer) return { success: false, message: 'Không tìm thấy Offer.' };
+    if (['HELD', 'ALLOCATED', 'FULFILLED', 'WITHDRAWN', 'EXPIRED'].includes(offer.status)) {
+      return { success: false, message: `Không thể rút Offer ở trạng thái ${offer.status}.` };
     }
+    persistOffers(offers.map(o =>
+      o.id === offerId ? { ...o, status: 'WITHDRAWN', withdrawReason: reason, updatedAt: new Date().toISOString() } : o
+    ));
+    addAudit('OFFER_WITHDRAWN', 'Offer', offerId, `Rút Offer: ${reason}`);
+    return { success: true, message: 'Đã rút Offer thành công.' };
+  }, [offers, persistOffers, addAudit]);
 
+  const deleteOffer = useCallback((offerId: string): ActionResult => {
+    const offer = offers.find(o => o.id === offerId);
+    if (!offer) return { success: false, message: 'Không tìm thấy Offer.' };
+    if (['HELD', 'ALLOCATED', 'FULFILLED'].includes(offer.status)) {
+      return { success: false, message: `Offer đang ở trạng thái ${offer.status}, không thể xóa.` };
+    }
+    if (offer.companyId !== currentCompany.id && currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Bạn không có quyền xóa Offer này.' };
+    }
+    persistOffers(offers.filter(o => o.id !== offerId));
+    addAudit('OFFER_DELETED', 'Offer', offerId, `Xóa Offer ${offerId} của cont ${offer.asset.containerNumber}`);
+    return { success: true, message: `Đã xóa Offer ${offerId} thành công.` };
+  }, [offers, currentCompany, currentRole, persistOffers, addAudit]);
+
+  const opsReviewOffer = useCallback((offerId: string, decision: 'APPROVE' | 'REQUEST_CHANGES' | 'REJECT', notes: string): ActionResult => {
+    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Ops mới có thể thẩm định Offer.' };
+    }
+    const offer = offers.find(o => o.id === offerId);
+    if (!offer) return { success: false, message: 'Không tìm thấy Offer.' };
+    if (offer.status !== 'UNDER_REVIEW') {
+      return { success: false, message: `Offer không ở trạng thái UNDER_REVIEW (hiện: ${offer.status}).` };
+    }
+    const newStatus = decision === 'APPROVE' ? 'AVAILABLE' : decision === 'REQUEST_CHANGES' ? 'CHANGES_REQUIRED' : 'REJECTED';
+    persistOffers(offers.map(o =>
+      o.id === offerId ? {
+        ...o, status: newStatus, reviewerNotes: notes,
+        reviewedBy: currentUserEmail, reviewedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      } : o
+    ));
+    addAudit(`OFFER_${decision}`, 'Offer', offerId, `Ops quyết định ${decision}: ${notes}`);
+    // Notify A
+    addNotification(offer.companyId, 'TRANSACTION_UPDATE',
+      `Offer ${offerId} — ${newStatus === 'AVAILABLE' ? 'Đã được duyệt ✓' : newStatus === 'CHANGES_REQUIRED' ? 'Cần bổ sung tài liệu' : 'Bị từ chối'}`,
+      notes, offerId);
+    return { success: true, message: `Đã ${decision === 'APPROVE' ? 'duyệt' : decision === 'REQUEST_CHANGES' ? 'yêu cầu bổ sung' : 'từ chối'} Offer.` };
+  }, [offers, currentRole, currentUserEmail, persistOffers, addAudit, addNotification]);
+
+  // ==================== REQUEST ACTIONS ====================
+
+  const addRequest = useCallback((form: CreateRequestForm): ActionResult => {
+    if (currentRole !== 'ENTERPRISE_B' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Bên B mới có thể tạo nhu cầu.' };
+    }
     const newReq: ContainerRequest = {
-      ...reqData,
-      id: 'REQ-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
-      createdAt: new Date().toISOString()
+      id: genId('REQ'),
+      companyId: currentCompany.id,
+      companyName: currentCompany.shortName,
+      carrierId: form.carrierId,
+      carrierCode: form.carrierId.replace('CARR-', ''),
+      containerType: form.containerType,
+      bookingNumber: form.bookingNumber,
+      status: 'DRAFT',
+      version: 1,
+      deliveryLocationName: form.deliveryLocationName,
+      deliveryLatitude: form.deliveryLatitude,
+      deliveryLongitude: form.deliveryLongitude,
+      pickupWindowStart: form.pickupWindowStart,
+      pickupWindowEnd: form.pickupWindowEnd,
+      cutOffTime: form.cutOffTime,
+      maxDistanceKm: form.maxDistanceKm || 40,
+      cargoType: form.cargoType || 'Hàng tổng hợp',
+      cargoRequirements: form.cargoRequirements,
+      baselinePickupCostVnd: form.baselinePickupCostVnd,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-    setRequests(prev => [newReq, ...prev]);
-    addAudit('REQUEST_CREATED', 'ContainerRequest', newReq.id, `Tạo nhu cầu vỏ cont Booking ${newReq.bookingNumber}`);
-    return newReq;
-  };
+    persistRequests([...requests, newReq]);
+    addAudit('REQUEST_CREATED', 'ContainerRequest', newReq.id, `Tạo nhu cầu booking ${form.bookingNumber}`);
+    return { success: true, message: 'Đã tạo nhu cầu thành công.', data: newReq };
+  }, [requests, currentRole, currentCompany, persistRequests, addAudit]);
 
-  const updateRequest = (requestId: string, reqData: Omit<ContainerRequest, 'id' | 'createdAt'>) => {
-    const existing = requests.find(r => r.id === requestId);
-    if (currentRole !== 'ENTERPRISE_B' || !existing || existing.companyId !== currentCompany.id) {
-      return { success: false, message: 'Chỉ Bên B sở hữu Booking mới được sửa dữ liệu.' };
+  const updateRequest = useCallback((requestId: string, updates: Partial<ContainerRequest>): ActionResult => {
+    const req = requests.find(r => r.id === requestId);
+    if (!req) return { success: false, message: 'Không tìm thấy nhu cầu.' };
+    if (req.companyId !== currentCompany.id) {
+      return { success: false, message: 'Bạn không có quyền chỉnh sửa nhu cầu này.' };
     }
-    if (existing.status !== 'OPEN' || transactions.some(t => t.requestId === requestId)) {
-      return { success: false, message: 'Booking đã được giữ chỗ hoặc đã xử lý, không thể sửa.' };
+    if (['HELD', 'ALLOCATED', 'FULFILLED'].includes(req.status)) {
+      return { success: false, message: `Nhu cầu đang ở trạng thái ${req.status}, không thể chỉnh sửa trực tiếp.` };
+    }
+    const updated = { ...req, ...updates, version: req.version + 1, updatedAt: new Date().toISOString() };
+    persistRequests(requests.map(r => r.id === requestId ? updated : r));
+    addAudit('REQUEST_UPDATED', 'ContainerRequest', requestId, 'Cập nhật nhu cầu');
+    return { success: true, message: 'Đã cập nhật nhu cầu.' };
+  }, [requests, currentCompany, persistRequests, addAudit]);
+
+  const submitRequestForReview = useCallback((requestId: string): ActionResult => {
+    const req = requests.find(r => r.id === requestId);
+    if (!req) return { success: false, message: 'Không tìm thấy nhu cầu.' };
+    if (req.status !== 'DRAFT' && req.status !== 'CHANGES_REQUIRED') {
+      return { success: false, message: `Chỉ gửi review từ DRAFT/CHANGES_REQUIRED (hiện: ${req.status}).` };
+    }
+    persistRequests(requests.map(r => r.id === requestId ? { ...r, status: 'UNDER_REVIEW', updatedAt: new Date().toISOString() } : r));
+    addAudit('REQUEST_SUBMITTED_FOR_REVIEW', 'ContainerRequest', requestId, 'Gửi nhu cầu để Ops xác minh');
+    return { success: true, message: 'Đã gửi nhu cầu để Ops xác minh booking.' };
+  }, [requests, persistRequests, addAudit]);
+
+  const withdrawRequest = useCallback((requestId: string, reason: string): ActionResult => {
+    const req = requests.find(r => r.id === requestId);
+    if (!req) return { success: false, message: 'Không tìm thấy nhu cầu.' };
+    if (['HELD', 'ALLOCATED', 'FULFILLED', 'WITHDRAWN', 'EXPIRED'].includes(req.status)) {
+      return { success: false, message: `Không thể rút nhu cầu ở trạng thái ${req.status}.` };
+    }
+    persistRequests(requests.map(r =>
+      r.id === requestId ? { ...r, status: 'WITHDRAWN', withdrawReason: reason, updatedAt: new Date().toISOString() } : r
+    ));
+    addAudit('REQUEST_WITHDRAWN', 'ContainerRequest', requestId, `Rút nhu cầu: ${reason}`);
+    return { success: true, message: 'Đã rút nhu cầu thành công.' };
+  }, [requests, persistRequests, addAudit]);
+
+  const deleteRequest = useCallback((requestId: string): ActionResult => {
+    const req = requests.find(r => r.id === requestId);
+    if (!req) return { success: false, message: 'Không tìm thấy nhu cầu.' };
+    if (['HELD', 'ALLOCATED', 'FULFILLED'].includes(req.status)) {
+      return { success: false, message: `Nhu cầu đang ở trạng thái ${req.status}, không thể xóa.` };
+    }
+    if (req.companyId !== currentCompany.id && currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Bạn không có quyền xóa nhu cầu này.' };
+    }
+    persistRequests(requests.filter(r => r.id !== requestId));
+    addAudit('REQUEST_DELETED', 'ContainerRequest', requestId, `Xóa nhu cầu booking ${req.bookingNumber}`);
+    return { success: true, message: `Đã xóa nhu cầu ${req.bookingNumber} thành công.` };
+  }, [requests, currentCompany, currentRole, persistRequests, addAudit]);
+
+  const opsReviewRequest = useCallback((requestId: string, decision: 'APPROVE' | 'REQUEST_CHANGES' | 'REJECT', notes: string): ActionResult => {
+    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Ops mới có thể xác minh nhu cầu.' };
+    }
+    const req = requests.find(r => r.id === requestId);
+    if (!req) return { success: false, message: 'Không tìm thấy nhu cầu.' };
+    if (req.status !== 'UNDER_REVIEW') {
+      return { success: false, message: `Nhu cầu không ở trạng thái UNDER_REVIEW (hiện: ${req.status}).` };
+    }
+    const newStatus = decision === 'APPROVE' ? 'OPEN' : decision === 'REQUEST_CHANGES' ? 'CHANGES_REQUIRED' : 'REJECTED';
+    persistRequests(requests.map(r =>
+      r.id === requestId ? {
+        ...r, status: newStatus, reviewerNotes: notes,
+        reviewedBy: currentUserEmail, reviewedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      } : r
+    ));
+    addAudit(`REQUEST_${decision}`, 'ContainerRequest', requestId, `Ops xác minh ${decision}: ${notes}`);
+    return { success: true, message: `Đã xử lý nhu cầu.` };
+  }, [requests, currentRole, currentUserEmail, persistRequests, addAudit]);
+
+  // ==================== RESERVATION ====================
+
+  const holdAtomicReservation = useCallback((candidate: MatchCandidate, request: ContainerRequest): ActionResult => {
+    if (currentRole !== 'ENTERPRISE_B' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Bên B mới có thể giữ chỗ container.' };
+    }
+    if (request.companyId !== currentCompany.id) {
+      return { success: false, message: 'Nhu cầu không thuộc công ty của bạn.' };
+    }
+    // Check: offer vẫn AVAILABLE
+    const latestOffer = offers.find(o => o.id === candidate.offer.id);
+    if (!latestOffer || latestOffer.status !== 'AVAILABLE') {
+      return { success: false, message: 'Offer không còn khả dụng. Vui lòng tải lại danh sách.' };
+    }
+    // Check: request vẫn OPEN
+    const latestRequest = requests.find(r => r.id === request.id);
+    if (!latestRequest || latestRequest.status !== 'OPEN') {
+      return { success: false, message: 'Nhu cầu không còn ở trạng thái OPEN.' };
+    }
+    // Check: không có active allocation cho asset này
+    const existingTxn = transactions.find(
+      t => t.assetId === candidate.offer.assetId && ['NEGOTIATING', 'PENDING_CARRIER', 'AWAITING_PAYMENT', 'READY_FOR_PICKUP', 'INSPECTION', 'HANDOVER_PENDING'].includes(t.status)
+    );
+    if (existingTxn) {
+      return { success: false, message: 'Container đã đang trong giao dịch khác. (409 Conflict)' };
+    }
+    // Check: location không quá cũ
+    if (candidate.requiresLocationRefresh) {
+      return { success: false, message: `Vị trí container đã ${Math.round(candidate.locationAgeHours)}h — Bên A cần xác nhận lại trước khi giữ chỗ.` };
     }
 
-    setRequests(prev => prev.map(r => r.id === requestId ? { ...reqData, id: requestId, createdAt: existing.createdAt } : r));
-    addAudit('REQUEST_UPDATED', 'ContainerRequest', requestId, `Cập nhật Booking ${reqData.bookingNumber}`);
-    return { success: true, message: 'Đã cập nhật Booking.' };
-  };
+    // Tạo Agreement v1
+    const agreementId = genId('AGR');
+    const agreement: Agreement = {
+      id: agreementId,
+      transactionId: '',
+      version: 1,
+      contentHash: `sha256-${Math.random().toString(36).substring(2)}`,
+      createdAt: new Date().toISOString(),
+    };
 
-  const deleteRequest = (requestId: string) => {
-    const existing = requests.find(r => r.id === requestId);
-    if (currentRole !== 'ENTERPRISE_B' || !existing || existing.companyId !== currentCompany.id) {
-      return { success: false, message: 'Chỉ Bên B sở hữu Booking mới được xóa dữ liệu.' };
-    }
-    if (existing.status !== 'OPEN' || transactions.some(t => t.requestId === requestId)) {
-      return { success: false, message: 'Booking đã được giữ chỗ hoặc có giao dịch, không thể xóa.' };
-    }
+    // Tạo Transaction
+    const txnId = genId('TXN');
+    agreement.transactionId = txnId;
 
-    setRequests(prev => prev.filter(r => r.id !== requestId));
-    addAudit('REQUEST_DELETED', 'ContainerRequest', requestId, `Xóa Booking ${existing.bookingNumber}`);
-    return { success: true, message: 'Đã xóa Booking.' };
-  };
-
-  // 1. GIỮ CHỖ NGUYÊN TỬ (Atomic Reservation)
-  const holdAtomicReservation = (candidate: MatchCandidate, request: ContainerRequest) => {
-    if (currentRole !== 'ENTERPRISE_B' || request.companyId !== currentCompany.id) {
-      return { success: false, message: 'Chỉ Bên B mới được giữ chỗ container cho nhu cầu của mình.' };
-    }
-
-    const offer = offers.find(o => o.id === candidate.offer.id);
-    if (!offer || offer.status !== 'AVAILABLE') {
-      return { success: false, message: 'Lỗi xung đột (409): Container này vừa được người khác giữ chỗ.' };
-    }
-
-    const txnId = 'TXN-' + Math.random().toString(36).substring(2, 8).toUpperCase();
     const newTxn: Transaction = {
       id: txnId,
-      offerId: offer.id,
-      requestId: request.id,
-      assetId: offer.assetId,
-      companyAId: offer.companyId,
-      companyAName: offer.companyName,
-      companyBId: request.companyId,
-      companyBName: request.companyName,
-      asset: offer.asset,
+      offerId: latestOffer.id,
+      requestId: latestRequest.id,
+      assetId: latestOffer.assetId,
+      companyAId: latestOffer.companyId,
+      companyAName: latestOffer.companyName,
+      companyBId: currentCompany.id,
+      companyBName: currentCompany.shortName,
+      asset: latestOffer.asset,
       status: 'NEGOTIATING',
+      rowVersion: 1,
       isOnHold: false,
-      dueAt: new Date(Date.now() + 30 * 60000).toISOString(), // Khóa 30 phút
-      nextAction: 'Hai bên A và B xem xét Thỏa thuận v1.0 và bấm Ký chấp thuận.',
-      agreementVersion: 1,
+      dueAt: new Date(Date.now() + 30 * 60000).toISOString(), // 30 phút
+      nextAction: 'Hai bên A và B xem xét nội dung Thỏa thuận và bấm Ký chấp thuận.',
+      allowedActions: [],
+      blockingReasons: [],
+      currentAgreementVersion: 1,
+      agreements: [agreement],
       quote: candidate.quote,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
-    // Khóa Offer và Request
-    setOffers(prev => prev.map(o => o.id === offer.id ? { ...o, status: 'HELD' } : o));
-    setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'HELD' } : r));
-    setTransactions(prev => [newTxn, ...prev]);
+    // Cập nhật trạng thái
+    persistOffers(offers.map(o => o.id === latestOffer.id ? { ...o, status: 'HELD', updatedAt: new Date().toISOString() } : o));
+    persistRequests(requests.map(r => r.id === latestRequest.id ? { ...r, status: 'HELD', updatedAt: new Date().toISOString() } : r));
+    persistTransactions([...transactions, newTxn]);
 
-    addAudit('ATOMIC_HOLD_RESERVED', 'Transaction', txnId, `Bên B giữ chỗ cont ${offer.asset.containerNumber} thành công trong 30 phút.`);
-    return { success: true, transactionId: txnId, message: 'Đã giữ chỗ container thành công trong 30 phút!' };
-  };
+    addAudit('HOLD_RESERVATION_CREATED', 'Transaction', txnId,
+      `Giữ chỗ Container ${latestOffer.asset.containerNumber} cho Request ${latestRequest.id}. Deadline: 30 phút.`);
+    addNotification(latestOffer.companyId, 'TRANSACTION_UPDATE',
+      `Bên B quan tâm đến ${latestOffer.asset.containerNumber}`,
+      `${currentCompany.shortName} đã giữ chỗ container của bạn. Vui lòng xem xét Thỏa thuận.`,
+      txnId);
 
-  // 2. KÝ THỎA THUẬN TÁI SỬ DỤNG
-  const acceptAgreement = (transactionId: string) => {
+    return { success: true, message: `Đã giữ chỗ thành công! Giao dịch ${txnId} được tạo.`, data: { transactionId: txnId } };
+  }, [offers, requests, transactions, currentRole, currentCompany, persistOffers, persistRequests, persistTransactions, addAudit, addNotification]);
+
+  // ==================== AGREEMENT ====================
+
+  const acceptAgreement = useCallback((transactionId: string): ActionResult => {
     const txn = transactions.find(t => t.id === transactionId);
     if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
-
     if (txn.status !== 'NEGOTIATING') {
-      return { success: false, message: 'Giao dịch không còn ở bước chấp nhận thỏa thuận.' };
+      return { success: false, message: `Giao dịch không ở trạng thái NEGOTIATING (hiện: ${txn.status}).` };
     }
-    if (txn.isOnHold) {
-      return { success: false, message: 'Giao dịch đang bị tạm dừng, chưa thể ký.' };
-    }
+    if (txn.isOnHold) return { success: false, message: 'Giao dịch đang tạm dừng.' };
 
-    const party = currentRole === 'ENTERPRISE_A' && currentCompany.id === txn.companyAId
-      ? 'A'
-      : currentRole === 'ENTERPRISE_B' && currentCompany.id === txn.companyBId
-        ? 'B'
-        : null;
+    const currentAgreement = txn.agreements.find(a => a.version === txn.currentAgreementVersion);
+    if (!currentAgreement) return { success: false, message: 'Không tìm thấy phiên bản Thỏa thuận hiện tại.' };
 
-    if (!party) {
-      return { success: false, message: 'Chỉ đại diện đúng doanh nghiệp A hoặc B mới được ký giao dịch này.' };
+    const isPartyA = txn.companyAId === currentCompany.id && currentRole === 'ENTERPRISE_A';
+    const isPartyB = txn.companyBId === currentCompany.id && currentRole === 'ENTERPRISE_B';
+
+    if (!isPartyA && !isPartyB) {
+      return { success: false, message: 'Bạn không phải là bên tham gia giao dịch này.' };
     }
 
-    if ((party === 'A' && txn.companyAAcceptedAt) || (party === 'B' && txn.companyBAcceptedAt)) {
-      return { success: false, message: `Bên ${party} đã ký thỏa thuận trước đó.` };
+    // Kiểm tra không tự ký cho cả hai bên
+    if (isPartyA && currentAgreement.companyAAcceptedAt) {
+      return { success: false, message: 'Bên A đã ký rồi.' };
+    }
+    if (isPartyB && currentAgreement.companyBAcceptedAt) {
+      return { success: false, message: 'Bên B đã ký rồi.' };
     }
 
-    const nowIso = new Date().toISOString();
-    const updated = { ...txn };
+    const now = new Date().toISOString();
+    const updatedAgreement: Agreement = {
+      ...currentAgreement,
+      ...(isPartyA ? {
+        companyAAcceptedAt: now,
+        companyAAcceptedBy: currentUserEmail,
+        companyACompanyId: currentCompany.id,
+      } : {
+        companyBAcceptedAt: now,
+        companyBAcceptedBy: currentUserEmail,
+        companyBCompanyId: currentCompany.id,
+      }),
+    };
 
-    if (party === 'A') {
-      updated.companyAAcceptedAt = nowIso;
-      updated.companyAAcceptedBy = currentUserEmail;
-    } else {
-      updated.companyBAcceptedAt = nowIso;
-      updated.companyBAcceptedBy = currentUserEmail;
-    }
+    const updatedAgreements = txn.agreements.map(a =>
+      a.version === txn.currentAgreementVersion ? updatedAgreement : a
+    );
 
-    let msg = `Bên ${party} đã ký chấp nhận thỏa thuận.`;
-    // Kiểm tra nếu cả 2 bên cùng ký
-    if (updated.companyAAcceptedAt && updated.companyBAcceptedAt) {
-      const guard = canTransitionTo(updated, 'PENDING_CARRIER');
-      if (guard.allowed) {
-        updated.status = 'PENDING_CARRIER';
-        updated.nextAction = guard.nextAction || 'Chờ Hãng tàu phê duyệt RU.';
-        updated.dueAt = new Date(Date.now() + 4 * 3600000).toISOString(); // 4 giờ chờ hãng tàu
-        msg = 'Cả hai bên đã ký thỏa thuận! Giao dịch đã chuyển sang bước 2: Chờ Hãng tàu duyệt RU.';
+    // Kiểm tra cả hai đã ký chưa
+    const bothAccepted = !!updatedAgreement.companyAAcceptedAt && !!updatedAgreement.companyBAcceptedAt;
+    
+    let updatedTxn: Transaction = {
+      ...txn,
+      agreements: updatedAgreements,
+      rowVersion: txn.rowVersion + 1,
+      updatedAt: now,
+    };
+
+    if (bothAccepted) {
+      // Kiểm tra không cùng actor
+      if (updatedAgreement.companyAAcceptedBy === updatedAgreement.companyBAcceptedBy) {
+        return { success: false, message: 'SAME_ACTOR_BOTH_PARTIES: Cùng một người không được ký cả hai bên.' };
       }
+      // Chuyển PENDING_CARRIER
+      updatedTxn = {
+        ...updatedTxn,
+        status: 'PENDING_CARRIER',
+        dueAt: new Date(Date.now() + 4 * 3600000).toISOString(), // 4 giờ
+        nextAction: 'Bộ phận Vận hành (Ops) đang liên hệ hãng tàu xin duyệt RU. Dự kiến 4 giờ.',
+      };
+      addAudit('TRANSACTION_STATUS_CHANGED', 'Transaction', transactionId,
+        `NEGOTIATING → PENDING_CARRIER. Hai bên đã ký Thỏa thuận v${txn.currentAgreementVersion}.`);
     }
 
-    setTransactions(prev => prev.map(t => t.id === transactionId ? updated : t));
-    addAudit('AGREEMENT_ACCEPTED', 'Transaction', transactionId, `Bên ${party} ký thỏa thuận v${updated.agreementVersion}`);
-    return { success: true, message: msg };
-  };
+    persistTransactions(transactions.map(t => t.id === transactionId ? updatedTxn : t));
+    addAudit(isPartyA ? 'AGREEMENT_ACCEPTED_BY_A' : 'AGREEMENT_ACCEPTED_BY_B',
+      'Agreement', currentAgreement.id,
+      `${isPartyA ? 'Bên A' : 'Bên B'} ký chấp thuận Thỏa thuận v${txn.currentAgreementVersion}. Hash: ${currentAgreement.contentHash}`);
 
-  // 3. OPS PHÊ DUYỆT RU HÃNG TÀU
-  const opsApproveCarrier = (transactionId: string, refNumber: string, evidenceFileName: string) => {
-    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
-      return { success: false, message: 'Chỉ Ops hoặc Quản trị hệ thống mới được duyệt RU.' };
-    }
+    const otherPartyId = isPartyA ? txn.companyBId : txn.companyAId;
+    addNotification(otherPartyId, 'TRANSACTION_UPDATE',
+      bothAccepted ? `Giao dịch ${transactionId} — Cả hai bên đã ký` : `${isPartyA ? 'Bên A' : 'Bên B'} đã ký Thỏa thuận`,
+      bothAccepted ? 'Chờ Ops xử lý RU với hãng tàu.' : `${isPartyA ? 'Bên A' : 'Bên B'} đã ký, đang chờ bên còn lại.`,
+      transactionId);
 
+    return { success: true, message: bothAccepted ? 'Cả hai bên đã ký. Chuyển sang chờ hãng tàu.' : `Đã ký chấp thuận thành công.` };
+  }, [transactions, currentRole, currentCompany, currentUserEmail, persistTransactions, addAudit, addNotification]);
+
+  const requestAgreementChange = useCallback((transactionId: string, reason: string): ActionResult => {
     const txn = transactions.find(t => t.id === transactionId);
     if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
+    if (txn.status !== 'NEGOTIATING') return { success: false, message: 'Chỉ có thể yêu cầu thay đổi ở trạng thái NEGOTIATING.' };
 
-    const carrierApproval = {
-      id: 'CA-' + Math.random().toString(36).substring(2, 7).toUpperCase(),
+    const currentAgreement = txn.agreements.find(a => a.version === txn.currentAgreementVersion);
+    if (!currentAgreement) return { success: false, message: 'Không tìm thấy Thỏa thuận hiện tại.' };
+
+    // Tạo version mới, vô hiệu hóa acceptance cũ
+    const newVersion = txn.currentAgreementVersion + 1;
+    const newAgreement: Agreement = {
+      id: genId('AGR'),
+      transactionId,
+      version: newVersion,
+      contentHash: `sha256-${Math.random().toString(36).substring(2)}`,
+      createdAt: new Date().toISOString(),
+    };
+    const updatedOldAgreement: Agreement = {
+      ...currentAgreement,
+      supersededAt: new Date().toISOString(),
+      supersededReason: reason,
+    };
+
+    const updatedTxn: Transaction = {
+      ...txn,
+      agreements: [...txn.agreements.map(a => a.version === txn.currentAgreementVersion ? updatedOldAgreement : a), newAgreement],
+      currentAgreementVersion: newVersion,
+      rowVersion: txn.rowVersion + 1,
+      nextAction: `Thỏa thuận đã được cập nhật lên v${newVersion}. Cả hai bên cần ký lại.`,
+      updatedAt: new Date().toISOString(),
+    };
+    persistTransactions(transactions.map(t => t.id === transactionId ? updatedTxn : t));
+    addAudit('AGREEMENT_CHANGE_REQUESTED', 'Agreement', currentAgreement.id, `Yêu cầu thay đổi → v${newVersion}: ${reason}`);
+    return { success: true, message: `Đã tạo Thỏa thuận v${newVersion}. Cả hai bên cần ký lại.` };
+  }, [transactions, persistTransactions, addAudit]);
+
+  // ==================== CARRIER APPROVAL ====================
+
+  const opsApproveCarrier = useCallback((
+    transactionId: string, refNumber: string, evidenceFileName: string, validUntil: string
+  ): ActionResult => {
+    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Ops mới có thể ghi nhận kết quả RU.' };
+    }
+    const txn = transactions.find(t => t.id === transactionId);
+    if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
+    if (txn.status !== 'PENDING_CARRIER') {
+      return { success: false, message: `Giao dịch không ở trạng thái PENDING_CARRIER (hiện: ${txn.status}).` };
+    }
+    if (!refNumber.trim()) {
+      return { success: false, message: 'Số tham chiếu RU của hãng tàu không được để trống.' };
+    }
+    if (!evidenceFileName.trim()) {
+      return { success: false, message: 'Phải có tên file bằng chứng RU.' };
+    }
+
+    const approval: CarrierApproval = {
+      id: genId('CARAPPR'),
       transactionId,
       carrierCode: txn.asset.carrierCode,
       approvalReference: refNumber,
-      status: 'APPROVED' as const,
-      opsReviewerName: 'Vũ Minh Trí (Ops Lead)',
-      evidenceFileName,
-      approvedAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 24 * 3600000).toISOString()
-    };
-
-    const updated: Transaction = {
-      ...txn,
-      carrierApproval,
-      paymentOrderA: {
-        id: 'PAY-A-' + Math.random().toString(36).substring(2, 7),
-        transactionId,
-        companyId: txn.companyAId,
-        companyName: txn.companyAName,
-        payerRole: 'PARTY_A',
-        amountVnd: txn.quote.econtCollectedFromA,
-        status: 'PENDING'
-      },
-      paymentOrderB: {
-        id: 'PAY-B-' + Math.random().toString(36).substring(2, 7),
-        transactionId,
-        companyId: txn.companyBId,
-        companyName: txn.companyBName,
-        payerRole: 'PARTY_B',
-        amountVnd: txn.quote.econtCollectedFromB,
-        status: 'PENDING'
-      }
-    };
-
-    const guard = canTransitionTo(updated, 'AWAITING_PAYMENT');
-    if (guard.allowed) {
-      updated.status = 'AWAITING_PAYMENT';
-      updated.nextAction = guard.nextAction || 'Chờ hai bên thanh toán nghĩa vụ phí.';
-      updated.dueAt = new Date(Date.now() + 2 * 3600000).toISOString(); // 2 giờ chờ nộp tiền
-    }
-
-    setTransactions(prev => prev.map(t => t.id === transactionId ? updated : t));
-    addAudit('CARRIER_RU_APPROVED', 'Transaction', transactionId, `Ops phê duyệt số RU ${refNumber} từ hãng tàu ${txn.asset.carrierCode}`);
-    return { success: true, message: 'Đã lưu văn bản phê duyệt RU của Hãng tàu! Chuyển sang Bước 3: Thanh toán.' };
-  };
-
-  // 4. XÁC NHẬN THANH TOÁN (Tài chính)
-  const settlePayment = (transactionId: string, party: 'A' | 'B', bankRef: string) => {
-    if (currentRole !== 'FINANCE' && currentRole !== 'SUPER_ADMIN') {
-      return { success: false, message: 'Chỉ Tài chính hoặc Quản trị hệ thống mới được đối soát thanh toán.' };
-    }
-
-    const txn = transactions.find(t => t.id === transactionId);
-    if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
-
-    const updated = { ...txn };
-    const nowIso = new Date().toISOString();
-
-    if (party === 'A' && updated.paymentOrderA) {
-      updated.paymentOrderA = { ...updated.paymentOrderA, status: 'SETTLED', bankReference: bankRef, settledAt: nowIso };
-    } else if (party === 'B' && updated.paymentOrderB) {
-      updated.paymentOrderB = { ...updated.paymentOrderB, status: 'SETTLED', bankReference: bankRef, settledAt: nowIso };
-    }
-
-    let msg = `Đã xác nhận thanh toán thành công cho Bên ${party}.`;
-
-    // Nếu cả 2 bên đã thanh toán đủ -> Tự động phát hành Dispatch Permit
-    if (updated.paymentOrderA?.status === 'SETTLED' && updated.paymentOrderB?.status === 'SETTLED') {
-      const permitToken = 'DP-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-      updated.dispatchPermit = {
-        id: 'PERMIT-' + Math.random().toString(36).substring(2, 7),
-        transactionId,
-        permitNumber: 'ECONT-DP-' + Math.floor(100000 + Math.random() * 900000),
-        verificationToken: permitToken,
-        driverName: 'Nguyễn Văn Tài (Tài xế nhận cont)',
-        truckPlate: '51D-894.22',
+      status: 'APPROVED',
+      scope: {
+        containerNumber: txn.asset.containerNumber,
+        bookingNumber: '',
+        companyAId: txn.companyAId,
+        companyBId: txn.companyBId,
+        pickupPoint: txn.asset.currentLocationName,
+        deliveryPoint: '',
         validFrom: new Date().toISOString(),
-        validUntil: new Date(Date.now() + 12 * 3600000).toISOString(),
-        status: 'ACTIVE',
-        issuedAt: nowIso
-      };
-
-      const guard = canTransitionTo(updated, 'READY_FOR_PICKUP');
-      if (guard.allowed) {
-        updated.status = 'READY_FOR_PICKUP';
-        updated.nextAction = guard.nextAction || 'Phiếu điều phối đã kích hoạt. Sẵn sàng nhận cont tại kho A.';
-        msg = 'Cả hai bên đã thanh toán đủ! Đã tự động phát hành Phiếu điều phối (Dispatch Permit).';
-      }
-    }
-
-    setTransactions(prev => prev.map(t => t.id === transactionId ? updated : t));
-    addAudit('PAYMENT_SETTLED', 'PaymentOrder', transactionId, `Thanh toán bên ${party} đã đối soát thành công (${bankRef})`);
-    return { success: true, message: msg };
-  };
-
-  // 5. NỘP BIÊN BẢN KIỂM TRA THỰC ĐỊA 6 MẶT (Inspection)
-  const submitInspection = (transactionId: string, inspectionData: {
-    inspectorName: string;
-    checklistFloor: boolean;
-    checklistWalls: boolean;
-    checklistRoof: boolean;
-    checklistDoors: boolean;
-    checklistGaskets: boolean;
-    checklistUndercarriage: boolean;
-    isDiscrepancyFound: boolean;
-    discrepancyNotes?: string;
-  }) => {
-    if (currentRole !== 'ENTERPRISE_B' || currentCompany.id !== transactions.find(t => t.id === transactionId)?.companyBId) {
-      return { success: false, message: 'Chỉ đại diện Bên B mới được ghi nhận kiểm tra thực địa.' };
-    }
-
-    const txn = transactions.find(t => t.id === transactionId);
-    if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
-
-    const inspection = {
-      id: 'INSP-' + Math.random().toString(36).substring(2, 7),
-      transactionId,
-      ...inspectionData,
-      photos: [
-        'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600&auto=format&fit=crop&q=80',
-        'https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=600&auto=format&fit=crop&q=80'
-      ],
-      inspectedAt: new Date().toISOString()
+        validUntil,
+      },
+      opsReviewerName: currentUserEmail.split('@')[0],
+      opsReviewerEmail: currentUserEmail,
+      evidenceFileIds: [evidenceFileName],
+      approvedAt: new Date().toISOString(),
+      expiresAt: validUntil,
     };
 
-    const updated: Transaction = { ...txn, inspection };
+    // Tạo payment orders
+    const paymentOrderA: PaymentOrder = {
+      id: genId('PAY'),
+      transactionId,
+      companyId: txn.companyAId,
+      companyName: txn.companyAName,
+      payerRole: 'PARTY_A',
+      amountVnd: txn.quote.econtCollectedFromA,
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() + 2 * 3600000).toISOString(),
+    };
+    const paymentOrderB: PaymentOrder = {
+      id: genId('PAY'),
+      transactionId,
+      companyId: txn.companyBId,
+      companyName: txn.companyBName,
+      payerRole: 'PARTY_B',
+      amountVnd: txn.quote.econtCollectedFromB,
+      status: 'OPEN',
+      expiresAt: new Date(Date.now() + 2 * 3600000).toISOString(),
+    };
 
-    if (inspectionData.isDiscrepancyFound) {
-      // Có hư hỏng bất thường -> ON_HOLD và tự động tạo Case khiếu nại
-      updated.isOnHold = true;
-      updated.holdReason = 'Phát hiện hư hỏng ngoài biên bản: ' + (inspectionData.discrepancyNotes || 'Sai lệch tình trạng vỏ');
-      
-      const newCase: CaseIssue = {
-        id: 'CASE-' + Math.random().toString(36).substring(2, 7).toUpperCase(),
-        transactionId,
-        openedByCompanyId: txn.companyBId,
-        openedByCompanyName: txn.companyBName,
-        caseType: 'DAMAGE_DISPUTE',
-        title: 'Phát hiện sai lệch tình trạng cont khi kiểm tra tại bãi',
-        description: inspectionData.discrepancyNotes || 'Hư hỏng không khớp với khai báo ban đầu của Bên A.',
-        status: 'OPEN',
-        createdAt: new Date().toISOString()
-      };
-      setCases(prev => [newCase, ...prev]);
-      setTransactions(prev => prev.map(t => t.id === transactionId ? updated : t));
-      addAudit('INSPECTION_FAILED_HOLD', 'Transaction', transactionId, 'Kiểm tra cont phát hiện sai lệch. Giao dịch kích hoạt ON_HOLD.');
-      return { success: true, message: 'Đã ghi nhận sai lệch! Giao dịch đang TẠM DỪNG (ON_HOLD) để Ops xử lý Case.' };
+    const updatedTxn: Transaction = {
+      ...txn,
+      status: 'AWAITING_PAYMENT',
+      carrierApproval: approval,
+      paymentOrderA,
+      paymentOrderB,
+      rowVersion: txn.rowVersion + 1,
+      dueAt: new Date(Date.now() + 2 * 3600000).toISOString(),
+      nextAction: 'Bên A và Bên B cần hoàn tất thanh toán trong vòng 2 giờ.',
+      updatedAt: new Date().toISOString(),
+    };
+    persistTransactions(transactions.map(t => t.id === transactionId ? updatedTxn : t));
+    addAudit('CARRIER_APPROVAL_RECORDED', 'CarrierApproval', approval.id,
+      `Ops ghi nhận RU APPROVED. Ref: ${refNumber}. Evidence: ${evidenceFileName}`);
+    addNotification(txn.companyAId, 'PAYMENT_REQUIRED', `Cần thanh toán ${txn.quote.econtCollectedFromA.toLocaleString('vi-VN')} ₫`, 'Hãng tàu đã duyệt RU. Vui lòng hoàn tất thanh toán trong 2 giờ.', transactionId);
+    addNotification(txn.companyBId, 'PAYMENT_REQUIRED', `Cần thanh toán ${txn.quote.econtCollectedFromB.toLocaleString('vi-VN')} ₫`, 'Hãng tàu đã duyệt RU. Vui lòng hoàn tất thanh toán trong 2 giờ.', transactionId);
+    return { success: true, message: 'Đã ghi nhận Carrier Approval. Chuyển sang chờ thanh toán.' };
+  }, [transactions, currentRole, currentUserEmail, persistTransactions, addAudit, addNotification]);
+
+  const opsRejectCarrier = useCallback((transactionId: string, reason: string): ActionResult => {
+    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Ops mới có quyền này.' };
     }
-
-    // Không có sai lệch -> Cho phép chuyển sang Bước 6: HANDOVER_PENDING
-    updated.status = 'HANDOVER_PENDING';
-    updated.nextAction = 'Hai bên A và B đối chiếu biên bản kiểm tra và ký xác nhận bàn giao.';
-    setTransactions(prev => prev.map(t => t.id === transactionId ? updated : t));
-    addAudit('INSPECTION_PASSED', 'Transaction', transactionId, 'Kiểm tra cont 6 mặt đạt tiêu chuẩn. Chuyển sang chờ ký bàn giao.');
-    return { success: true, message: 'Kiểm tra cont hoàn tất đạt chuẩn! Chuyển sang Bước 6: Chờ ký bàn giao.' };
-  };
-
-  // 6. XÁC NHẬN BÀN GIAO 2 BÊN (DUAL CONFIRMATION) -> COMPLETED
-  const confirmHandover = (transactionId: string) => {
     const txn = transactions.find(t => t.id === transactionId);
     if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
-
-    if (txn.status !== 'HANDOVER_PENDING') {
-      return { success: false, message: 'Giao dịch chưa ở bước xác nhận bàn giao.' };
+    if (txn.status !== 'PENDING_CARRIER') {
+      return { success: false, message: 'Giao dịch không ở PENDING_CARRIER.' };
     }
-    if (txn.isOnHold) {
-      return { success: false, message: 'Giao dịch đang bị tạm dừng, chưa thể xác nhận bàn giao.' };
+    const updatedTxn: Transaction = {
+      ...txn, status: 'REJECTED', rowVersion: txn.rowVersion + 1,
+      nextAction: `Hãng tàu từ chối RU: ${reason}. Xử lý giải phóng và hoàn tiền.`,
+      updatedAt: new Date().toISOString(),
+    };
+    persistOffers(offers.map(o => o.id === txn.offerId ? { ...o, status: 'AVAILABLE', updatedAt: new Date().toISOString() } : o));
+    persistRequests(requests.map(r => r.id === txn.requestId ? { ...r, status: 'OPEN', updatedAt: new Date().toISOString() } : r));
+    persistTransactions(transactions.map(t => t.id === transactionId ? updatedTxn : t));
+    addAudit('CARRIER_REJECTION_RECORDED', 'Transaction', transactionId, `Carrier từ chối RU: ${reason}`);
+    return { success: true, message: 'Đã ghi nhận carrier từ chối. Offer và Request được giải phóng.' };
+  }, [transactions, offers, requests, currentRole, persistOffers, persistRequests, persistTransactions, addAudit]);
+
+  // ==================== PAYMENT ====================
+
+  const settlePayment = useCallback((transactionId: string, party: 'A' | 'B', bankRef: string, amount: number): ActionResult => {
+    if (currentRole !== 'FINANCE' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Tài chính mới có thể xác nhận thanh toán.' };
     }
-
-    const party = currentRole === 'ENTERPRISE_A' && currentCompany.id === txn.companyAId
-      ? 'A'
-      : currentRole === 'ENTERPRISE_B' && currentCompany.id === txn.companyBId
-        ? 'B'
-        : null;
-
-    if (!party) {
-      return { success: false, message: 'Chỉ đại diện đúng doanh nghiệp A hoặc B mới được xác nhận bàn giao.' };
-    }
-
-    if ((party === 'A' && txn.handoverAConfirmedAt) || (party === 'B' && txn.handoverBConfirmedAt)) {
-      return { success: false, message: `Bên ${party} đã xác nhận bàn giao trước đó.` };
-    }
-
-    const updated = { ...txn };
-    const nowIso = new Date().toISOString();
-
-    if (party === 'A') {
-      updated.handoverAConfirmedAt = nowIso;
-      updated.handoverAConfirmedBy = currentUserEmail;
-    } else {
-      updated.handoverBConfirmedAt = nowIso;
-      updated.handoverBConfirmedBy = currentUserEmail;
+    const txn = transactions.find(t => t.id === transactionId);
+    if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
+    if (txn.status !== 'AWAITING_PAYMENT') {
+      return { success: false, message: `Giao dịch không ở trạng thái AWAITING_PAYMENT (hiện: ${txn.status}).` };
     }
 
-    const bothConfirmed = Boolean(updated.handoverAConfirmedAt && updated.handoverBConfirmedAt);
-    let hash: string | undefined;
-    let msg = `Bên ${party} đã xác nhận bàn giao. Đang chờ bên còn lại xác nhận.`;
+    const now = new Date().toISOString();
+    const orderKey = party === 'A' ? 'paymentOrderA' : 'paymentOrderB';
+    const existingOrder = txn[orderKey];
+    if (!existingOrder) return { success: false, message: 'Không tìm thấy lệnh thanh toán.' };
 
-    if (bothConfirmed) {
-      hash = 'SHA256:ECONT-' + Math.random().toString(36).substring(2, 12).toUpperCase();
-      updated.handoverHash = hash;
+    const updatedOrder: PaymentOrder = {
+      ...existingOrder,
+      status: 'PAID',
+      paidAmountVnd: amount,
+      bankReference: bankRef,
+      settledAt: now,
+      settledBy: currentUserEmail,
+    };
 
-      const guard = canTransitionTo(updated, 'COMPLETED');
-      if (guard.allowed) {
-        updated.status = 'COMPLETED';
-        updated.nextAction = 'Giao dịch hoàn tất thành công. Quyền quản lý cont đã thuộc về Bên B.';
-        msg = 'Cả hai bên đã xác nhận bàn giao. Giao dịch đã hoàn tất!';
+    let updatedTxn: Transaction = {
+      ...txn,
+      [orderKey]: updatedOrder,
+      rowVersion: txn.rowVersion + 1,
+      updatedAt: now,
+    };
 
-        // Chuyển Custody của Asset từ A sang B
-        setAssets(prev => prev.map(a => a.id === updated.assetId ? {
-          ...a,
-          currentCustodianId: updated.companyBId,
-          currentCustodianName: updated.companyBName,
-          currentLocationName: 'Kho Bên B (Đã bàn giao)',
-          isLocked: false
-        } : a));
+    // Kiểm tra cả hai đã trả chưa
+    const paidA = party === 'A' ? true : txn.paymentOrderA?.status === 'PAID';
+    const paidB = party === 'B' ? true : txn.paymentOrderB?.status === 'PAID';
 
-        // Đánh dấu Offer & Request là COMPLETED
-        setOffers(prev => prev.map(o => o.id === updated.offerId ? { ...o, status: 'COMPLETED' } : o));
-        setRequests(prev => prev.map(r => r.id === updated.requestId ? { ...r, status: 'COMPLETED' } : r));
-      }
+    if (paidA && paidB) {
+      // Tạo dispatch permit
+      const permit: DispatchPermit = {
+        id: genId('PERMIT'),
+        transactionId,
+        permitNumber: `ECONT-DP-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-${transactionId.split('-').pop()}`,
+        verificationToken: Math.random().toString(36).substring(2, 12).toUpperCase(),
+        driverName: 'Chưa khai báo',
+        truckPlate: 'Chưa khai báo',
+        validFrom: now,
+        validUntil: new Date(Date.now() + 48 * 3600000).toISOString(),
+        status: 'ACTIVE',
+        generatedAt: now,
+      };
+      updatedTxn = {
+        ...updatedTxn,
+        status: 'READY_FOR_PICKUP',
+        dispatchPermit: permit,
+        dueAt: new Date(Date.now() + 48 * 3600000).toISOString(),
+        nextAction: 'Phiếu điều phối đã phát hành. Tài xế chuẩn bị phương tiện đến kho A.',
+      };
+      addAudit('TRANSACTION_STATUS_CHANGED', 'Transaction', transactionId, 'AWAITING_PAYMENT → READY_FOR_PICKUP. Phiếu DP phát hành.');
+      addNotification(txn.companyAId, 'TRANSACTION_UPDATE', 'Phiếu điều phối đã được phát hành', 'Bên B sẽ đến nhận cont theo phiếu DP.', transactionId);
+      addNotification(txn.companyBId, 'TRANSACTION_UPDATE', 'Phiếu điều phối đã được phát hành', 'Vui lòng chuẩn bị xe và người nhận đến kho A.', transactionId);
     }
 
-    setTransactions(prev => prev.map(t => t.id === transactionId ? updated : t));
-    addAudit(
-      bothConfirmed ? 'HANDOVER_COMPLETED' : 'HANDOVER_CONFIRMED',
-      'Transaction',
+    persistTransactions(transactions.map(t => t.id === transactionId ? updatedTxn : t));
+    addAudit('PAYMENT_SETTLED', 'PaymentOrder', existingOrder.id,
+      `Tài chính xác nhận thanh toán Bên ${party}: ${amount.toLocaleString('vi-VN')} ₫. Ref: ${bankRef}`);
+    return { success: true, message: paidA && paidB ? 'Đủ tiền hai bên. Phiếu điều phối đã phát.' : `Đã xác nhận thanh toán Bên ${party}.` };
+  }, [transactions, currentRole, currentUserEmail, persistTransactions, addAudit, addNotification]);
+
+  // ==================== HANDOVER ====================
+
+  const generateDispatchPermit = useCallback((transactionId: string, driverName: string, truckPlate: string): ActionResult => {
+    const txn = transactions.find(t => t.id === transactionId);
+    if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
+    if (!txn.dispatchPermit) return { success: false, message: 'Chưa có phiếu điều phối.' };
+    const updated = { ...txn.dispatchPermit, driverName, truckPlate };
+    persistTransactions(transactions.map(t => t.id === transactionId ? { ...t, dispatchPermit: updated, updatedAt: new Date().toISOString() } : t));
+    addAudit('DISPATCH_PERMIT_UPDATED', 'DispatchPermit', txn.dispatchPermit.id, `Cập nhật tài xế: ${driverName}, xe: ${truckPlate}`);
+    return { success: true, message: 'Đã cập nhật thông tin tài xế vào phiếu điều phối.' };
+  }, [transactions, persistTransactions, addAudit]);
+
+  const activateInspection = useCallback((transactionId: string): ActionResult => {
+    const txn = transactions.find(t => t.id === transactionId);
+    if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
+    const check = canTransitionTo(txn, 'INSPECTION');
+    if (!check.allowed) return { success: false, message: check.reason || 'Không thể chuyển sang INSPECTION.' };
+    const updatedTxn: Transaction = {
+      ...txn, status: 'INSPECTION', rowVersion: txn.rowVersion + 1,
+      nextAction: 'Đại diện Bên B tiến hành kiểm tra thực tế 6 mặt container.',
+      updatedAt: new Date().toISOString(),
+    };
+    persistTransactions(transactions.map(t => t.id === transactionId ? updatedTxn : t));
+    addAudit('TRANSACTION_STATUS_CHANGED', 'Transaction', transactionId, 'READY_FOR_PICKUP → INSPECTION.');
+    return { success: true, message: 'Đã kích hoạt bước kiểm tra.' };
+  }, [transactions, persistTransactions, addAudit]);
+
+  const submitInspection = useCallback((transactionId: string, data: {
+    inspectorName: string;
+    checklistFloor: boolean; checklistWalls: boolean; checklistRoof: boolean;
+    checklistDoors: boolean; checklistGaskets: boolean; checklistUndercarriage: boolean;
+    isDiscrepancyFound: boolean; discrepancyNotes?: string; discrepancySeverity?: 'MINOR' | 'MAJOR';
+  }): ActionResult => {
+    const txn = transactions.find(t => t.id === transactionId);
+    if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
+    if (txn.status !== 'INSPECTION') {
+      return { success: false, message: 'Giao dịch không ở trạng thái INSPECTION.' };
+    }
+    if (txn.companyBId !== currentCompany.id && currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ đại diện Bên B mới có thể nộp biên bản kiểm tra.' };
+    }
+
+    const inspection: Inspection = {
+      id: genId('INSP'),
       transactionId,
-      bothConfirmed
-        ? `Hoàn tất giao nhận cont ${txn.asset.containerNumber}. Mã xác thực: ${hash}`
-        : `Bên ${party} xác nhận bàn giao cont ${txn.asset.containerNumber}.`
+      inspectorName: data.inspectorName,
+      inspectorCompanyId: currentCompany.id,
+      checklistFloor: data.checklistFloor,
+      checklistWalls: data.checklistWalls,
+      checklistRoof: data.checklistRoof,
+      checklistDoors: data.checklistDoors,
+      checklistGaskets: data.checklistGaskets,
+      checklistUndercarriage: data.checklistUndercarriage,
+      isDiscrepancyFound: data.isDiscrepancyFound,
+      discrepancyNotes: data.discrepancyNotes,
+      discrepancySeverity: data.discrepancySeverity,
+      photoIds: [],
+      inspectedAt: new Date().toISOString(),
+      version: 1,
+      contentHash: `sha256-insp-${Math.random().toString(36).substring(2)}`,
+    };
+
+    let nextAction = 'Kiểm tra hoàn tất. Chờ hai bên xác nhận bàn giao.';
+    let newStatus: TransactionStatus = 'HANDOVER_PENDING';
+
+    if (data.isDiscrepancyFound && data.discrepancySeverity === 'MAJOR') {
+      nextAction = 'Phát hiện sai lệch NGHIÊM TRỌNG. Lập Case và tạm dừng giao dịch.';
+      newStatus = 'INSPECTION'; // Giữ ở INSPECTION
+    }
+
+    // Tạo HandoverRecord
+    const handoverRecord: HandoverRecord = {
+      id: genId('HOR'),
+      transactionId,
+      version: 1,
+      contentHash: `sha256-ho-${Math.random().toString(36).substring(2)}`,
+      status: 'PENDING_CONFIRMATION',
+    };
+
+    const updatedTxn: Transaction = {
+      ...txn,
+      status: newStatus,
+      inspection,
+      handoverRecord: newStatus === 'HANDOVER_PENDING' ? handoverRecord : undefined,
+      rowVersion: txn.rowVersion + 1,
+      nextAction,
+      updatedAt: new Date().toISOString(),
+    };
+    persistTransactions(transactions.map(t => t.id === transactionId ? updatedTxn : t));
+    addAudit('INSPECTION_SUBMITTED', 'Inspection', inspection.id,
+      `Biên bản kiểm tra: ${data.isDiscrepancyFound ? `Sai lệch ${data.discrepancySeverity}: ${data.discrepancyNotes}` : 'Đạt yêu cầu'}`);
+    return { success: true, message: data.isDiscrepancyFound ? 'Đã ghi nhận sai lệch. Cần xử lý trước khi bàn giao.' : 'Kiểm tra hoàn tất. Chuyển sang bàn giao.' };
+  }, [transactions, currentRole, currentCompany, persistTransactions, addAudit]);
+
+  const confirmHandoverA = useCallback((transactionId: string): ActionResult => {
+    const txn = transactions.find(t => t.id === transactionId);
+    if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
+    if (txn.status !== 'HANDOVER_PENDING') return { success: false, message: 'Giao dịch không ở HANDOVER_PENDING.' };
+    if (txn.companyAId !== currentCompany.id || currentRole !== 'ENTERPRISE_A') {
+      return { success: false, message: 'Chỉ đại diện Bên A mới có thể xác nhận đã giao.' };
+    }
+    if (txn.handoverRecord?.confirmationA) {
+      return { success: false, message: 'Bên A đã xác nhận rồi.' };
+    }
+
+    const record = txn.handoverRecord!;
+    const confirmation = {
+      confirmedAt: new Date().toISOString(),
+      confirmedBy: currentUserEmail,
+      companyId: currentCompany.id,
+      recordVersion: record.version,
+      recordHash: record.contentHash,
+    };
+    const updatedRecord: HandoverRecord = { ...record, confirmationA: confirmation };
+    let updatedTxn: Transaction = {
+      ...txn,
+      handoverRecord: updatedRecord,
+      rowVersion: txn.rowVersion + 1,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Kiểm tra cả hai đã xác nhận chưa
+    if (updatedRecord.confirmationB) {
+      const check = canTransitionTo(updatedTxn, 'COMPLETED');
+      if (check.allowed) {
+        updatedTxn = {
+          ...updatedTxn,
+          status: 'COMPLETED',
+          nextAction: 'Giao nhận hoàn tất. Quyền quản lý cont đã chuyển sang Bên B.',
+          handoverRecord: {
+            ...updatedRecord,
+            status: 'COMPLETED',
+            completedAt: new Date().toISOString(),
+          },
+        };
+        // Cập nhật custody
+        const updatedAssets = assets.map(a =>
+          a.id === txn.assetId ? {
+            ...a,
+            currentCustodianId: txn.companyBId,
+            currentCustodianName: txn.companyBName,
+            isLocked: false,
+            activeAllocationId: undefined,
+            physicalStatus: 'AT_CUSTOMER' as const,
+            updatedAt: new Date().toISOString(),
+          } : a
+        );
+        persistAssets(updatedAssets);
+        persistOffers(offers.map(o => o.id === txn.offerId ? { ...o, status: 'FULFILLED', updatedAt: new Date().toISOString() } : o));
+        persistRequests(requests.map(r => r.id === txn.requestId ? { ...r, status: 'FULFILLED', updatedAt: new Date().toISOString() } : r));
+        addAudit('TRANSACTION_COMPLETED', 'Transaction', transactionId,
+          `Giao nhận HOÀN TẤT. Custody chuyển từ ${txn.companyAName} → ${txn.companyBName}`);
+        addNotification(txn.companyAId, 'TRANSACTION_UPDATE', `Giao dịch ${transactionId} HOÀN TẤT ✓`, 'Cont đã được bàn giao thành công.', transactionId);
+        addNotification(txn.companyBId, 'TRANSACTION_UPDATE', `Giao dịch ${transactionId} HOÀN TẤT ✓`, 'Đã nhận cont. Vui lòng đánh giá Bên A.', transactionId);
+      }
+    }
+
+    persistTransactions(transactions.map(t => t.id === transactionId ? updatedTxn : t));
+    addAudit('HANDOVER_CONFIRMED_BY_A', 'HandoverRecord', record.id, `Bên A xác nhận đã giao. Hash: ${record.contentHash}`);
+    return { success: true, message: updatedTxn.status === 'COMPLETED' ? 'Hoàn tất! Quyền quản lý cont đã chuyển sang Bên B.' : 'Bên A đã xác nhận đã giao. Chờ Bên B.' };
+  }, [transactions, assets, offers, requests, currentRole, currentCompany, currentUserEmail, persistAssets, persistOffers, persistRequests, persistTransactions, addAudit, addNotification]);
+
+  const confirmHandoverB = useCallback((transactionId: string): ActionResult => {
+    const txn = transactions.find(t => t.id === transactionId);
+    if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
+    if (txn.status !== 'HANDOVER_PENDING') return { success: false, message: 'Giao dịch không ở HANDOVER_PENDING.' };
+    if (txn.companyBId !== currentCompany.id || currentRole !== 'ENTERPRISE_B') {
+      return { success: false, message: 'Chỉ đại diện Bên B mới có thể xác nhận đã nhận.' };
+    }
+    if (txn.handoverRecord?.confirmationB) {
+      return { success: false, message: 'Bên B đã xác nhận rồi.' };
+    }
+
+    const record = txn.handoverRecord!;
+    const confirmation = {
+      confirmedAt: new Date().toISOString(),
+      confirmedBy: currentUserEmail,
+      companyId: currentCompany.id,
+      recordVersion: record.version,
+      recordHash: record.contentHash,
+    };
+    const updatedRecord: HandoverRecord = { ...record, confirmationB: confirmation };
+    let updatedTxn: Transaction = {
+      ...txn,
+      handoverRecord: updatedRecord,
+      rowVersion: txn.rowVersion + 1,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (updatedRecord.confirmationA) {
+      const check = canTransitionTo(updatedTxn, 'COMPLETED');
+      if (check.allowed) {
+        updatedTxn = {
+          ...updatedTxn,
+          status: 'COMPLETED',
+          nextAction: 'Giao nhận hoàn tất. Quyền quản lý cont đã chuyển sang Bên B.',
+          handoverRecord: { ...updatedRecord, status: 'COMPLETED', completedAt: new Date().toISOString() },
+        };
+        const updatedAssets = assets.map(a =>
+          a.id === txn.assetId ? {
+            ...a,
+            currentCustodianId: txn.companyBId,
+            currentCustodianName: txn.companyBName,
+            isLocked: false,
+            activeAllocationId: undefined,
+            physicalStatus: 'AT_CUSTOMER' as const,
+            updatedAt: new Date().toISOString(),
+          } : a
+        );
+        persistAssets(updatedAssets);
+        persistOffers(offers.map(o => o.id === txn.offerId ? { ...o, status: 'FULFILLED', updatedAt: new Date().toISOString() } : o));
+        persistRequests(requests.map(r => r.id === txn.requestId ? { ...r, status: 'FULFILLED', updatedAt: new Date().toISOString() } : r));
+        addAudit('TRANSACTION_COMPLETED', 'Transaction', transactionId, `Giao nhận HOÀN TẤT. Custody → ${txn.companyBName}`);
+      }
+    }
+
+    persistTransactions(transactions.map(t => t.id === transactionId ? updatedTxn : t));
+    addAudit('HANDOVER_CONFIRMED_BY_B', 'HandoverRecord', record.id, `Bên B xác nhận đã nhận. Hash: ${record.contentHash}`);
+    return { success: true, message: updatedTxn.status === 'COMPLETED' ? 'Hoàn tất giao nhận!' : 'Bên B đã xác nhận nhận. Chờ Bên A.' };
+  }, [transactions, assets, offers, requests, currentRole, currentCompany, currentUserEmail, persistAssets, persistOffers, persistRequests, persistTransactions, addAudit, addNotification]);
+
+  // ==================== HOLD & CASE ====================
+
+  const toggleHold = useCallback((transactionId: string, isOnHold: boolean, reason?: string, caseId?: string): ActionResult => {
+    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Ops mới có thể đặt/gỡ trạng thái tạm dừng.' };
+    }
+    const txn = transactions.find(t => t.id === transactionId);
+    if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
+    const updatedTxn: Transaction = {
+      ...txn,
+      isOnHold,
+      holdReason: isOnHold ? (reason || 'Đang xử lý sự cố') : undefined,
+      holdSetAt: isOnHold ? new Date().toISOString() : undefined,
+      holdSetBy: isOnHold ? currentUserEmail : undefined,
+      holdCaseId: isOnHold ? caseId : undefined,
+      rowVersion: txn.rowVersion + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    persistTransactions(transactions.map(t => t.id === transactionId ? updatedTxn : t));
+    addAudit(isOnHold ? 'TRANSACTION_PUT_ON_HOLD' : 'TRANSACTION_HOLD_RELEASED', 'Transaction', transactionId,
+      isOnHold ? `Tạm dừng: ${reason}` : 'Gỡ tạm dừng');
+    return { success: true, message: isOnHold ? 'Đã tạm dừng giao dịch.' : 'Đã gỡ tạm dừng giao dịch.' };
+  }, [transactions, currentRole, currentUserEmail, persistTransactions, addAudit]);
+
+  const addCase = useCallback((c: Omit<CaseIssue, 'id' | 'createdAt' | 'updatedAt'>): ActionResult => {
+    const newCase: CaseIssue = {
+      ...c,
+      id: genId('CASE'),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setCases(prev => [newCase, ...prev]);
+    addAudit('CASE_CREATED', 'CaseIssue', newCase.id, `Tạo Case: ${newCase.title}`);
+    return { success: true, message: 'Đã tạo Case thành công.', data: newCase };
+  }, [addAudit]);
+
+  const updateCase = useCallback((caseId: string, updates: Partial<CaseIssue>): ActionResult => {
+    const c = cases.find(item => item.id === caseId);
+    if (!c) return { success: false, message: 'Không tìm thấy Case.' };
+    if (c.status === 'CLOSED') return { success: false, message: 'Case đã đóng không thể chỉnh sửa.' };
+    setCases(prev => prev.map(item => item.id === caseId ? { ...item, ...updates, updatedAt: new Date().toISOString() } : item));
+    addAudit('CASE_UPDATED', 'CaseIssue', caseId, `Cập nhật thông tin Case ${caseId}`);
+    return { success: true, message: 'Đã cập nhật Case thành công.' };
+  }, [cases, addAudit]);
+
+  const deleteCase = useCallback((caseId: string): ActionResult => {
+    const c = cases.find(item => item.id === caseId);
+    if (!c) return { success: false, message: 'Không tìm thấy Case.' };
+    if (c.status !== 'OPEN' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ có thể xóa Case khi đang ở trạng thái OPEN.' };
+    }
+    setCases(prev => prev.filter(item => item.id !== caseId));
+    addAudit('CASE_DELETED', 'CaseIssue', caseId, `Xóa Case ${caseId}`);
+    return { success: true, message: 'Đã xóa Case thành công.' };
+  }, [cases, currentRole, addAudit]);
+
+  const resolveCase = useCallback((caseId: string, resolution: NonNullable<CaseIssue['resolution']>): ActionResult => {
+    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Ops mới có thể kết luận Case.' };
+    }
+    setCases(prev => prev.map(c =>
+      c.id === caseId ? {
+        ...c, status: 'RESOLVED', resolution,
+        updatedAt: new Date().toISOString(),
+      } : c
+    ));
+    addAudit('CASE_RESOLVED', 'CaseIssue', caseId, `Kết luận Case: ${resolution.summary}`);
+    return { success: true, message: 'Đã kết luận Case.' };
+  }, [currentRole, addAudit]);
+
+  const closeCase = useCallback((caseId: string): ActionResult => {
+    setCases(prev => prev.map(c =>
+      c.id === caseId ? { ...c, status: 'CLOSED', closedAt: new Date().toISOString(), updatedAt: new Date().toISOString() } : c
+    ));
+    addAudit('CASE_CLOSED', 'CaseIssue', caseId, 'Đóng Case');
+    return { success: true, message: 'Đã đóng Case.' };
+  }, [addAudit]);
+
+  // ==================== COMPANY ACTIONS ====================
+
+  const addCompany = useCallback((comp: Omit<Company, 'id' | 'totalCompletedAsA' | 'totalCompletedAsB'>): ActionResult => {
+    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Ops hoặc Quản trị viên mới có quyền thêm doanh nghiệp.' };
+    }
+    const newComp: Company = {
+      ...comp,
+      id: genId('COMP'),
+      totalCompletedAsA: 0,
+      totalCompletedAsB: 0,
+    };
+    persistCompanies([...companies, newComp]);
+    addAudit('COMPANY_CREATED', 'Company', newComp.id, `Tạo mới DN ${newComp.companyName} (${newComp.taxCode})`);
+    return { success: true, message: `Đã thêm doanh nghiệp ${newComp.shortName} thành công.`, data: newComp };
+  }, [companies, currentRole, persistCompanies, addAudit]);
+
+  const updateCompany = useCallback((id: string, updates: Partial<Company>): ActionResult => {
+    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Ops hoặc Quản trị viên mới có quyền sửa doanh nghiệp.' };
+    }
+    const comp = companies.find(c => c.id === id);
+    if (!comp) return { success: false, message: 'Không tìm thấy doanh nghiệp.' };
+    const updated = { ...comp, ...updates };
+    persistCompanies(companies.map(c => c.id === id ? updated : c));
+    addAudit('COMPANY_UPDATED', 'Company', id, `Cập nhật thông tin DN ${comp.shortName}`);
+    return { success: true, message: `Đã cập nhật doanh nghiệp ${comp.shortName} thành công.` };
+  }, [companies, currentRole, persistCompanies, addAudit]);
+
+  const deleteCompany = useCallback((id: string): ActionResult => {
+    if (currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Super Admin mới có quyền xóa doanh nghiệp.' };
+    }
+    const comp = companies.find(c => c.id === id);
+    if (!comp) return { success: false, message: 'Không tìm thấy doanh nghiệp.' };
+    persistCompanies(companies.filter(c => c.id !== id));
+    addAudit('COMPANY_DELETED', 'Company', id, `Xóa DN ${comp.shortName}`);
+    return { success: true, message: `Đã xóa doanh nghiệp ${comp.shortName}.` };
+  }, [companies, currentRole, persistCompanies, addAudit]);
+
+  // ==================== CANCEL ====================
+
+  const cancelTransaction = useCallback((transactionId: string, reason: string): ActionResult => {
+    const txn = transactions.find(t => t.id === transactionId);
+    if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
+    const check = canTransitionTo(txn, 'CANCELLED');
+    if (!check.allowed) return { success: false, message: check.reason || 'Không thể hủy.' };
+
+    const updatedTxn: Transaction = {
+      ...txn, status: 'CANCELLED', rowVersion: txn.rowVersion + 1,
+      nextAction: `Giao dịch bị hủy: ${reason}`,
+      updatedAt: new Date().toISOString(),
+    };
+    persistOffers(offers.map(o => o.id === txn.offerId ? { ...o, status: 'AVAILABLE', updatedAt: new Date().toISOString() } : o));
+    persistRequests(requests.map(r => r.id === txn.requestId ? { ...r, status: 'OPEN', updatedAt: new Date().toISOString() } : r));
+    const updatedAssets = assets.map(a =>
+      a.id === txn.assetId ? { ...a, isLocked: false, activeAllocationId: undefined, updatedAt: new Date().toISOString() } : a
     );
-    return { success: true, message: msg };
-  };
+    persistAssets(updatedAssets);
+    persistTransactions(transactions.map(t => t.id === transactionId ? updatedTxn : t));
+    addAudit('TRANSACTION_CANCELLED', 'Transaction', transactionId, `Hủy giao dịch: ${reason}`);
+    return { success: true, message: 'Đã hủy giao dịch. Offer và Request được giải phóng.' };
+  }, [transactions, assets, offers, requests, persistAssets, persistOffers, persistRequests, persistTransactions, addAudit]);
 
-  // Bật / tắt Hold thủ công (Dành cho Ops)
-  const toggleHold = (transactionId: string, isOnHold: boolean, reason?: string) => {
-    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') return;
+  // ==================== CHAT ====================
 
-    setTransactions(prev => prev.map(t => {
-      if (t.id === transactionId) {
-        return {
-          ...t,
-          isOnHold,
-          holdReason: isOnHold ? (reason || 'Ops tạm giữ để làm rõ') : undefined
-        };
-      }
-      return t;
-    }));
-    addAudit('TRANSACTION_HOLD_TOGGLED', 'Transaction', transactionId, `Trạng thái Hold thay đổi: ${isOnHold} (Lý do: ${reason || 'Không'})`);
-  };
+  const startChatThread = useCallback((thread: Omit<ChatThread, 'id' | 'createdAt' | 'updatedAt'>): string | null => {
+    const existing = chatThreads.find(t =>
+      t.companyAId === thread.companyAId && t.companyBId === thread.companyBId &&
+      t.offerId === thread.offerId && t.requestId === thread.requestId
+    );
+    if (existing) return existing.id;
+    const newThread: ChatThread = {
+      ...thread,
+      id: genId('CHAT'),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setChatThreads(prev => [newThread, ...prev]);
+    return newThread.id;
+  }, [chatThreads]);
 
-  // Giải quyết khiếu nại (Ops)
-  const resolveCase = (caseId: string, resolutionSummary: string) => {
-    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') return;
+  const sendChatMessage = useCallback((threadId: string, body: string): ActionResult => {
+    const thread = chatThreads.find(t => t.id === threadId);
+    if (!thread) return { success: false, message: 'Không tìm thấy cuộc hội thoại.' };
+    if (!body.trim()) return { success: false, message: 'Tin nhắn không được để trống.' };
 
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        return {
-          ...c,
-          status: 'RESOLVED',
-          resolutionSummary,
-          resolvedAt: new Date().toISOString()
-        };
-      }
-      return c;
-    }));
-    addAudit('CASE_RESOLVED', 'Case', caseId, `Ops giải quyết khiếu nại: ${resolutionSummary}`);
-  };
+    const isA = thread.companyAId === currentCompany.id;
+    const isB = thread.companyBId === currentCompany.id;
+    const isOps = currentRole === 'OPS' || currentRole === 'SUPER_ADMIN';
+    if (!isA && !isB && !isOps) {
+      return { success: false, message: 'Bạn không có quyền gửi tin nhắn vào cuộc hội thoại này.' };
+    }
 
-  // Reset về dữ liệu gốc
-  const resetToDemoData = () => {
-    setCompanies(INITIAL_COMPANIES);
-    setAssets(INITIAL_ASSETS);
-    setOffers(INITIAL_OFFERS);
-    setRequests(INITIAL_REQUESTS);
-    setTransactions(INITIAL_TRANSACTIONS);
+    const newMsg: ChatMessage = {
+      id: genId('MSG'),
+      clientId: `cli-${Date.now()}`,
+      threadId,
+      senderCompanyId: currentCompany.id,
+      senderCompanyName: currentCompany.shortName,
+      senderRole: isA ? 'A' : isB ? 'B' : 'OPS',
+      senderName: '',
+      body: body.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    setChatMessages(prev => [...prev, newMsg]);
+    setChatThreads(prev => prev.map(t =>
+      t.id === threadId ? { ...t, updatedAt: newMsg.createdAt, lastMessageAt: newMsg.createdAt } : t
+    ));
+    return { success: true, message: 'Đã gửi tin nhắn.' };
+  }, [chatThreads, currentRole, currentCompany]);
+
+  // ==================== NOTIFICATIONS ====================
+
+  const markNotificationRead = useCallback((notifId: string) => {
+    setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, isRead: true } : n));
+  }, []);
+
+  // ==================== DEMO RESET ====================
+
+  const resetToDemoData = useCallback(() => {
+    persistAssets(INITIAL_ASSETS);
+    persistOffers(INITIAL_OFFERS);
+    persistRequests(INITIAL_REQUESTS);
+    persistTransactions(INITIAL_TRANSACTIONS);
     setCases(INITIAL_CASES);
     setAuditLogs(INITIAL_AUDIT_LOGS);
-    localStorage.clear();
-    addAudit('DATABASE_RESET', 'System', 'ALL', 'Khôi phục dữ liệu mẫu ban đầu theo chuẩn SRS.');
+    setNotifications(INITIAL_NOTIFICATIONS);
+    setChatThreads(INITIAL_CHAT_THREADS);
+    setChatMessages(INITIAL_CHAT_MESSAGES);
+  }, [persistAssets, persistOffers, persistRequests, persistTransactions]);
+
+  // ==================== CONTEXT VALUE ====================
+
+  const value: DatabaseContextType = {
+    companies, assets, offers, requests, transactions, cases, auditLogs,
+    notifications, chatThreads, chatMessages,
+    addAsset, updateAsset, deleteAsset,
+    addOffer, updateOffer, submitOfferForReview, withdrawOffer, deleteOffer, opsReviewOffer,
+    addRequest, updateRequest, submitRequestForReview, withdrawRequest, deleteRequest, opsReviewRequest,
+    addCompany, updateCompany, deleteCompany,
+    holdAtomicReservation, acceptAgreement, requestAgreementChange,
+    opsApproveCarrier, opsRejectCarrier,
+    settlePayment,
+    generateDispatchPermit, activateInspection, submitInspection,
+    confirmHandoverA, confirmHandoverB,
+    toggleHold, addCase, updateCase, deleteCase, resolveCase, closeCase,
+    cancelTransaction,
+    startChatThread, sendChatMessage,
+    markNotificationRead, unreadNotificationCount,
+    resetToDemoData,
+    onlineConfig, isSyncing, lastSyncMessage, syncAllToOnlineDb, updateOnlineConfig,
   };
 
-  return (
-    <DatabaseContext.Provider
-      value={{
-        companies,
-        assets,
-        offers,
-        requests,
-        transactions,
-        cases,
-        auditLogs,
-        onlineConfig,
-        isSyncing,
-        lastSyncMessage,
-        addAsset,
-        updateAsset,
-        deleteAsset,
-        addOffer,
-        updateOffer,
-        deleteOffer,
-        addRequest,
-        updateRequest,
-        deleteRequest,
-        holdAtomicReservation,
-        acceptAgreement,
-        opsApproveCarrier,
-        settlePayment,
-        submitInspection,
-        confirmHandover,
-        toggleHold,
-        resolveCase,
-        resetToDemoData,
-        syncAllToOnlineDb,
-        updateOnlineConfig
-      }}
-    >
-      {children}
-    </DatabaseContext.Provider>
-  );
+  return <DatabaseContext.Provider value={value}>{children}</DatabaseContext.Provider>;
 };
 
 export const useDatabase = (): DatabaseContextType => {
   const ctx = useContext(DatabaseContext);
-  if (!ctx) {
-    throw new Error('useDatabase must be used within a DatabaseProvider');
-  }
+  if (!ctx) throw new Error('useDatabase must be used within a DatabaseProvider');
   return ctx;
 };
