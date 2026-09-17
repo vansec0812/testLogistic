@@ -20,6 +20,7 @@ import { OpsPortalPage } from './pages/OpsPortalPage';
 import { FinancePortalPage } from './pages/FinancePortalPage';
 import { CasesPage } from './pages/CasesPage';
 import { OnlineDatabasePage } from './pages/OnlineDatabasePage';
+import { LoginPage } from './pages/LoginPage';
 
 function LoadingSpinner() {
   return (
@@ -36,7 +37,7 @@ function AppContent() {
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [selectedTxnId, setSelectedTxnId] = useState<string | undefined>(undefined);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const { currentRole } = useAuth();
+  const { currentRole, isAuthenticated } = useAuth();
 
   // Strict role-based navigation guard
   useEffect(() => {
@@ -50,6 +51,10 @@ function AppContent() {
       }
     }
   }, [currentRole, currentTab]);
+
+  if (!isAuthenticated) {
+    return <LoginPage onLoginSuccess={() => setCurrentTab('dashboard')} />;
+  }
 
   const renderPage = () => {
     switch (currentTab) {

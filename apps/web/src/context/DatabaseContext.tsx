@@ -45,6 +45,7 @@ interface DatabaseContextType {
   addAsset: (form: CreateAssetForm) => ActionResult;
   updateAsset: (assetId: string, updates: Partial<ContainerAsset>) => ActionResult;
   deleteAsset: (assetId: string) => ActionResult;
+  opsReviewAsset: (assetId: string, decision: 'APPROVE' | 'REJECT', notes: string) => ActionResult;
 
   // Offer actions
   addOffer: (form: CreateOfferForm) => ActionResult;
@@ -64,6 +65,7 @@ interface DatabaseContextType {
 
   // Company actions
   addCompany: (comp: Omit<Company, 'id' | 'totalCompletedAsA' | 'totalCompletedAsB'>) => ActionResult;
+  submitCompanyRegistration: (comp: Omit<Company, 'id' | 'totalCompletedAsA' | 'totalCompletedAsB'>) => ActionResult;
   updateCompany: (id: string, updates: Partial<Company>) => ActionResult;
   deleteCompany: (id: string) => ActionResult;
 
@@ -319,9 +321,9 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       currentCustodianId: currentCompany.id,
       currentCustodianName: currentCompany.shortName,
       reviewedCondition: undefined,
-      photos: [],
-      hasEdoDocument: false,
-      edoVerificationStatus: 'UNVERIFIED',
+      photos: form.photos || [],
+      hasEdoDocument: Boolean(form.hasEdoDocument),
+      edoVerificationStatus: form.edoVerificationStatus || 'UNVERIFIED',
       isLocked: false,
       locationObservedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
@@ -331,6 +333,35 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     addAudit('ASSET_CREATED', 'ContainerAsset', newAsset.id, `Đăng ký container ${newAsset.containerNumber}`);
     return { success: true, message: `Đã đăng ký container ${newAsset.containerNumber} thành công.`, data: newAsset };
   }, [assets, currentRole, currentCompany, persistAssets, addAudit]);
+
+  const opsReviewAsset = useCallback((assetId: string, decision: 'APPROVE' | 'REJECT', notes: string): ActionResult => {
+    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chỉ Ops mới có thể kết luận kiểm tra ảnh.' };
+    }
+    if (!notes.trim()) return { success: false, message: 'Cần ghi chú kết luận kiểm tra ảnh.' };
+    const asset = assets.find(a => a.id === assetId);
+    if (!asset) return { success: false, message: 'Không tìm thấy container.' };
+    if (!asset.aiInspection?.requiresOpsReview) {
+      return { success: false, message: 'Container này không có yêu cầu Ops kiểm tra thủ công.' };
+    }
+    const now = new Date().toISOString();
+    const updatedAsset: ContainerAsset = {
+      ...asset,
+      aiInspection: {
+        ...asset.aiInspection,
+        status: decision === 'APPROVE' ? 'OPS_VERIFIED' : 'OPS_REJECTED',
+        reviewedBy: currentUserEmail,
+        reviewedAt: now,
+        opsDecisionNotes: notes.trim(),
+      },
+      reviewedCondition: decision === 'APPROVE' ? (asset.aiInspection.condition || asset.declaredCondition) : undefined,
+      updatedAt: now,
+    };
+    persistAssets(assets.map(a => a.id === assetId ? updatedAsset : a));
+    addAudit('ASSET_AI_OPS_REVIEWED', 'ContainerAsset', assetId, `Ops ${decision === 'APPROVE' ? 'xác nhận' : 'từ chối'} kết quả kiểm tra ảnh: ${notes}`);
+    addNotification(asset.currentCustodianId, 'OPS_ALERT', `Kết quả kiểm tra ảnh ${asset.containerNumber}`, decision === 'APPROVE' ? 'Ops đã xác nhận container đủ điều kiện tiếp tục.' : 'Ops từ chối kết quả; vui lòng bổ sung ảnh hoặc xử lý tình trạng container.', assetId);
+    return { success: true, message: decision === 'APPROVE' ? 'Ops đã xác nhận kết quả kiểm tra ảnh.' : 'Ops đã từ chối kết quả kiểm tra ảnh.' };
+  }, [assets, currentRole, currentUserEmail, persistAssets, addAudit, addNotification]);
 
   const updateAsset = useCallback((assetId: string, updates: Partial<ContainerAsset>): ActionResult => {
     const asset = assets.find(a => a.id === assetId);
@@ -369,6 +400,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     const asset = assets.find(a => a.id === form.assetId);
     if (!asset) return { success: false, message: 'Không tìm thấy container.' };
+    const ownerCompany = companies.find(c => c.id === currentCompany.id) || currentCompany;
+    if (ownerCompany.verificationStatus !== 'VERIFIED') {
+      return { success: false, message: 'Doanh nghiệp chưa được Ops xác minh. Chưa thể tạo Offer.' };
+    }
     if (asset.currentCustodianId !== currentCompany.id) {
       return { success: false, message: 'Container này không thuộc custody của bạn.' };
     }
@@ -386,7 +421,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       assetId: form.assetId,
       asset,
       companyId: currentCompany.id,
-      companyName: currentCompany.shortName,
+      companyName: ownerCompany.shortName,
       status: 'DRAFT',
       version: 1,
       pickupLocationName: form.pickupLocationName,
@@ -407,7 +442,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     persistOffers([...offers, newOffer]);
     addAudit('OFFER_CREATED', 'Offer', newOffer.id, `Tạo nháp Offer cho container ${asset.containerNumber}`);
     return { success: true, message: 'Đã tạo nháp Offer thành công.', data: newOffer };
-  }, [assets, offers, currentRole, currentCompany, persistOffers, addAudit]);
+  }, [assets, offers, companies, currentRole, currentCompany, persistOffers, addAudit]);
 
   const updateOffer = useCallback((offerId: string, updates: Partial<Offer>): ActionResult => {
     const offer = offers.find(o => o.id === offerId);
@@ -505,10 +540,14 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (currentRole !== 'ENTERPRISE_B' && currentRole !== 'SUPER_ADMIN') {
       return { success: false, message: 'Chỉ Bên B mới có thể tạo nhu cầu.' };
     }
+    const requesterCompany = companies.find(c => c.id === currentCompany.id) || currentCompany;
+    if (requesterCompany.verificationStatus !== 'VERIFIED') {
+      return { success: false, message: 'Doanh nghiệp chưa được Ops xác minh. Chưa thể tạo Request.' };
+    }
     const newReq: ContainerRequest = {
       id: genId('REQ'),
       companyId: currentCompany.id,
-      companyName: currentCompany.shortName,
+      companyName: requesterCompany.shortName,
       carrierId: form.carrierId,
       carrierCode: form.carrierId.replace('CARR-', ''),
       containerType: form.containerType,
@@ -531,7 +570,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     persistRequests([...requests, newReq]);
     addAudit('REQUEST_CREATED', 'ContainerRequest', newReq.id, `Tạo nhu cầu booking ${form.bookingNumber}`);
     return { success: true, message: 'Đã tạo nhu cầu thành công.', data: newReq };
-  }, [requests, currentRole, currentCompany, persistRequests, addAudit]);
+  }, [requests, companies, currentRole, currentCompany, persistRequests, addAudit]);
 
   const updateRequest = useCallback((requestId: string, updates: Partial<ContainerRequest>): ActionResult => {
     const req = requests.find(r => r.id === requestId);
@@ -1303,6 +1342,25 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return { success: true, message: `Đã thêm doanh nghiệp ${newComp.shortName} thành công.`, data: newComp };
   }, [companies, currentRole, persistCompanies, addAudit]);
 
+  const submitCompanyRegistration = useCallback((comp: Omit<Company, 'id' | 'totalCompletedAsA' | 'totalCompletedAsB'>): ActionResult => {
+    const normalizedTaxCode = comp.taxCode.trim();
+    if (companies.some(company => company.taxCode === normalizedTaxCode)) {
+      return { success: false, message: 'Mã số thuế đã tồn tại trong hệ thống.' };
+    }
+    const newComp: Company = {
+      ...comp,
+      taxCode: normalizedTaxCode,
+      id: genId('COMP'),
+      verificationStatus: 'PENDING_VERIFICATION',
+      verificationNotes: 'Hồ sơ mới đăng ký, chờ Ops đối chiếu thông tin doanh nghiệp.',
+      totalCompletedAsA: 0,
+      totalCompletedAsB: 0,
+    };
+    persistCompanies([...companies, newComp]);
+    addAudit('COMPANY_REGISTRATION_SUBMITTED', 'Company', newComp.id, `Đăng ký DN ${newComp.companyName}; chờ Ops xác minh`);
+    return { success: true, message: 'Đã tiếp nhận hồ sơ doanh nghiệp, chờ Ops xác minh.', data: newComp };
+  }, [companies, persistCompanies, addAudit]);
+
   const updateCompany = useCallback((id: string, updates: Partial<Company>): ActionResult => {
     if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
       return { success: false, message: 'Chỉ Ops hoặc Quản trị viên mới có quyền sửa doanh nghiệp.' };
@@ -1435,10 +1493,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const value: DatabaseContextType = {
     companies, assets, offers, requests, transactions, cases, auditLogs,
     notifications, myNotifications, chatThreads, chatMessages,
-    addAsset, updateAsset, deleteAsset,
+    addAsset, updateAsset, deleteAsset, opsReviewAsset,
     addOffer, updateOffer, submitOfferForReview, withdrawOffer, deleteOffer, opsReviewOffer,
     addRequest, updateRequest, submitRequestForReview, withdrawRequest, deleteRequest, opsReviewRequest,
-    addCompany, updateCompany, deleteCompany,
+    addCompany, submitCompanyRegistration, updateCompany, deleteCompany,
     holdAtomicReservation, acceptAgreement, requestAgreementChange,
     opsApproveCarrier, opsRejectCarrier,
     settlePayment,

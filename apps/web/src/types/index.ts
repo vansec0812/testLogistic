@@ -132,6 +132,32 @@ export type DocumentVerificationStatus =
   | 'REVOKED'
   | 'SUPERSEDED';
 
+export type AiInspectionStatus = 'NOT_RUN' | 'CLEAN' | 'ANOMALY' | 'ERROR' | 'OPS_VERIFIED' | 'OPS_REJECTED';
+
+export interface AiInspectionResult {
+  success: boolean;
+  status: AiInspectionStatus;
+  score?: number;
+  condition?: PhysicalCondition;
+  summary?: string;
+  details?: string[];
+  requiresOpsReview: boolean;
+  error?: string;
+}
+
+export interface AssetAiInspection {
+  status: AiInspectionStatus;
+  score?: number;
+  condition?: PhysicalCondition;
+  summary: string;
+  details: string[];
+  requiresOpsReview: boolean;
+  inspectedAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  opsDecisionNotes?: string;
+}
+
 // Allocation state cho giữ chỗ
 export type AllocationState = 'HELD' | 'ALLOCATED' | 'RELEASED';
 
@@ -199,6 +225,7 @@ export interface ContainerAsset {
   freeTimeDetentionEnd?: string; // ISO UTC timestamp
   freeTimeSource?: string;       // Nguồn thông tin hạn
   photos: string[];              // URLs ảnh (ít nhất 6 góc cho Offer)
+  aiInspection?: AssetAiInspection;
   hasEdoDocument: boolean;       // Đã có e-DO/hồ sơ tương đương
   edoVerificationStatus?: DocumentVerificationStatus;
   isLocked: boolean;             // Khóa khi đang có giao dịch HELD/ALLOCATED
@@ -742,6 +769,9 @@ export interface CreateAssetForm {
   currentDepotReturnId?: string;
   freeTimeDetentionEnd?: string;
   freeTimeSource?: string;
+  photos?: string[];
+  hasEdoDocument?: boolean;
+  edoVerificationStatus?: DocumentVerificationStatus;
 }
 
 export interface CreateOfferForm {

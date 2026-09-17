@@ -16,6 +16,9 @@ interface RoleBadge {
 }
 
 interface AuthContextType {
+  isAuthenticated: boolean;
+  login: (username: string, password: string) => { success: boolean; message: string };
+  logout: () => void;
   currentRole: UserRole;
   setRole: (role: UserRole) => void;
   currentCompany: Company;
@@ -33,6 +36,7 @@ interface AuthContextType {
   isPartyA: (companyAId: string) => boolean;
   isPartyB: (companyBId: string) => boolean;
 }
+
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -132,14 +136,83 @@ const ROLE_USERS: Record<UserRole, { companyIndex: number; email: string; name: 
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return localStorage.getItem('econt_is_authenticated') === 'true';
+  });
+
   const [currentRole, setCurrentRole] = useState<UserRole>(() => {
     const saved = localStorage.getItem('econt_active_role') as UserRole;
     return saved && ['ENTERPRISE_A', 'ENTERPRISE_B', 'OPS'].includes(saved) ? saved : 'ENTERPRISE_A';
   });
 
+  // (Optional) We can also save current logged-in user details to override ROLE_USERS,
+  // but for this demo, just matching the role works since ROLE_USERS provides a mock for each role.
+  const [activeUserEmail, setActiveUserEmail] = useState<string | null>(null);
+  const [activeUserName, setActiveUserName] = useState<string | null>(null);
+  const [activeUserId, setActiveUserId] = useState<string | null>(null);
+  const [activeCompany, setActiveCompany] = useState<Company | null>(() => {
+    try {
+      const saved = localStorage.getItem('econt_active_company');
+      return saved ? JSON.parse(saved) as Company : null;
+    } catch {
+      return null;
+    }
+  });
+
   useEffect(() => {
     localStorage.setItem('econt_active_role', currentRole);
   }, [currentRole]);
+
+  useEffect(() => {
+    localStorage.setItem('econt_is_authenticated', isAuthenticated ? 'true' : 'false');
+  }, [isAuthenticated]);
+
+  const login = (username: string, password: string) => {
+    let success = false;
+    let roleToSet: UserRole = 'ENTERPRISE_A';
+    let emailToSet: string | null = null;
+    let nameToSet: string | null = null;
+    let registeredUser: any = null;
+
+    if (username === 'bena' && password === 'bena123') {
+      success = true; roleToSet = 'ENTERPRISE_A';
+    } else if (username === 'benb' && password === 'benb123') {
+      success = true; roleToSet = 'ENTERPRISE_B';
+    } else if (username === 'ops' && password === 'ops123') {
+      success = true; roleToSet = 'OPS';
+    } else {
+      const users = JSON.parse(localStorage.getItem('econt_registered_users') || '[]');
+      registeredUser = users.find((u: any) => u.username === username && u.password === password);
+      if (registeredUser) {
+        success = true;
+        roleToSet = registeredUser.role;
+        emailToSet = registeredUser.email;
+        nameToSet = registeredUser.fullName;
+      }
+    }
+
+    if (success) {
+      setCurrentRole(roleToSet);
+      setIsAuthenticated(true);
+      setActiveUserEmail(emailToSet);
+      setActiveUserName(nameToSet);
+      setActiveUserId(registeredUser?.id || ROLE_USERS[roleToSet].userId);
+      setActiveCompany(registeredUser?.company || null);
+      if (registeredUser?.company) localStorage.setItem('econt_active_company', JSON.stringify(registeredUser.company));
+      else localStorage.removeItem('econt_active_company');
+      return { success: true, message: 'Đăng nhập thành công' };
+    }
+    return { success: false, message: 'Sai tên đăng nhập hoặc mật khẩu' };
+  };
+
+  const logout = () => {
+    setIsAuthenticated(false);
+    setActiveUserEmail(null);
+    setActiveUserName(null);
+    setActiveUserId(null);
+    setActiveCompany(null);
+    localStorage.removeItem('econt_active_company');
+  };
 
   const setRole = (role: UserRole) => {
     // If legacy role passed, map to OPS
@@ -149,20 +222,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const value = useMemo((): AuthContextType => {
     const userInfo = ROLE_USERS[currentRole] || ROLE_USERS.OPS;
-    const currentCompany = userInfo.companyIndex === -1 ? ECONT_OPS_COMPANY : INITIAL_COMPANIES[userInfo.companyIndex];
+    const currentCompany = (currentRole === 'OPS' || currentRole === 'FINANCE' || currentRole === 'SUPER_ADMIN')
+      ? ECONT_OPS_COMPANY
+      : activeCompany || (userInfo.companyIndex === -1 ? ECONT_OPS_COMPANY : INITIAL_COMPANIES[userInfo.companyIndex]);
 
     const isOps = currentRole === 'OPS' || currentRole === 'FINANCE' || currentRole === 'SUPER_ADMIN';
 
     return {
+      isAuthenticated,
+      login,
+      logout,
       currentRole,
       setRole,
       currentCompany,
-      currentUserEmail: userInfo.email,
-      currentUserName: userInfo.name,
-      currentUserId: userInfo.userId,
+      currentUserEmail: activeUserEmail || userInfo.email,
+      currentUserName: activeUserName || userInfo.name,
+      currentUserId: activeUserId || userInfo.userId,
       roleBadge: ROLE_INFO[currentRole] || ROLE_INFO.OPS,
-      canCreateOffers: currentRole === 'ENTERPRISE_A',
-      canCreateRequests: currentRole === 'ENTERPRISE_B',
+      canCreateOffers: currentRole === 'ENTERPRISE_A' && currentCompany.verificationStatus === 'VERIFIED',
+      canCreateRequests: currentRole === 'ENTERPRISE_B' && currentCompany.verificationStatus === 'VERIFIED',
       canOpsReview: isOps,
       canFinanceReconcile: isOps,
       canAdmin: isOps,
@@ -171,7 +249,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isPartyB: (companyBId: string) =>
         currentRole === 'ENTERPRISE_B' && currentCompany.id === companyBId,
     };
-  }, [currentRole]);
+  }, [currentRole, isAuthenticated, activeUserEmail, activeUserName, activeUserId, activeCompany]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
