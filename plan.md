@@ -60,10 +60,10 @@ Trạng thái backlog: `NOT_STARTED`, `DEMO_ONLY`, `IN_PROGRESS`, `BLOCKED`, `RE
 
 | Khu vực | Hiện trạng quan sát được | Công việc cần làm |
 | --- | --- | --- |
-| Danh tính | `AuthContext.tsx` chọn vai A/B/Ops/Finance/Admin từ localStorage và seed | Đăng nhập thật, membership, doanh nghiệp đang làm việc, MFA nội bộ, quyền server |
+| Danh tính | Có màn đăng nhập/đăng ký, OTP demo/API, hồ sơ công ty gắn tài khoản và trạng thái chờ Ops | Đăng nhập thật bằng session server, membership, MFA nội bộ, quyền server |
 | Phân quyền | Có guard A/B ở UI và `DatabaseContext.tsx` | Chuyển guard sang API/DB; kiểm tra từng tài nguyên, session, file và channel |
 | Tài sản, Offer, Request | Có thêm/sửa/xóa cơ bản, khóa theo tham chiếu giao dịch | Nháp, review có phiên bản, physical status, rút tin, xác minh hạn/quyền, lý do không thể sửa/xóa |
-| e-DO và ảnh | Có trường/form dữ liệu và mô tả ảnh; chưa thấy kho chứng từ được xác minh đầy đủ | Upload thật, quét file, hồ sơ riêng tư, checklist e-DO/booking, evidence/hash/version |
+| e-DO và ảnh | Có upload bộ ảnh khi đăng ký cont, AI OCR API client, AI inspection và hàng đợi Ops thủ công | Kho chứng từ private, quét file server, checklist e-DO/booking, evidence/hash/version |
 | Matching | `matchingEngine.ts` dùng Haversine, thời gian ước tính và cước giả lập; thiếu các mốc của SRS | Tuyến đường bộ có nguồn, `p`, `L`, `tBC`, `arrival_by`, deadline chứng từ, tuổi vị trí, tie-break đầy đủ |
 | Giá | Có công thức tiết kiệm cơ bản, dữ liệu demo | Quote từng dòng, payer/collector, thuế, nguồn/hiệu lực, snapshot và đối soát khoản ngoài |
 | Chat | Có `ChatPage.tsx`, thread/tin nhắn localStorage, mở từ Offer/Request | Server lưu tin, realtime giữa thiết bị, đủ ngữ cảnh, chống gửi trùng, file, moderation, phân quyền đọc |
@@ -74,7 +74,7 @@ Trạng thái backlog: `NOT_STARTED`, `DEMO_ONLY`, `IN_PROGRESS`, `BLOCKED`, `RE
 | Supabase | `onlineDbClient.ts` có cấu hình mặc định placeholder; một số nhánh lỗi/trống vẫn trả success | Health check thật, báo lỗi đúng, tách demo/production, bỏ cơ chế upload state browser làm nguồn nghiệp vụ |
 | SQL | Migration ban đầu chưa biểu diễn đủ membership/version/ledger/evidence; chưa thấy RLS policy trong migration này | Migration bổ sung có constraints, mapping ID, policies; kiểm tra môi trường thực trước rollout |
 | Báo cáo | Dashboard dùng mảng dữ liệu demo, có số đếm giao dịch tổng | KPI theo doanh nghiệp, trạng thái, kỳ, unique asset và định nghĩa mẫu số |
-| AI/IoT | Chưa thấy pipeline AI/telemetry | Triển khai ở G8/G9, sau nền dữ liệu và review thủ công |
+| AI/IoT | Có client gọi API OCR/inspection; AI bất thường được chuyển hàng đợi Ops, chưa có backend AI/telemetry | Hoàn thiện backend model, worker, telemetry và audit kết quả ở G8/G9 |
 | Theo dõi trả cont | `COMPLETED` hiện kết thúc giao nhận A-B | Giữ nghĩa đúng của COMPLETED; theo dõi hậu bàn giao riêng theo mục 13 |
 
 Các thay đổi chat đang chưa commit là công việc hiện hữu cần bảo toàn. Bản kế hoạch này không đánh dấu chúng là chat đa người dùng đã tích hợp.

@@ -2,6 +2,18 @@
 
 Frontend demo cho nền tảng điều phối và tái sử dụng container rỗng. Ứng dụng được xây dựng bằng React, TypeScript, Vite và Tailwind CSS.
 
+## Kết nối API
+
+Sao chép `apps/web/.env.example` thành `.env` và đặt `VITE_API_BASE_URL` để bật các API OTP, đăng ký tài khoản, OCR eDO và kiểm tra ảnh container:
+
+- `POST /api/auth/otp/request`
+- `POST /api/auth/otp/verify`
+- `POST /api/auth/register`
+- `POST /api/ai/edo/scan`
+- `POST /api/ai/container/inspect`
+
+Nếu chưa cấu hình backend, app vẫn chạy dữ liệu demo cục bộ; file thật không được tự sinh kết quả khi OCR thất bại.
+
 ## Yêu cầu
 
 - Node.js 22 (khuyến nghị) hoặc Node.js 18/20
