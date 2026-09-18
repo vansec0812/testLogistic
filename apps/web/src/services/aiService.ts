@@ -1,10 +1,11 @@
-// ==============================================================================
-// ECont AI Service - OCR e-DO / Booking & Giám định hình ảnh container IICL-5
-// Tích hợp AI Vision đa tầng: Google Gemini 2.0 Flash API + Bộ phân tích OCR thông minh
-// ==============================================================================
+// ECont AI service
+//
+// Tất cả xử lý AI thật đi qua ECont API. Secret của nhà cung cấp AI chỉ được
+// giữ ở backend; trình duyệt không nhận, lưu hoặc gửi API key trực tiếp.
 
-import { CarrierCode, ContainerType, AiInspectionResult } from '../types';
+import { CarrierCode, ContainerType, AiInspectionResult, PhysicalCondition } from '../types';
 import { calculateCheckDigit, validateContainerNumber } from './iso6346';
+import { ApiClientError, isApiConfigured, postApi } from './apiClient';
 
 export interface ExtractedEdoData {
   containerNumber: string;
@@ -16,7 +17,21 @@ export interface ExtractedEdoData {
   containerType: ContainerType;
   sealNumber?: string;
   confidenceScore: number;
-  source?: 'AI_API' | 'SMART_OCR' | 'DEMO_SAMPLE';
+  source?: 'BACKEND_API' | 'DEMO_SAMPLE';
+  verification?: EdoVerificationResult;
+}
+
+export interface EdoVerificationResult {
+  success: boolean;
+  status: 'VALID' | 'INVALID' | 'ANOMALY' | 'MANUAL_REVIEW' | 'ERROR';
+  isLegal: boolean;
+  hasAnomaly: boolean;
+  score?: number;
+  summary: string;
+  details: string[];
+  anomalyReason?: string;
+  requiresOpsReview: boolean;
+  error?: string;
 }
 
 export interface ContainerPhotoVerificationResult {
@@ -27,18 +42,15 @@ export interface ContainerPhotoVerificationResult {
   actualContainerNumber?: string;
   actualContainerType?: ContainerType;
   actualCarrierCode?: string;
-  actualCondition?: 'GOOD' | 'MINOR_DAMAGE' | 'MAJOR_DAMAGE';
+  actualCondition?: PhysicalCondition;
+  actualConditionNotes?: string;
   mismatchDetails: string[];
   summary: string;
   requiresOpsReview: boolean;
   error?: string;
 }
 
-const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
-
-/**
- * Sinh số container ISO 6346 chuẩn 100% với ký tự kiểm tra thứ 11 chính xác
- */
+/** Sinh số container ISO 6346 hợp lệ để dùng trong dữ liệu demo. */
 export function generateValidIsoContainerNumber(prefix4 = 'MSKU'): string {
   const pfx = prefix4.toUpperCase().slice(0, 4);
   const serial6 = Math.floor(100000 + Math.random() * 900000).toString();
@@ -47,9 +59,7 @@ export function generateValidIsoContainerNumber(prefix4 = 'MSKU'): string {
   return `${first10}${checkDigit}`;
 }
 
-/**
- * Chuẩn hóa số container ISO 6346: sửa số kiểm tra nếu sai lệch hoặc tự sinh số hợp lệ
- */
+/** Chuẩn hóa số container ISO 6346. */
 export function normalizeIsoContainerNumber(raw: string, carrier: CarrierCode = 'MAERSK'): string {
   const clean = (raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (clean.length === 11) {
@@ -63,21 +73,13 @@ export function normalizeIsoContainerNumber(raw: string, carrier: CarrierCode = 
     if (expected !== null) return `${clean}${expected}`;
   }
   const prefixes: Record<string, string> = {
-    MAERSK: 'MSKU',
-    CMA_CGM: 'CMAU',
-    ONE: 'ONEY',
-    COSCO: 'COSU',
-    EVERGREEN: 'EMCU',
-    MSC: 'MSCU',
-    HAPAG_LLOYD: 'HLCU',
-    OTHER: 'TCKU'
+    MAERSK: 'MSKU', CMA_CGM: 'CMAU', ONE: 'ONEY', COSCO: 'COSU',
+    EVERGREEN: 'EMCU', MSC: 'MSCU', HAPAG_LLOYD: 'HLCU', OTHER: 'TCKU'
   };
   return generateValidIsoContainerNumber(prefixes[carrier] || 'TCKU');
 }
 
-/**
- * Chuyển đổi File sang Base64
- */
+/** Chuyển đổi File sang Base64 để gửi qua ECont API. */
 export function fileToBase64(file: File): Promise<{ mimeType: string; data: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -85,9 +87,9 @@ export function fileToBase64(file: File): Promise<{ mimeType: string; data: stri
       const result = String(reader.result || '');
       const separator = result.indexOf(',');
       if (separator < 0) return reject(new Error('Không đọc được nội dung tệp.'));
-      resolve({ 
-        mimeType: file.type || 'application/octet-stream', 
-        data: result.slice(separator + 1) 
+      resolve({
+        mimeType: file.type || 'application/octet-stream',
+        data: result.slice(separator + 1),
       });
     };
     reader.onerror = () => reject(new Error('Không đọc được tệp tải lên.'));
@@ -95,328 +97,239 @@ export function fileToBase64(file: File): Promise<{ mimeType: string; data: stri
   });
 }
 
-/**
- * Lấy API Key AI nếu có cấu hình
- */
-export function getAiApiKey(): string {
+function unwrapApiPayload(payload: any): any {
+  return payload?.data || payload?.result || payload?.verification || payload || {};
+}
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value.trim() : fallback;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(item => String(item || '').trim()).filter(Boolean);
+}
+
+function normalizeCondition(value: unknown): PhysicalCondition | undefined {
+  const normalized = String(value || '').toUpperCase();
+  if (normalized === 'GOOD' || normalized === 'CLEAN' || normalized === 'NEW') return 'GOOD';
+  if (normalized === 'MINOR_DAMAGE' || normalized === 'MINOR' || normalized === 'USED') return 'MINOR_DAMAGE';
+  if (normalized === 'MAJOR_DAMAGE' || normalized === 'MAJOR' || normalized === 'DAMAGED') return 'MAJOR_DAMAGE';
+  return undefined;
+}
+
+function fallbackApiMessage(error: unknown): string {
+  const message = error instanceof ApiClientError
+    ? error.message
+    : error instanceof Error ? error.message : 'Lỗi khi gọi dịch vụ AI.';
+  if (/failed to fetch|networkerror|load failed|err_connection_refused|econnrefused|connection refused|proxy error/i.test(message)) {
+    return 'Máy chủ ECont AI chưa sẵn sàng. File đã được chuyển Ops kiểm tra thủ công.';
+  }
+  return message;
+}
+
+/** OCR eDO. API thật trả dữ liệu trích xuất; secret chỉ nằm ở backend. */
+export async function extractEdoWithAI(file: File): Promise<{ success: boolean; data?: ExtractedEdoData; error?: string }> {
   try {
-    const fromStorage = localStorage.getItem('econt_ai_api_key');
-    if (fromStorage && fromStorage.trim()) return fromStorage.trim();
-  } catch {
-    // localStorage may not be available
-  }
-  return String((import.meta as any).env?.VITE_GEMINI_API_KEY || '').trim();
-}
-
-/**
- * Lưu API Key AI tùy chọn
- */
-export function setAiApiKey(key: string): void {
-  try {
-    localStorage.setItem('econt_ai_api_key', key.trim());
-  } catch {
-    // ignore
-  }
-}
-
-/**
- * Phân tích thông minh từ tệp tải lên khi không có kết nối API ngoài
- */
-function smartOcrParse(fileName: string, fileContentText = ''): ExtractedEdoData {
-  const combined = `${fileName} ${fileContentText}`.toUpperCase();
-  
-  // 1. Nhận diện hãng tàu
-  let carrierCode: CarrierCode = 'MAERSK';
-  if (combined.includes('CMA') || combined.includes('CMAU')) carrierCode = 'CMA_CGM';
-  else if (combined.includes('ONE') || combined.includes('ONEY') || combined.includes('OCEAN NETWORK')) carrierCode = 'ONE';
-  else if (combined.includes('COS') || combined.includes('COSU') || combined.includes('COSCO')) carrierCode = 'COSCO';
-  else if (combined.includes('EVER') || combined.includes('EMCU') || combined.includes('EGLV')) carrierCode = 'EVERGREEN';
-  else if (combined.includes('MSC') || combined.includes('MEDU')) carrierCode = 'MSC';
-  else if (combined.includes('HAPAG') || combined.includes('HLCU')) carrierCode = 'HAPAG_LLOYD';
-  else if (combined.includes('MSK') || combined.includes('MAEU') || combined.includes('MAERSK')) carrierCode = 'MAERSK';
-
-  // 2. Tìm số container ISO 6346 theo chuẩn 4 chữ + 7 số
-  const contMatch = combined.match(/([A-Z]{4}\s*\d{6,7})/);
-  let rawContainer = contMatch ? contMatch[1].replace(/\s+/g, '') : '';
-  const containerNumber = normalizeIsoContainerNumber(rawContainer, carrierCode);
-
-  // 3. Nhận diện loại container
-  const containerType: ContainerType = (combined.includes('20') || combined.includes('20GP') || combined.includes('20DC')) ? '20GP' : '40HC';
-
-  // 4. Depot chỉ định và hạn vỏ
-  const depots: Record<string, string> = {
-    MAERSK: 'ICD Transimex Thủ Đức',
-    CMA_CGM: 'Depot Tân Cảng Suối Tiên',
-    ONE: 'Cảng Tân Cảng Cát Lái (TP.HCM)',
-    COSCO: 'Depot Tanamexco Nhơn Trạch',
-    EVERGREEN: 'ICD Phước Long 3',
-    MSC: 'Cảng Tân Cảng Cát Lái (TP.HCM)',
-    HAPAG_LLOYD: 'ICD Sotrans Thủ Đức',
-  };
-  const returnDepot = depots[carrierCode] || 'Cảng Tân Cảng Cát Lái (TP.HCM)';
-
-  // Tìm ngày hết hạn trong văn bản nếu có định dạng YYYY-MM-DD hoặc DD/MM/YYYY
-  let expiryDate = '';
-  const dateMatchYmd = combined.match(/\b(202[5-9][-/.](?:0[1-9]|1[0-2])[-/.](?:0[1-9]|[12]\d|3[01]))\b/);
-  const dateMatchDmy = combined.match(/\b((?:0[1-9]|[12]\d|3[01])[-/.](?:0[1-9]|1[0-2])[-/.](?:202[5-9]))\b/);
-  if (dateMatchYmd) {
-    expiryDate = dateMatchYmd[1].replace(/[/.]/g, '-');
-  } else if (dateMatchDmy) {
-    const parts = dateMatchDmy[1].split(/[-/.]/);
-    expiryDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-  } else {
-    // Mặc định +7 ngày
-    const futureDate = new Date(Date.now() + 7 * 24 * 3600000);
-    expiryDate = futureDate.toISOString().slice(0, 10);
-  }
-
-  // Tìm mã eDO / Booking nếu có
-  const edoRegex = new RegExp('(?:EDO|B/L|BL|BOOKING|BKG|DO)[-\\s:#]*([A-Z0-9-]{6,16})', 'i');
-  const edoMatch = combined.match(edoRegex);
-  const randId = Math.floor(100000 + Math.random() * 900000);
-  const year = new Date().getFullYear();
-  const edoNumber = edoMatch ? edoMatch[1].trim() : `EDO-${carrierCode.slice(0, 3)}-${year}-${randId}`;
-
-  return {
-    containerNumber,
-    carrierCode,
-    edoNumber,
-    returnDepot,
-    expiryDate,
-    consignee: 'Công ty Cổ phần Vận tải & Logistics Hưng Thịnh',
-    containerType,
-    sealNumber: `SL-${carrierCode.slice(0, 2)}-${Math.floor(10000 + Math.random() * 90000)}`,
-    confidenceScore: 98.8,
-    source: 'SMART_OCR',
-  };
-}
-
-/**
- * Trích xuất thông tin lệnh e-DO / Booking bằng AI OCR
- */
-export async function extractEdoWithAI(
-  file: File,
-  customApiKey?: string
-): Promise<{ success: boolean; data?: ExtractedEdoData; error?: string }> {
-  const apiKey = customApiKey || getAiApiKey();
-
-  // 1. Thử gọi Google Gemini Vision API nếu có API key
-  if (apiKey) {
-    try {
-      const { mimeType, data: base64Data } = await fileToBase64(file);
-      const prompt = `
-Bạn là chuyên gia OCR tài liệu vận tải biển quốc tế. Hãy đọc Lệnh giao hàng điện tử (e-DO) hoặc Booking đính kèm và trích xuất thông tin.
-Trả về DUY NHẤT một chuỗi JSON thuần (không kèm markdown):
-{
-  "containerNumber": "Số cont 11 ký tự ISO 6346",
-  "carrierCode": "Một trong: MAERSK, CMA_CGM, ONE, COSCO, EVERGREEN, HAPAG_LLOYD, MSC, OTHER",
-  "edoNumber": "Số lệnh e-DO hoặc số Booking",
-  "returnDepot": "Tên bãi/Depot/ICD chỉ định hạ vỏ",
-  "expiryDate": "Ngày hết hạn theo định dạng YYYY-MM-DD",
-  "consignee": "Tên chủ hàng hoặc đơn vị nhận",
-  "containerType": "20GP hoặc 40HC",
-  "sealNumber": "Số seal niêm chì nếu có",
-  "confidenceScore": 99.0
-}
-`;
-
-      const res = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: prompt },
-              { inline_data: { mime_type: mimeType, data: base64Data } }
-            ]
-          }],
-          generationConfig: {
-            temperature: 0.1,
-            response_mime_type: 'application/json',
-          },
-        }),
-      });
-
-      if (res.ok) {
-        const json = await res.json();
-        const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-          const parsed = JSON.parse(text.replace(/```json/i, '').replace(/```/i, '').trim());
-          const carrier = (parsed.carrierCode || 'MAERSK') as CarrierCode;
-          const containerNumber = normalizeIsoContainerNumber(parsed.containerNumber || '', carrier);
-          return {
-            success: true,
-            data: {
-              ...parsed,
-              containerNumber,
-              carrierCode: carrier,
-              confidenceScore: Number(parsed.confidenceScore) || 99.1,
-              source: 'AI_API',
-            },
-          };
-        }
-      }
-    } catch {
-      // Fallback sang Smart OCR
+    if (isApiConfigured) {
+      const document = await fileToBase64(file);
+      const response = unwrapApiPayload(await postApi<any>('/api/ai/edo/scan', {
+        task: 'EDO_EXTRACTION',
+        document: { fileName: file.name, ...document },
+      }));
+      const carrierCode = asString(response.carrierCode, 'OTHER') as CarrierCode;
+      const rawNumber = asString(response.containerNumber);
+      if (!rawNumber) throw new Error('API không nhận diện được số container từ eDO.');
+      const compactNumber = rawNumber.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (!/^[A-Z]{4}\d{7}$/.test(compactNumber)) throw new Error('Số container AI trả về không đúng định dạng ISO 6346.');
+      return {
+        success: true,
+        data: {
+          containerNumber: normalizeIsoContainerNumber(compactNumber, carrierCode),
+          carrierCode,
+          edoNumber: asString(response.edoNumber || response.bookingNumber),
+          returnDepot: asString(response.returnDepot || response.depot),
+          expiryDate: asString(response.expiryDate || response.freeTimeEnd),
+          consignee: asString(response.consignee || response.consigneeName),
+          containerType: String(response.containerType || '40HC').toUpperCase() === '20GP' ? '20GP' : '40HC',
+          sealNumber: asString(response.sealNumber) || undefined,
+          confidenceScore: Number(response.confidenceScore ?? response.confidence ?? 0),
+          source: 'BACKEND_API',
+        },
+      };
     }
-  }
 
-  // 2. Chế độ Smart OCR Engine cục bộ (luôn thành công và chính xác)
-  try {
-    let fileText = '';
-    try {
-      if (file.size < 5 * 1024 * 1024) {
-        fileText = await file.text();
-      }
-    } catch {
-      // ignore
-    }
-    await new Promise(r => setTimeout(r, 600)); // mô phỏng thời gian đọc OCR
-    const result = smartOcrParse(file.name, fileText);
+    return {
+      success: false,
+      error: 'Chưa cấu hình ECont AI API. Không tự tạo dữ liệu eDO khi chưa có kết quả từ API.',
+    };
+  } catch (error) {
+    return { success: false, error: fallbackApiMessage(error) };
+  }
+}
+
+/** Xác minh eDO hợp pháp/bất thường. Không có kết quả API thì chuyển Ops kiểm tra thủ công. */
+export async function verifyEdoWithAI(file: File, extracted?: Partial<ExtractedEdoData>): Promise<EdoVerificationResult> {
+  if (!isApiConfigured) {
     return {
       success: true,
-      data: result,
-    };
-  } catch (error: any) {
-    return {
-      success: false,
-      error: error?.message || 'Không thể trích xuất dữ liệu chứng từ.',
-    };
-  }
-}
-
-/**
- * AI Giám định hình ảnh vỏ container theo tiêu chuẩn IICL-5
- */
-export async function inspectContainerWithAI(
-  photos: string[],
-  customApiKey?: string
-): Promise<AiInspectionResult> {
-  if (photos.length === 0) {
-    return {
-      success: false,
-      status: 'ERROR',
+      status: 'MANUAL_REVIEW',
+      isLegal: false,
+      hasAnomaly: true,
+      summary: 'Chưa có máy chủ ECont AI; file eDO đã được chuyển Ops kiểm tra thủ công.',
+      details: ['Kết quả pháp lý chưa được xác nhận tự động.'],
       requiresOpsReview: true,
-      error: 'Cần tải ít nhất 1 ảnh container để tiến hành giám định.',
+      error: 'Chưa cấu hình máy chủ ECont AI.',
     };
   }
 
-  const apiKey = customApiKey || getAiApiKey();
-
-  // 1. Thử gọi Gemini Vision nếu có API Key
-  if (apiKey) {
-    try {
-      const parts: any[] = [
-        {
-          text: `Bạn là giám định viên container chuẩn quốc tế IICL-5. Phân tích bộ ảnh container này.
-Trả về DUY NHẤT một chuỗi JSON thuần:
-{
-  "score": Điểm chất lượng từ 80 đến 100,
-  "condition": "GOOD" hoặc "MINOR_DAMAGE" hoặc "MAJOR_DAMAGE",
-  "summary": "Đánh giá vách, sàn, trần, gioăng cửa và độ kín sáng",
-  "details": ["Chi tiết 1", "Chi tiết 2", "Chi tiết 3"],
-  "requiresOpsReview": false
-}`
-        }
-      ];
-
-      // Gửi tối đa 3 ảnh đầu
-      for (const p of photos.slice(0, 3)) {
-        const comma = p.indexOf(',');
-        if (comma > 0) {
-          parts.push({
-            inline_data: {
-              mime_type: 'image/jpeg',
-              data: p.slice(comma + 1)
-            }
-          });
-        }
-      }
-
-      const res = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts }] }),
-      });
-
-      if (res.ok) {
-        const json = await res.json();
-        const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-          const parsed = JSON.parse(text.replace(/```json/i, '').replace(/```/i, '').trim());
-          return {
-            success: true,
-            status: parsed.requiresOpsReview ? 'ANOMALY' : 'CLEAN',
-            score: Number(parsed.score) || 96,
-            condition: parsed.condition || 'GOOD',
-            summary: parsed.summary || 'IICL-5 Đạt chuẩn đóng hàng xuất khẩu',
-            details: Array.isArray(parsed.details) ? parsed.details : ['Vách kín sáng 100%', 'Sàn khô sạch'],
-            requiresOpsReview: Boolean(parsed.requiresOpsReview),
-          };
-        }
-      }
-    } catch {
-      // Fallback
+  try {
+    const document = await fileToBase64(file);
+    const response = unwrapApiPayload(await postApi<any>('/api/ai/edo/verify', {
+      task: 'EDO_LEGALITY_AND_ANOMALY_CHECK',
+      document: { fileName: file.name, ...document },
+      extracted,
+    }));
+    const hasLegalValue = typeof response.isLegal === 'boolean'
+      || typeof response.isValid === 'boolean'
+      || typeof response.legal === 'boolean'
+      || typeof response.valid === 'boolean'
+      || typeof response.isValidEdo === 'boolean'
+      || ['VALID', 'LEGAL', 'APPROVED', 'INVALID', 'ILLEGAL', 'REJECTED'].includes(String(response.status || '').toUpperCase());
+    if (!hasLegalValue) {
+      return {
+        success: true,
+        status: 'MANUAL_REVIEW',
+        isLegal: false,
+        hasAnomaly: true,
+        summary: 'API chưa trả về kết quả pháp lý rõ ràng; cần Ops xác minh thủ công.',
+        details: ['Thiếu trường isLegal/isValid trong phản hồi API.'],
+        requiresOpsReview: true,
+      };
     }
+    const statusValue = String(response.status || '').toUpperCase();
+    const statusImpliesLegal = ['VALID', 'LEGAL', 'APPROVED'].includes(statusValue);
+    const statusImpliesInvalid = ['INVALID', 'ILLEGAL', 'REJECTED'].includes(statusValue);
+    const isLegal = response.isLegal ?? response.isValid ?? response.legal ?? response.valid ?? response.isValidEdo ?? (statusImpliesLegal ? true : statusImpliesInvalid ? false : false);
+    const hasAnomaly = Boolean(response.hasAnomaly ?? response.anomaly ?? response.suspicious);
+    const details = asStringArray(response.details || response.findings || response.anomalies);
+    const status = !isLegal ? 'INVALID' : hasAnomaly ? 'ANOMALY' : 'VALID';
+    return {
+      success: true,
+      status,
+      isLegal,
+      hasAnomaly,
+      score: Number(response.score ?? response.confidence ?? 0) || undefined,
+      summary: asString(response.summary || response.message, isLegal ? 'eDO hợp lệ theo kết quả AI.' : 'eDO không hợp lệ theo kết quả AI.'),
+      details,
+      anomalyReason: asString(response.anomalyReason || response.reason) || undefined,
+      requiresOpsReview: Boolean(response.requiresOpsReview ?? (hasAnomaly || !isLegal)),
+    };
+  } catch (error) {
+    return {
+      success: true,
+      status: 'MANUAL_REVIEW',
+      isLegal: false,
+      hasAnomaly: true,
+      summary: 'Không nhận được kết quả xác minh eDO từ AI; đã chuyển Ops kiểm tra thủ công.',
+      details: [fallbackApiMessage(error)],
+      requiresOpsReview: true,
+      error: fallbackApiMessage(error),
+    };
   }
-
-  // 2. Fallback sang Smart Inspection Engine
-  await new Promise(r => setTimeout(r, 400));
-  const hasEnoughPhotos = photos.length >= 4;
-  const score = hasEnoughPhotos ? 96 : 91;
-
-  return {
-    success: true,
-    status: 'CLEAN',
-    score,
-    condition: 'GOOD',
-    summary: 'IICL-5 Đạt chuẩn đóng hàng xuất khẩu (Vách kín sáng, sàn khô sạch, gioăng cửa nguyên vẹn)',
-    details: [
-      'Vách cont: Kín sáng 100%, không thủng gỉ lồi lõm quá mức',
-      'Sàn cont: Gỗ ván ép khô sạch, không dính dầu mỡ hoặc mùi hóa chất',
-      'Gioăng cửa: Cao su đàn hồi tốt, cơ cấu khóa tay đòn hoạt động trơn tru',
-      'Trần nóc: Không võng đọng nước, đạt tải trọng nâng gắp tiêu chuẩn'
-    ],
-    requiresOpsReview: false,
-  };
 }
 
-/**
- * Đối chiếu ảnh cont với thông tin khai báo
- */
+/** Giám định tình trạng ảnh container. Kết quả API phải trả tình trạng thực tế và chi tiết phát hiện. */
+export async function inspectContainerWithAI(photos: string[]): Promise<AiInspectionResult> {
+  if (photos.length < 6) {
+    return { success: false, status: 'ERROR', requiresOpsReview: true, error: 'Cần tải đủ tối thiểu 6 ảnh container để giám định.' };
+  }
+  if (!isApiConfigured) {
+    return { success: false, status: 'ERROR', requiresOpsReview: true, error: 'Chưa cấu hình ECont AI API. Không được tự đánh dấu ảnh đạt khi chưa có kết quả AI.' };
+  }
+  try {
+    const response = unwrapApiPayload(await postApi<any>('/api/ai/container/inspect', {
+      task: 'CONTAINER_PHYSICAL_CONDITION', photos, requiredPhotoCount: 6,
+    }));
+    const condition = normalizeCondition(response.condition || response.actualCondition);
+    const details = asStringArray(response.details || response.findings);
+    const requiresOpsReview = Boolean(response.requiresOpsReview ?? response.hasAnomaly ?? response.status === 'ANOMALY');
+    return {
+      success: true,
+      status: response.status === 'ANOMALY' || requiresOpsReview ? 'ANOMALY' : 'CLEAN',
+      score: Number(response.score ?? response.confidence ?? 0) || undefined,
+      condition,
+      summary: asString(response.summary || response.conditionNotes, 'AI đã phân tích ảnh container.'),
+      details,
+      requiresOpsReview,
+    };
+  } catch (error) {
+    return { success: false, status: 'ERROR', requiresOpsReview: true, error: fallbackApiMessage(error) };
+  }
+}
+
+/** Đối chiếu 6 ảnh thực tế với số cont, loại, hãng và tình trạng đã khai báo. */
 export async function verifyContainerPhotosWithAI(
   photos: string[],
-  expected: {
-    containerNumber: string;
-    containerType: ContainerType;
-    carrierCode: string;
-    declaredCondition: 'GOOD' | 'MINOR_DAMAGE' | 'MAJOR_DAMAGE';
-  }
+  expected: { containerNumber: string; containerType: ContainerType; carrierCode: string; declaredCondition: PhysicalCondition }
 ): Promise<ContainerPhotoVerificationResult> {
-  if (photos.length < 1) {
+  if (photos.length < 6) {
     return {
-      success: false,
-      status: 'ERROR',
-      matchesRegistration: false,
-      mismatchDetails: ['Cần tải ảnh chụp thực tế container.'],
-      summary: 'Chưa có ảnh container để đối chiếu.',
+      success: false, status: 'ERROR', matchesRegistration: false,
+      mismatchDetails: ['Cần tải đủ tối thiểu 6 ảnh container (6 góc) để đối chiếu.'],
+      summary: 'Chưa đủ ảnh container để kiểm tra.', requiresOpsReview: true,
+      error: 'Tối thiểu 6 ảnh container là bắt buộc.',
+    };
+  }
+
+  if (!isApiConfigured) {
+    return {
+      success: true, status: 'MANUAL_REVIEW', matchesRegistration: false, mismatchDetails: [],
+      summary: 'Chưa có máy chủ ECont AI; bộ ảnh đã được chuyển Ops kiểm tra thủ công.',
       requiresOpsReview: true,
     };
   }
 
-  await new Promise(r => setTimeout(r, 300));
+  try {
+    const response = unwrapApiPayload(await postApi<any>('/api/ai/container/verify', {
+      task: 'CONTAINER_IDENTITY_AND_PHYSICAL_CONDITION', photos, expected, requiredPhotoCount: 6,
+    }));
+    const mismatchDetails = asStringArray(response.mismatchDetails || response.mismatches || response.errors);
+    const actualContainerNumber = asString(response.actualContainerNumber || response.detectedContainerNumber) || undefined;
+    const actualTypeValue = String(response.actualContainerType || response.detectedContainerType || '').toUpperCase();
+    const actualContainerType = actualTypeValue === '20GP' ? '20GP' : actualTypeValue === '40HC' ? '40HC' : undefined;
+    const actualCarrierCode = asString(response.actualCarrierCode || response.detectedCarrierCode) || undefined;
+    const actualCondition = normalizeCondition(response.actualCondition || response.detectedCondition || response.condition);
+    const responseDetails = asStringArray(response.details || response.findings || response.conditionDetails);
+    const actualConditionNotes = asString(response.actualConditionNotes || response.conditionNotes || response.physicalSummary) || responseDetails.join(' ') || undefined;
 
-  return {
-    success: true,
-    status: 'MATCHED',
-    matchesRegistration: true,
-    score: 97,
-    actualContainerNumber: expected.containerNumber,
-    actualContainerType: expected.containerType,
-    actualCarrierCode: expected.carrierCode,
-    actualCondition: expected.declaredCondition,
-    mismatchDetails: [],
-    summary: `Đối chiếu AI trùng khớp 100% với container ${expected.containerNumber} (${expected.carrierCode} · ${expected.containerType}).`,
-    requiresOpsReview: false,
-  };
+    if (actualContainerNumber && actualContainerNumber !== expected.containerNumber) mismatchDetails.push(`Ảnh nhận diện số cont ${actualContainerNumber}, không khớp ${expected.containerNumber}.`);
+    if (actualContainerType && actualContainerType !== expected.containerType) mismatchDetails.push(`Ảnh nhận diện loại ${actualContainerType}, không khớp ${expected.containerType}.`);
+    if (actualCarrierCode && actualCarrierCode !== expected.carrierCode) mismatchDetails.push(`Ảnh nhận diện hãng ${actualCarrierCode}, không khớp ${expected.carrierCode}.`);
+    if (actualCondition && actualCondition !== expected.declaredCondition) mismatchDetails.push(`Tình trạng thực tế (${actualCondition}) khác tình trạng khai báo (${expected.declaredCondition}).`);
+
+    const explicitStatus = String(response.status || '').toUpperCase();
+    const explicitMatch = response.matchesRegistration ?? response.identityMatch ?? response.matches;
+    const matchesRegistration = (explicitMatch === undefined
+      ? explicitStatus === 'MATCHED' && mismatchDetails.length === 0
+      : Boolean(explicitMatch)) && mismatchDetails.length === 0;
+    const isMismatch = explicitStatus === 'MISMATCH' || !matchesRegistration;
+    const status = explicitStatus === 'MANUAL_REVIEW' || response.requiresOpsReview ? 'MANUAL_REVIEW' : isMismatch ? 'MISMATCH' : 'MATCHED';
+    return {
+      success: true, status, matchesRegistration,
+      score: Number(response.score ?? response.confidence ?? 0) || undefined,
+      actualContainerNumber, actualContainerType, actualCarrierCode, actualCondition, actualConditionNotes,
+      mismatchDetails,
+      summary: asString(response.summary || response.message, isMismatch ? 'Ảnh chưa khớp đầy đủ với thông tin đăng ký.' : 'Ảnh khớp với thông tin container đã đăng ký.'),
+      requiresOpsReview: Boolean(response.requiresOpsReview ?? status !== 'MATCHED'),
+      error: asString(response.error) || undefined,
+    };
+  } catch (error) {
+    return {
+      success: true, status: 'MANUAL_REVIEW', matchesRegistration: false,
+      mismatchDetails: [fallbackApiMessage(error)],
+      summary: 'Không nhận được kết quả đối chiếu ảnh; đã chuyển Ops kiểm tra thủ công.',
+      requiresOpsReview: true, error: fallbackApiMessage(error),
+    };
+  }
 }

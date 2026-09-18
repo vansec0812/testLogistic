@@ -1,6 +1,6 @@
 // ECont API client
-// API thật được bật khi có VITE_API_BASE_URL. Khi chưa cấu hình, các màn demo
-// vẫn có thể chạy cục bộ nhưng không được giả lập thành công cho dữ liệu thật.
+// Local Vite proxy chuyển /api tới gateway ở localhost:8000. Production có thể
+// dùng cùng origin hoặc đặt VITE_API_BASE_URL tới backend riêng.
 
 export class ApiClientError extends Error {
   constructor(message: string, public status?: number) {
@@ -9,9 +9,22 @@ export class ApiClientError extends Error {
   }
 }
 
-const configuredBaseUrl = String((import.meta as any).env?.VITE_API_BASE_URL || '').trim();
+const runtimeEnv = (import.meta as any).env || {};
+const envBaseUrl = String(runtimeEnv.VITE_API_BASE_URL || '').trim();
+const defaultBaseUrl = typeof window !== 'undefined'
+  ? window.location.origin
+  : '';
+const configuredBaseUrl = envBaseUrl || defaultBaseUrl;
 export const isApiConfigured = Boolean(configuredBaseUrl);
 export const apiBaseUrl = configuredBaseUrl.replace(/\/$/, '');
+
+function normalizeNetworkError(error: unknown): string {
+  const rawMessage = error instanceof Error ? error.message : String(error || '');
+  if (/failed to fetch|networkerror|load failed|err_connection_refused|econnrefused|connection refused|proxy error/i.test(rawMessage)) {
+    return 'Không kết nối được máy chủ ECont. Hãy kiểm tra API backend và VITE_API_BASE_URL.';
+  }
+  return rawMessage || 'Lỗi mạng khi gọi ECont API.';
+}
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get('content-type') || '';
@@ -51,7 +64,7 @@ export async function callApi<T>(path: string, init: RequestInit = {}): Promise<
       throw new ApiClientError('API không phản hồi trong thời gian cho phép.');
     }
     if (error instanceof ApiClientError) throw error;
-    throw new ApiClientError(`Không thể kết nối ECont API: ${error?.message || 'lỗi mạng'}`);
+    throw new ApiClientError(normalizeNetworkError(error));
   } finally {
     window.clearTimeout(timeout);
   }
