@@ -25,7 +25,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   },
   offers: {
     title: 'Nguồn cung vỏ container',
-    subtitle: 'Đăng tải nguồn vỏ cont rỗng, tích hợp quét e-DO và điều phối',
+    subtitle: 'Đăng Offer nguồn vỏ cont rỗng và điều phối giao dịch',
   },
   requests: {
     title: 'Nhu cầu tìm vỏ container',

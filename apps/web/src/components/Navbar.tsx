@@ -51,7 +51,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => 
     { id: 'dashboard', label: 'Bàn làm việc', icon: LayoutDashboard },
     {
       id: 'assets', label: 'Vỏ container', icon: Boxes,
-      roles: ['ENTERPRISE_A', 'OPS', 'SUPER_ADMIN'],
+      roles: ['OPS', 'SUPER_ADMIN'],
     },
     {
       id: 'offers', label: 'Nguồn cung', icon: PackageOpen,

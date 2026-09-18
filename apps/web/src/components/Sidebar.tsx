@@ -57,13 +57,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'assets',
-      label: currentRole === 'OPS' ? 'Quản lý Vỏ Container' : 'Vỏ container của tôi',
+      label: 'Quản lý Vỏ Container',
       icon: Boxes,
-      roles: ['ENTERPRISE_A', 'OPS'], // Bên B KHÔNG thấy Assets
+      roles: ['OPS'],
     },
     {
       id: 'offers',
-      label: currentRole === 'OPS' ? 'Thẩm định Nguồn vỏ' : 'Nguồn vỏ của tôi',
+      label: currentRole === 'OPS' ? 'Thẩm định Nguồn vỏ' : 'Offer nguồn vỏ của tôi',
       icon: PackageOpen,
       roles: ['ENTERPRISE_A', 'OPS'], // Bên B KHÔNG thấy Offers
       badge: currentRole === 'OPS' && pendingOffers > 0 ? pendingOffers : undefined,
@@ -72,7 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'requests',
       label: currentRole === 'OPS' ? 'Thẩm định Nhu cầu B' : 'Nhu cầu tìm vỏ cont',
       icon: Search,
-      roles: ['ENTERPRISE_B', 'OPS'], // Bên A KHÔNG thấy Requests
+      roles: ['ENTERPRISE_A', 'ENTERPRISE_B', 'OPS'], // Bên A chỉ xem nhu cầu OPEN, không tạo/sửa
       badge: currentRole === 'OPS' && pendingRequests > 0 ? pendingRequests : undefined,
     },
     {
@@ -257,7 +257,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           setRole(opt.value);
                           setShowRoleSwitcher(false);
                           // Reset currentTab to dashboard if current tab is unauthorized
-                          if (opt.value === 'ENTERPRISE_A' && (currentTab === 'requests' || currentTab === 'ops')) {
+                          if (opt.value === 'ENTERPRISE_A' && (currentTab === 'assets' || currentTab === 'ops')) {
                             setCurrentTab('dashboard');
                           } else if (opt.value === 'ENTERPRISE_B' && (currentTab === 'assets' || currentTab === 'offers' || currentTab === 'ops')) {
                             setCurrentTab('dashboard');

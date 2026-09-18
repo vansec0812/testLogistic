@@ -36,7 +36,7 @@ export const AssetsPage: React.FC = () => {
   const [formErrors, setFormErrors] = useState<FieldErrors>({});
   const [editErrors, setEditErrors] = useState<FieldErrors>({});
 
-  // Add form state
+  // Legacy asset draft state is retained for existing local data migrations.
   const [form, setForm] = useState<Partial<CreateAssetForm>>({
     containerType: '40HC',
     physicalStatus: 'EMPTY_AT_YARD',
@@ -104,6 +104,40 @@ export const AssetsPage: React.FC = () => {
     return errors;
   };
 
+  const runFormPhotoAiCheck = async (photos: string[], snapshot = form): Promise<ContainerPhotoVerificationResult | null> => {
+    if (photos.length < 6) return null;
+    if (!snapshot.containerNumber || !snapshot.containerType || !snapshot.declaredCondition) {
+      showMsg('Đã đủ 6 ảnh. Nhập số container, loại và tình trạng khai báo để AI đối chiếu.', true);
+      return null;
+    }
+    const carrierCode = INITIAL_CARRIERS.find(c => c.id === snapshot.carrierId)?.code || snapshot.carrierId || '';
+    setIsAiVerifying(true);
+    setPhotoVerification(null);
+    const verification = await verifyContainerPhotosWithAI(photos, {
+      containerNumber: snapshot.containerNumber.trim().toUpperCase(),
+      containerType: snapshot.containerType,
+      carrierCode,
+      declaredCondition: snapshot.declaredCondition,
+    });
+    setIsAiVerifying(false);
+    setPhotoVerification(verification);
+    if (verification.actualConditionNotes) {
+      setForm(previous => ({ ...previous, conditionNotes: verification.actualConditionNotes }));
+    }
+    if (verification.status === 'MISMATCH') {
+      const message = verification.mismatchDetails.join(' ') || verification.summary;
+      const nextErrors = { photos: `Ảnh không khớp thông tin đăng ký: ${message}` };
+      setFormErrors(previous => ({ ...previous, ...nextErrors }));
+      showMsg(nextErrors.photos, true);
+      scrollToFirstFieldError(nextErrors);
+    } else if (verification.status === 'MANUAL_REVIEW') {
+      showMsg('Ảnh đã đủ 6 góc; AI chưa kết luận tự động và đã chuyển Ops kiểm tra thủ công.');
+    } else if (verification.status === 'MATCHED') {
+      showMsg(`AI đã đối chiếu đủ 6 ảnh và khớp thông tin đăng ký (${verification.score ?? '—'}/100).`);
+    }
+    return verification;
+  };
+
   const handleAdd = async () => {
     const errors = validateAssetForm();
     setFormErrors(errors);
@@ -113,17 +147,8 @@ export const AssetsPage: React.FC = () => {
       return;
     }
 
-    const carrierCode = INITIAL_CARRIERS.find(c => c.id === form.carrierId)?.code || form.carrierId || '';
-    setIsAiVerifying(true);
-    setPhotoVerification(null);
-    const verification = await verifyContainerPhotosWithAI(formPhotos, {
-      containerNumber: form.containerNumber!.trim().toUpperCase(),
-      containerType: form.containerType || '40HC',
-      carrierCode,
-      declaredCondition: form.declaredCondition || 'GOOD',
-    });
-    setIsAiVerifying(false);
-    setPhotoVerification(verification);
+    const verification = await runFormPhotoAiCheck(formPhotos);
+    if (!verification) return;
 
     if (!verification.success || verification.status === 'ERROR') {
       const nextErrors = { photos: verification.error || verification.summary || 'Không thể hoàn tất kiểm tra AI ảnh container.' };
@@ -250,16 +275,33 @@ export const AssetsPage: React.FC = () => {
         count++;
         if (count === files.length) {
           const currentPhotos = assets.find(a => a.id === assetId)?.photos || [];
-          const updated = [...currentPhotos, ...urls].slice(0, 6);
+          const updated = [...currentPhotos, ...urls].slice(0, 12);
           updateAsset(assetId, { photos: updated });
           if (selectedAsset && selectedAsset.id === assetId) {
             setSelectedAsset({ ...selectedAsset, photos: updated });
           }
           showMsg(`Đã tải lên ${files.length} ảnh thực tế thành công!`);
+          if (updated.length >= 6) void handleAiInspection(assetId, updated);
         }
       };
       reader.readAsDataURL(file);
     });
+  };
+
+  const handleRemoveRealPhoto = (assetId: string, photoIndex: number) => {
+    const asset = assets.find(a => a.id === assetId);
+    if (!asset) return;
+    if (asset.isLocked) {
+      showMsg('Container đang trong giao dịch, không thể xóa ảnh.', true);
+      return;
+    }
+    const updated = asset.photos.filter((_, index) => index !== photoIndex);
+    const result = updateAsset(assetId, { photos: updated, aiInspection: undefined });
+    if (result.success) {
+      setSelectedAsset(selectedAsset?.id === assetId ? { ...asset, photos: updated, aiInspection: undefined } : selectedAsset);
+      setInspectionResult(null);
+      showMsg(updated.length < 6 ? 'Đã xóa ảnh. Cần bổ sung lại đủ 6 góc trước khi AI kiểm tra.' : 'Đã xóa ảnh cũ. Vui lòng chạy lại AI để cập nhật kết quả.');
+    } else showMsg(result.message, true);
   };
 
   const handleFormPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -271,13 +313,18 @@ export const AssetsPage: React.FC = () => {
     if (acceptedFiles.length !== files.length) {
       showMsg('Chỉ nhận ảnh hợp lệ tối đa 10MB mỗi tệp.', true);
     }
-    acceptedFiles.slice(0, Math.max(0, 6 - formPhotos.length)).forEach(file => {
+    const filesToRead = acceptedFiles.slice(0, Math.max(0, 12 - formPhotos.length));
+    Promise.all(filesToRead.map(file => new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => {
-        setFormPhotos(prev => [...prev, reader.result as string].slice(0, 6));
-      };
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('Không đọc được ảnh container.'));
       reader.readAsDataURL(file);
-    });
+    }))).then(async urls => {
+      const nextPhotos = [...formPhotos, ...urls].slice(0, 12);
+      setFormPhotos(nextPhotos);
+      if (nextPhotos.length >= 6) await runFormPhotoAiCheck(nextPhotos);
+      else showMsg(`Đã thêm ảnh. Còn thiếu ${6 - nextPhotos.length} ảnh để AI tự quét.`);
+    }).catch(() => showMsg('Không đọc được một hoặc nhiều ảnh container.', true));
   };
 
   const handleEdoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -290,17 +337,21 @@ export const AssetsPage: React.FC = () => {
       return;
     }
     setForm(p => ({ ...p, hasEdoDocument: true, edoEvidenceName: file.name, edoVerificationStatus: 'UNVERIFIED' }));
-    showMsg(`Đã tải e-DO ${file.name}. Ops sẽ xác minh trước khi publish Offer.`);
+      showMsg(`Đã tải e-DO ${file.name}.`);
   };
 
-  const handleAiInspection = async (assetId: string) => {
+  const handleAiInspection = async (assetId: string, photosOverride?: string[]) => {
     const asset = assets.find(a => a.id === assetId);
-    if (!asset || asset.photos.length === 0) return;
+    const photos = photosOverride || asset?.photos || [];
+    if (!asset || photos.length < 6) {
+      showMsg('Cần đủ tối thiểu 6 ảnh trước khi chạy AI.', true);
+      return;
+    }
     setIsAiInspecting(true);
     setInspectionResult(null);
 
     try {
-      const result = await inspectContainerWithAI(asset.photos);
+      const result = await inspectContainerWithAI(photos);
 
       if (result.success) {
         setInspectionResult({
@@ -319,7 +370,7 @@ export const AssetsPage: React.FC = () => {
           inspectedAt: new Date().toISOString(),
         } as const;
         updateAsset(assetId, { aiInspection });
-        setSelectedAsset({ ...asset, aiInspection });
+        setSelectedAsset({ ...asset, photos, aiInspection });
 
         if (result.requiresOpsReview) {
           showMsg('AI phát hiện dấu hiệu cần xác minh. Đã chuyển hàng đợi Ops kiểm tra thủ công.', true);
@@ -327,10 +378,28 @@ export const AssetsPage: React.FC = () => {
           showMsg(`AI không phát hiện bất thường (${result.score ?? '—'}/100). Offer vẫn chờ Ops duyệt.`);
         }
       } else {
-        showMsg(result.error || 'Lỗi giám định AI', true);
+        const message = result.error || 'Chưa có kết quả giám định tự động.';
+        const aiInspection = {
+          status: 'ERROR' as const,
+          score: result.score,
+          condition: result.condition,
+          summary: message,
+          details: result.details || [],
+          requiresOpsReview: true,
+          inspectedAt: new Date().toISOString(),
+        };
+        updateAsset(assetId, { aiInspection });
+        setInspectionResult({
+          score: result.score,
+          text: 'Chưa có kết quả tự động; đã chuyển Ops kiểm tra',
+          status: 'ANOMALY',
+          requiresOpsReview: true,
+        });
+        setSelectedAsset({ ...asset, photos, aiInspection });
+        showMsg('AI chưa trả kết quả tự động. Container đã được chuyển Ops kiểm tra thủ công.');
       }
     } catch {
-      showMsg('Không thể kết nối dịch vụ AI. Vui lòng thử lại hoặc chuyển Ops kiểm tra thủ công.', true);
+      showMsg('AI chưa trả kết quả tự động. Container đã được chuyển Ops kiểm tra thủ công.');
     } finally {
       setIsAiInspecting(false);
     }
@@ -349,7 +418,8 @@ export const AssetsPage: React.FC = () => {
       'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800'
     ];
     updateAsset(assetId, { photos: sampleAngles });
-    showMsg('Đã cập nhật đủ 6 ảnh 6 góc container (sẵn sàng tạo Offer đạt chuẩn IICL)!');
+    showMsg('Đã cập nhật đủ 6 ảnh 6 góc container. AI sẽ tự quét lại bộ ảnh.');
+    void handleAiInspection(assetId, sampleAngles);
   };
 
   if (currentRole === 'ENTERPRISE_B') {
@@ -369,22 +439,13 @@ export const AssetsPage: React.FC = () => {
         <div>
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
             <Boxes className="w-6 h-6 text-blue-600" />
-            <span>Quản lý Vỏ Container</span>
+            <span>{currentRole === 'ENTERPRISE_A' ? 'Danh mục vỏ container' : 'Quản lý Vỏ Container'}</span>
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            {currentRole === 'ENTERPRISE_A' ? `${filtered.length} container thuộc quyền quản lý của ${currentCompany.shortName}` : `${filtered.length} container trong toàn hệ thống`}
+            {currentRole === 'ENTERPRISE_A'
+              ? `${filtered.length} container được tạo từ Offer của ${currentCompany.shortName}`
+              : `${filtered.length} container trong toàn hệ thống · Ops quản lý hồ sơ tài sản và trạng thái xác minh`}
           </p>
-        </div>
-        <div className="flex items-center gap-2.5">
-          {canCreateOffers && (
-            <button
-              onClick={() => setShowAddForm(!showAddForm)}
-              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-sm transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Đăng ký Container mới</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -403,7 +464,7 @@ export const AssetsPage: React.FC = () => {
       )}
 
       {/* Add Form Modal/Section */}
-      {showAddForm && (
+      {false && showAddForm && (
         <div className="bg-white border border-blue-200 rounded-2xl p-6 space-y-4 shadow-md">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="font-bold text-slate-900 flex items-center gap-2 text-sm sm:text-base">
@@ -482,10 +543,11 @@ export const AssetsPage: React.FC = () => {
               <label className="text-xs font-semibold text-slate-700 block mb-1">Hạn Detention (Hạn lưu vỏ)</label>
               <input
                 type="datetime-local"
-                value={form.freeTimeDetentionEnd ? form.freeTimeDetentionEnd.slice(0, 16) : ''}
+                value={(form.freeTimeDetentionEnd || '').slice(0, 16)}
                 onChange={e => setForm(p => ({ ...p, freeTimeDetentionEnd: new Date(e.target.value).toISOString() }))}
                 className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs outline-none focus:ring-2 focus:ring-brand-500"
               />
+              <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị: {formatDateTime(form.freeTimeDetentionEnd || '')}</p>
             </div>
             <div className="md:col-span-2">
               <label className="text-xs font-semibold text-slate-700 block mb-1">Ghi chú tình trạng vỏ</label>
@@ -503,7 +565,7 @@ export const AssetsPage: React.FC = () => {
               <Camera className="w-4 h-4 text-blue-600" />
               Ảnh tình trạng container ({formPhotos.length}/6)
             </label>
-            <p className="text-xs font-semibold text-red-600 mb-2"><RequiredMark /> Bắt buộc tối thiểu 6 ảnh, đúng 6 góc container</p>
+            <p className="text-xs font-semibold text-red-600 mb-2"><RequiredMark /> Bắt buộc tối thiểu 6 ảnh. Checklist: mặt trước, mặt sau, bên trái, bên phải, sàn và trần/nóc.</p>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-3">
               {formPhotos.map((url, idx) => (
                 <div key={idx} className="relative h-20 rounded-lg overflow-hidden bg-slate-100 border border-slate-200">
@@ -518,10 +580,10 @@ export const AssetsPage: React.FC = () => {
                 </div>
               ))}
             </div>
-            {formPhotos.length < 6 && (
+            {formPhotos.length < 12 && (
               <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-dashed border-blue-300 bg-blue-50/50 text-blue-700 text-xs sm:text-sm font-semibold cursor-pointer hover:bg-blue-100 transition-colors">
                 <UploadCloud className="w-4 h-4" />
-                <span>Tải ảnh container từ máy (tối đa 6 ảnh, 6 góc IICL)</span>
+                <span>{formPhotos.length < 6 ? 'Tải ảnh để đủ 6 góc IICL' : 'Thêm ảnh container'}</span>
                 <input type="file" accept="image/*" multiple className="hidden" onChange={handleFormPhotoUpload} />
               </label>
             )}
@@ -530,16 +592,16 @@ export const AssetsPage: React.FC = () => {
             <FieldError message={formErrors.photos} />
             {photoVerification && (
               <div className={`mt-2 rounded-xl border px-3 py-2 text-xs ${
-                photoVerification.status === 'MISMATCH' || photoVerification.status === 'ERROR'
+                photoVerification!.status === 'MISMATCH' || photoVerification!.status === 'ERROR'
                   ? 'border-red-300 bg-red-50 text-red-800'
-                  : photoVerification.status === 'MANUAL_REVIEW'
+                  : photoVerification!.status === 'MANUAL_REVIEW'
                     ? 'border-amber-300 bg-amber-50 text-amber-800'
                     : 'border-emerald-300 bg-emerald-50 text-emerald-800'
               }`} role="status">
-                <p className="font-bold">{photoVerification.summary}</p>
-                {photoVerification.mismatchDetails.length > 0 && (
+                <p className="font-bold">{photoVerification!.summary}</p>
+                {photoVerification!.mismatchDetails.length > 0 && (
                   <ul className="mt-1 list-disc pl-4 space-y-0.5">
-                    {photoVerification.mismatchDetails.map((detail, index) => <li key={index}>{detail}</li>)}
+                    {photoVerification!.mismatchDetails.map((detail, index) => <li key={index}>{detail}</li>)}
                   </ul>
                 )}
               </div>
@@ -635,6 +697,7 @@ export const AssetsPage: React.FC = () => {
                   aria-invalid={Boolean(editErrors['edit-freeTimeDetentionEnd'])}
                   className={getFieldErrorClass(Boolean(editErrors['edit-freeTimeDetentionEnd']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500')}
                 />
+                <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị: {formatDateTime(editForm.freeTimeDetentionEnd)}</p>
                 <FieldError message={editErrors['edit-freeTimeDetentionEnd']} />
               </div>
 
@@ -697,7 +760,7 @@ export const AssetsPage: React.FC = () => {
               {/* Photo section */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-semibold text-slate-800">Bộ ảnh tình trạng ({selectedAsset.photos.length}/6 ảnh)</span>
+                  <span className="font-semibold text-slate-800">Bộ ảnh tình trạng ({selectedAsset.photos.length}/6 tối thiểu)</span>
                   <div className="flex items-center gap-2">
                     <label className="cursor-pointer text-blue-600 hover:underline flex items-center gap-1 font-semibold text-xs">
                       <UploadCloud className="w-3.5 h-3.5" />
@@ -710,7 +773,7 @@ export const AssetsPage: React.FC = () => {
                         onChange={(e) => handleRealUpload(e, selectedAsset.id)}
                       />
                     </label>
-                    {selectedAsset.photos.length < 6 && (
+                    {selectedAsset.photos.length < 12 && (
                       <button
                         onClick={() => handleAddSamplePhotos(selectedAsset.id)}
                         className="text-slate-600 hover:text-slate-800 flex items-center gap-1 text-xs font-medium"
@@ -724,8 +787,16 @@ export const AssetsPage: React.FC = () => {
 
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   {selectedAsset.photos.map((url, idx) => (
-                    <div key={idx} className="h-24 rounded-lg overflow-hidden bg-slate-100 border border-slate-200">
+                    <div key={idx} className="relative h-24 rounded-lg overflow-hidden bg-slate-100 border border-slate-200 group">
                       <img src={url} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveRealPhoto(selectedAsset.id, idx)}
+                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-80 group-hover:opacity-100"
+                        title="Xóa ảnh này"
+                      >
+                        ×
+                      </button>
                     </div>
                   ))}
                   {selectedAsset.photos.length === 0 && (
@@ -734,6 +805,7 @@ export const AssetsPage: React.FC = () => {
                     </div>
                   )}
                 </div>
+                <p className="text-[11px] text-slate-500">Tối thiểu 6 góc: mặt trước, mặt sau, bên trái, bên phải, sàn và trần/nóc. Có thể thêm ảnh chi tiết; đủ ảnh sẽ tự chạy AI.</p>
 
                 {/* AI Inspection Card */}
                 <div className="p-3.5 rounded-xl border border-teal-200 bg-teal-50/50 space-y-2 shadow-xs">
@@ -744,17 +816,17 @@ export const AssetsPage: React.FC = () => {
                     </span>
                     <button
                       type="button"
-                      disabled={isAiInspecting || selectedAsset.photos.length === 0}
+                      disabled={isAiInspecting || selectedAsset.photos.length < 6}
                       onClick={() => handleAiInspection(selectedAsset.id)}
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all ${
                         isAiInspecting
                           ? 'bg-teal-400 cursor-not-allowed'
-                          : selectedAsset.photos.length === 0
+                          : selectedAsset.photos.length < 6
                           ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
                           : 'bg-teal-600 hover:bg-teal-500 shadow-sm'
                       }`}
                     >
-                      {isAiInspecting ? 'Đang quét AI...' : 'Bắt đầu quét AI'}
+                      {isAiInspecting ? 'Đang quét AI...' : selectedAsset.photos.length < 6 ? 'Cần đủ 6 ảnh' : 'Bắt đầu quét AI'}
                     </button>
                   </div>
                   {inspectionResult && (
@@ -765,7 +837,6 @@ export const AssetsPage: React.FC = () => {
                           {inspectionResult.score == null ? 'Chờ Ops' : `${inspectionResult.score}/100`}
                         </span>
                       </div>
-                      {inspectionResult.requiresOpsReview && <p className="mt-1 font-semibold">Trạng thái: chờ Ops kiểm tra thủ công trước khi tạo Offer.</p>}
                     </div>
                   )}
                 </div>
@@ -832,7 +903,7 @@ export const AssetsPage: React.FC = () => {
         <div className="text-center py-16 space-y-3 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
           <Boxes className="w-12 h-12 text-slate-300 mx-auto" />
           <h3 className="text-base font-bold text-slate-800">Không có container nào</h3>
-          <p className="text-xs sm:text-sm text-slate-500">{search ? 'Không tìm thấy kết quả phù hợp.' : 'Hãy đăng ký container đầu tiên.'}</p>
+          <p className="text-xs sm:text-sm text-slate-500">{search ? 'Không tìm thấy kết quả phù hợp.' : 'Tạo Offer để thêm container vào danh mục quản lý.'}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -866,7 +937,7 @@ export const AssetsPage: React.FC = () => {
                       )}
                     </div>
                     <span className="absolute bottom-2 right-2 text-xs font-bold bg-slate-900/80 text-white rounded-lg px-2.5 py-1 backdrop-blur-sm">
-                      {asset.photos.length}/6 ảnh
+                      {asset.photos.length}/6 tối thiểu
                     </span>
                   </div>
 

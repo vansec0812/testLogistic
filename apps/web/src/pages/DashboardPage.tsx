@@ -257,7 +257,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
             {currentRole === 'ENTERPRISE_A' && (
               <KpiCard
                 icon={Box} label="Container đang quản lý" value={stats.myAssets}
-                color="blue" onClick={() => setCurrentTab('assets')}
+                color="blue" onClick={() => setCurrentTab('offers')}
               />
             )}
             {currentRole === 'ENTERPRISE_A' && (
