@@ -146,12 +146,12 @@ export const PricingBreakdownCard: React.FC<PricingBreakdownCardProps> = ({
             <Row label="ECont thu từ B" value={formatVnd(quote.econtCollectedFromB)} note="(1-α)×F_RU + F_B" />
           </div>
 
-          {/* SRS fixture note */}
+          {/* Transaction binding note */}
           {context === 'transaction_detail' && (
             <div className="rounded-xl bg-blue-50 border border-blue-200 px-3 py-2">
               <p className="text-xs text-blue-700">
                 <Info className="w-3.5 h-3.5 inline mr-1" />
-                Công thức theo SRS v1.0 §5.2. Báo giá mang tính ràng buộc khi cả hai bên ký Thỏa thuận (Agreement).
+                Báo giá mang tính ràng buộc khi cả hai bên xác nhận ký Thỏa thuận giao dịch.
               </p>
             </div>
           )}

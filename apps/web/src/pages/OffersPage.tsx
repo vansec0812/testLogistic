@@ -1,6 +1,5 @@
 // ==============================================================================
 // ECont OffersPage - Version 2.0 (Chuẩn hóa quy trình tạo Offer & Bảo mật Bên B)
-// Tuân thủ yêu cầu: 1 Offer = 1 Cont, 1 Offer = 1 e-DO; Bảo mật thông tin khi B xem option
 // ==============================================================================
 
 import React, { useState, useMemo } from 'react';
@@ -18,6 +17,14 @@ import {
 import { INITIAL_CARRIERS, INITIAL_DEPOTS } from '../data/mockData';
 import { AiEdoScannerModal, ExtractedEdoData } from '../components/AiEdoScannerModal';
 import { inspectContainerWithAI } from '../services/aiService';
+import {
+  FieldErrors, FieldError, FormErrorSummary, RequiredMark,
+  getFieldErrorClass, scrollToFirstFieldError
+} from '../components/FormValidation';
+import {
+  required, positiveNumber, validDateRange, validFutureDate,
+  setError, validateIsoContainer
+} from '../lib/formValidation';
 
 interface OffersPageProps {
   setCurrentTab?: (tab: string) => void;
@@ -54,6 +61,17 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
   const [withdrawId, setWithdrawId] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [formErrors, setFormErrors] = useState<FieldErrors>({});
+  const [withdrawErrors, setWithdrawErrors] = useState<FieldErrors>({});
+
+  const clearFormError = (field: string) => {
+    setFormErrors(prev => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
 
   // AI Inspection state in Add Form
   const [isAiChecking, setIsAiChecking] = useState(false);
@@ -64,7 +82,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
     details?: string[];
   } | null>(null);
 
-  // Form đăng Offer của Bên A (1 Offer = 1 Cont = 1 e-DO)
+  // Form đăng Offer của Bên A
   const [form, setForm] = useState<{
     assetId?: string;
     containerNumber: string;
@@ -138,6 +156,22 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
   // Xử lý khi AI OCR quét xong e-DO
   const handleApplyEdo = (data: ExtractedEdoData) => {
     const matchingCarrier = INITIAL_CARRIERS.find(c => c.code === data.carrierCode || data.carrierCode.includes(c.code));
+    const fromDate = new Date(Date.now() + 2 * 3600000).toISOString().slice(0, 16);
+    let toDate = '';
+    if (data.expiryDate) {
+      try {
+        const d = new Date(data.expiryDate);
+        if (!isNaN(d.getTime())) {
+          toDate = `${data.expiryDate}T17:00`;
+        }
+      } catch {
+        toDate = new Date(Date.now() + 72 * 3600000).toISOString().slice(0, 16);
+      }
+    }
+    if (!toDate) {
+      toDate = new Date(Date.now() + 72 * 3600000).toISOString().slice(0, 16);
+    }
+
     setForm(p => ({
       ...p,
       containerNumber: data.containerNumber,
@@ -148,16 +182,32 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
       edoExpiryDate: data.expiryDate,
       edoFileName: `EDO_${data.carrierCode}_${data.containerNumber}.pdf`,
       pickupLocationName: data.returnDepot,
-      availableTo: new Date(data.expiryDate).toISOString().slice(0, 16),
+      availableFrom: fromDate,
+      availableTo: toDate,
     }));
+
+    setFormErrors(prev => {
+      const next = { ...prev };
+      delete next.containerNumber;
+      delete next.carrierId;
+      delete next.containerType;
+      delete next.edoNumber;
+      delete next.edoReturnDepot;
+      delete next.pickupLocationName;
+      delete next.availableFrom;
+      delete next.availableTo;
+      return next;
+    });
+
     setShowAddForm(true);
-    showMsg(`✓ AI đã trích xuất e-DO ${data.edoNumber}! Đã điền tự động thông tin vào Offer.`);
+    showMsg(`✓ Đã trích xuất e-DO ${data.edoNumber}! Đã điền tự động thông tin vào Offer.`);
   };
 
   // Xử lý tải ảnh từ máy tính
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+    clearFormError('photos');
     Array.from(files).forEach(file => {
       const reader = new FileReader();
       reader.onload = () => {
@@ -173,6 +223,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
 
   // Nạp 6 ảnh mẫu đạt chuẩn IICL-5
   const handleLoadSamplePhotos = () => {
+    clearFormError('photos');
     const samplePhotos = [
       'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800',
       'https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=800',
@@ -226,22 +277,33 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
     }
   };
 
+  // Validate form tạo Offer đầy đủ
+  const validateOfferForm = (): FieldErrors => {
+    const errors: FieldErrors = {};
+    setError(errors, 'containerNumber', validateIsoContainer(form.containerNumber));
+    setError(errors, 'containerType', required(form.containerType, 'Vui lòng chọn loại container.'));
+    setError(errors, 'carrierId', required(form.carrierId, 'Vui lòng chọn hãng tàu quản lý.'));
+    setError(errors, 'edoNumber', required(form.edoNumber, 'Vui lòng nhập mã lệnh e-DO hoặc Booking.'));
+    setError(errors, 'edoReturnDepot', required(form.edoReturnDepot, 'Vui lòng nhập bãi hạ vỏ chỉ định (Depot).'));
+    setError(errors, 'pickupLocationName', required(form.pickupLocationName, 'Vui lòng nhập vị trí lấy vỏ container.'));
+    setError(errors, 'availableFrom', validFutureDate(form.availableFrom, 'thời gian bắt đầu bàn giao'));
+    setError(errors, 'availableTo', validDateRange(form.availableFrom, form.availableTo, 'thời gian bàn giao'));
+    setError(errors, 'declaredCondition', required(form.declaredCondition, 'Vui lòng chọn tình trạng vỏ container.'));
+    setError(errors, 'baselineDepotCostVnd', positiveNumber(form.baselineDepotCostVnd, 'Chi phí đưa về depot phải lớn hơn 0.'));
+    setError(errors, 'conditionNotes', required(form.conditionNotes, 'Vui lòng nhập mô tả chi tiết tình trạng vỏ cont.'));
+    if (form.photos.length === 0) {
+      errors.photos = 'Vui lòng tải lên ít nhất 1 ảnh container (khuyến nghị 6 ảnh theo chuẩn IICL-5).';
+    }
+    return errors;
+  };
+
   // Xử lý tạo Offer
   const handleCreateOfferSubmit = () => {
-    if (!form.containerNumber.trim()) {
-      showMsg('Vui lòng nhập số Container ISO 6346.', true);
-      return;
-    }
-    if (!form.pickupLocationName.trim()) {
-      showMsg('Vui lòng nhập vị trí bãi lấy container.', true);
-      return;
-    }
-    if (!form.availableFrom || !form.availableTo) {
-      showMsg('Vui lòng chọn thời gian sẵn sàng bàn giao.', true);
-      return;
-    }
-    if (new Date(form.availableTo).getTime() <= new Date(form.availableFrom).getTime()) {
-      showMsg('Thời gian kết thúc phải sau thời gian bắt đầu bàn giao.', true);
+    const errors = validateOfferForm();
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      showMsg(Object.values(errors)[0], true);
+      scrollToFirstFieldError(errors);
       return;
     }
 
@@ -282,9 +344,10 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
     });
 
     if (result.success) {
-      showMsg('✓ Đã đăng Offer thành công! (1 Offer = 1 Cont, 1 e-DO). AI và Ops đang kiểm tra duyệt trước khi công khai.');
+      showMsg('✓ Đã đăng nguồn cung thành công! Hệ thống đang kiểm duyệt trước khi công khai.');
       setShowAddForm(false);
       setAiCheckResult(null);
+      setFormErrors({});
       setForm(p => ({
         ...p,
         containerNumber: '',
@@ -313,8 +376,12 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
   // Rút tin
   const handleWithdraw = () => {
     if (!withdrawId) return;
-    if (!withdrawReason.trim()) {
-      showMsg('Vui lòng nhập lý do rút Offer.', true);
+    const errors: FieldErrors = {};
+    setError(errors, 'withdrawReason', required(withdrawReason, 'Vui lòng nhập lý do rút Offer.'));
+    setWithdrawErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      showMsg(Object.values(errors)[0], true);
+      scrollToFirstFieldError(errors);
       return;
     }
     const result = withdrawOffer(withdrawId, withdrawReason.trim());
@@ -322,6 +389,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
     if (result.success) {
       setWithdrawId(null);
       setWithdrawReason('');
+      setWithdrawErrors({});
     }
   };
 
@@ -341,7 +409,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
             {currentRole === 'ENTERPRISE_B'
               ? 'Thông tin vỏ container đã được kiểm duyệt IICL-5 & bảo mật số cont cho đến khi xác nhận giao dịch.'
-              : `${filtered.length} nguồn vỏ đang được quản lý bởi ${currentCompany.shortName} · Mỗi Offer tương ứng 1 container & 1 e-DO.`}
+              : `${filtered.length} nguồn vỏ container đang sẵn sàng kết nối`}
           </p>
         </div>
         
@@ -380,7 +448,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
         </div>
       )}
 
-      {/* Form Tạo Offer Đầy Đủ Cho Bên A (1 Offer = 1 Cont = 1 e-DO) */}
+      {/* Form Tạo Offer Đầy Đủ Cho Bên A */}
       {showAddForm && currentRole === 'ENTERPRISE_A' && (
         <div className="bg-white border border-emerald-200 rounded-2xl p-6 space-y-5 shadow-lg animate-in fade-in duration-200">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -398,52 +466,75 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
             </button>
           </div>
 
+          <FormErrorSummary errors={formErrors} />
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs sm:text-sm">
             {/* 1. Số Container */}
             <div className="space-y-1">
-              <label className="text-slate-700 font-semibold flex items-center justify-between">
-                <span>Số Container (ISO 6346) *</span>
+              <label htmlFor="offer-containerNumber" className="text-slate-700 font-semibold flex items-center justify-between">
+                <span>Số Container (ISO 6346) <RequiredMark /></span>
                 <span className="text-[11px] text-amber-700 font-normal flex items-center gap-1">
                   <Lock className="w-3 h-3" /> Bảo mật với Bên B
                 </span>
               </label>
               <input
+                id="offer-containerNumber"
+                data-field="containerNumber"
                 value={form.containerNumber}
-                onChange={e => setForm(p => ({ ...p, containerNumber: e.target.value.toUpperCase() }))}
+                onChange={e => {
+                  clearFormError('containerNumber');
+                  setForm(p => ({ ...p, containerNumber: e.target.value.toUpperCase() }));
+                }}
                 placeholder="VD: MSKU8421093"
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                aria-invalid={Boolean(formErrors.containerNumber)}
+                className={getFieldErrorClass(Boolean(formErrors.containerNumber), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
               />
+              <FieldError message={formErrors.containerNumber} />
               <p className="text-[11px] text-slate-400">Số cont chỉ hiển thị cho Ops và Bên B sau khi xác nhận giữ chỗ.</p>
             </div>
 
             {/* 2. Loại Container */}
             <div className="space-y-1">
-              <label className="text-slate-700 font-semibold block">Loại Container *</label>
+              <label htmlFor="offer-containerType" className="text-slate-700 font-semibold block">Loại Container <RequiredMark /></label>
               <select
+                id="offer-containerType"
+                data-field="containerType"
                 value={form.containerType}
-                onChange={e => setForm(p => ({ ...p, containerType: e.target.value as '20GP' | '40HC' }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                onChange={e => {
+                  clearFormError('containerType');
+                  setForm(p => ({ ...p, containerType: e.target.value as '20GP' | '40HC' }));
+                }}
+                aria-invalid={Boolean(formErrors.containerType)}
+                className={getFieldErrorClass(Boolean(formErrors.containerType), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
               >
                 <option value="40HC">40HC (40 foot High Cube)</option>
                 <option value="20GP">20GP (20 foot Tiêu chuẩn)</option>
               </select>
+              <FieldError message={formErrors.containerType} />
             </div>
 
             {/* 3. Hãng tàu */}
             <div className="space-y-1">
-              <label className="text-slate-700 font-semibold block">Hãng tàu quản lý *</label>
+              <label htmlFor="offer-carrierId" className="text-slate-700 font-semibold block">Hãng tàu quản lý <RequiredMark /></label>
               <select
+                id="offer-carrierId"
+                data-field="carrierId"
                 value={form.carrierId}
-                onChange={e => setForm(p => ({ ...p, carrierId: e.target.value }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                onChange={e => {
+                  clearFormError('carrierId');
+                  setForm(p => ({ ...p, carrierId: e.target.value }));
+                }}
+                aria-invalid={Boolean(formErrors.carrierId)}
+                className={getFieldErrorClass(Boolean(formErrors.carrierId), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
               >
                 {INITIAL_CARRIERS.filter(c => c.isActive).map(c => (
                   <option key={c.id} value={c.id}>{c.code} · {c.name}</option>
                 ))}
               </select>
+              <FieldError message={formErrors.carrierId} />
             </div>
 
-            {/* 4. Chứng từ e-DO (1 offer = 1 eDO) */}
+            {/* 4. Chứng từ e-DO */}
             <div className="md:col-span-2 lg:col-span-3 p-3.5 rounded-xl border border-blue-200 bg-blue-50/50 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-bold text-blue-900 flex items-center gap-1.5 text-xs sm:text-sm">
@@ -465,22 +556,36 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                 <div>
-                  <label className="text-slate-700 font-medium block mb-1">Mã lệnh e-DO / Booking</label>
+                  <label htmlFor="offer-edoNumber" className="text-slate-700 font-medium block mb-1">Mã lệnh e-DO / Booking <RequiredMark /></label>
                   <input
+                    id="offer-edoNumber"
+                    data-field="edoNumber"
                     value={form.edoNumber}
-                    onChange={e => setForm(p => ({ ...p, edoNumber: e.target.value }))}
+                    onChange={e => {
+                      clearFormError('edoNumber');
+                      setForm(p => ({ ...p, edoNumber: e.target.value }));
+                    }}
                     placeholder="VD: EDO-MSK-2026-984210"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                    aria-invalid={Boolean(formErrors.edoNumber)}
+                    className={getFieldErrorClass(Boolean(formErrors.edoNumber), 'w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono bg-white outline-none focus:ring-2 focus:ring-blue-500')}
                   />
+                  <FieldError message={formErrors.edoNumber} />
                 </div>
                 <div>
-                  <label className="text-slate-700 font-medium block mb-1">Nơi hạ vỏ chỉ định (Depot)</label>
+                  <label htmlFor="offer-edoReturnDepot" className="text-slate-700 font-medium block mb-1">Nơi hạ vỏ chỉ định (Depot) <RequiredMark /></label>
                   <input
+                    id="offer-edoReturnDepot"
+                    data-field="edoReturnDepot"
                     value={form.edoReturnDepot}
-                    onChange={e => setForm(p => ({ ...p, edoReturnDepot: e.target.value }))}
+                    onChange={e => {
+                      clearFormError('edoReturnDepot');
+                      setForm(p => ({ ...p, edoReturnDepot: e.target.value }));
+                    }}
                     placeholder="VD: ICD Transimex Thủ Đức"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                    aria-invalid={Boolean(formErrors.edoReturnDepot)}
+                    className={getFieldErrorClass(Boolean(formErrors.edoReturnDepot), 'w-full border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white outline-none focus:ring-2 focus:ring-blue-500')}
                   />
+                  <FieldError message={formErrors.edoReturnDepot} />
                 </div>
                 <div>
                   <label className="text-slate-700 font-medium block mb-1">Tệp chứng từ e-DO đính kèm</label>
@@ -505,8 +610,8 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
 
             {/* 5. Vị trí & Tọa độ Maps */}
             <div className="md:col-span-2 lg:col-span-3 space-y-2">
-              <label className="text-slate-700 font-semibold block flex items-center justify-between">
-                <span>Vị trí lấy vỏ container (Tích hợp Maps & Tọa độ) *</span>
+              <label htmlFor="offer-pickupLocationName" className="text-slate-700 font-semibold block flex items-center justify-between">
+                <span>Vị trí lấy vỏ container (Tích hợp Maps & Tọa độ) <RequiredMark /></span>
                 <span className="text-[11px] text-slate-400 font-normal">
                   Tọa độ: {form.pickupLatitude.toFixed(4)}, {form.pickupLongitude.toFixed(4)}
                 </span>
@@ -516,13 +621,20 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                 <div className="relative flex-1">
                   <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
+                    id="offer-pickupLocationName"
+                    data-field="pickupLocationName"
                     value={form.pickupLocationName}
-                    onChange={e => setForm(p => ({ ...p, pickupLocationName: e.target.value }))}
+                    onChange={e => {
+                      clearFormError('pickupLocationName');
+                      setForm(p => ({ ...p, pickupLocationName: e.target.value }));
+                    }}
                     placeholder="Nhập tên kho, bãi, cảng hoặc ICD..."
-                    className="w-full pl-9 pr-3.5 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                    aria-invalid={Boolean(formErrors.pickupLocationName)}
+                    className={getFieldErrorClass(Boolean(formErrors.pickupLocationName), 'w-full pl-9 pr-3.5 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
                   />
                 </div>
               </div>
+              <FieldError message={formErrors.pickupLocationName} />
 
               {/* Quick location selector pills */}
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
@@ -531,12 +643,15 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                   <button
                     key={loc.name}
                     type="button"
-                    onClick={() => setForm(p => ({
-                      ...p,
-                      pickupLocationName: loc.name,
-                      pickupLatitude: loc.lat,
-                      pickupLongitude: loc.lon
-                    }))}
+                    onClick={() => {
+                      clearFormError('pickupLocationName');
+                      setForm(p => ({
+                        ...p,
+                        pickupLocationName: loc.name,
+                        pickupLatitude: loc.lat,
+                        pickupLongitude: loc.lon
+                      }));
+                    }}
                     className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
                       form.pickupLocationName === loc.name
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-semibold'
@@ -551,69 +666,108 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
 
             {/* 6. Thời gian có thể bàn giao */}
             <div className="space-y-1">
-              <label className="text-slate-700 font-semibold block">Sẵn sàng bàn giao từ *</label>
+              <label htmlFor="offer-availableFrom" className="text-slate-700 font-semibold block">Sẵn sàng bàn giao từ <RequiredMark /></label>
               <input
+                id="offer-availableFrom"
+                data-field="availableFrom"
                 type="datetime-local"
                 value={form.availableFrom}
-                onChange={e => setForm(p => ({ ...p, availableFrom: e.target.value }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                onChange={e => {
+                  clearFormError('availableFrom');
+                  setForm(p => ({ ...p, availableFrom: e.target.value }));
+                }}
+                aria-invalid={Boolean(formErrors.availableFrom)}
+                className={getFieldErrorClass(Boolean(formErrors.availableFrom), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
               />
+              <FieldError message={formErrors.availableFrom} />
             </div>
 
             <div className="space-y-1">
-              <label className="text-slate-700 font-semibold block">Hạn chót bàn giao đến *</label>
+              <label htmlFor="offer-availableTo" className="text-slate-700 font-semibold block">Hạn chót bàn giao đến <RequiredMark /></label>
               <input
+                id="offer-availableTo"
+                data-field="availableTo"
                 type="datetime-local"
                 value={form.availableTo}
-                onChange={e => setForm(p => ({ ...p, availableTo: e.target.value }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                onChange={e => {
+                  clearFormError('availableTo');
+                  setForm(p => ({ ...p, availableTo: e.target.value }));
+                }}
+                aria-invalid={Boolean(formErrors.availableTo)}
+                className={getFieldErrorClass(Boolean(formErrors.availableTo), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
               />
+              <FieldError message={formErrors.availableTo} />
             </div>
 
             {/* 7. Tình trạng container */}
             <div className="space-y-1">
-              <label className="text-slate-700 font-semibold block">Tình trạng vỏ khai báo *</label>
+              <label htmlFor="offer-declaredCondition" className="text-slate-700 font-semibold block">Tình trạng vỏ khai báo <RequiredMark /></label>
               <select
+                id="offer-declaredCondition"
+                data-field="declaredCondition"
                 value={form.declaredCondition}
-                onChange={e => setForm(p => ({ ...p, declaredCondition: e.target.value as PhysicalCondition }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                onChange={e => {
+                  clearFormError('declaredCondition');
+                  setForm(p => ({ ...p, declaredCondition: e.target.value as PhysicalCondition }));
+                }}
+                aria-invalid={Boolean(formErrors.declaredCondition)}
+                className={getFieldErrorClass(Boolean(formErrors.declaredCondition), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
               >
-                <option value="GOOD">Đạt chuẩn đóng hàng xuất khẩu (GOOD)</option>
-                <option value="MINOR_DAMAGE">Hư hỏng nhẹ (MINOR_DAMAGE)</option>
+                <option value="GOOD">Đạt chuẩn đóng hàng xuất khẩu</option>
+                <option value="MINOR_DAMAGE">Hư hỏng nhẹ</option>
               </select>
+              <FieldError message={formErrors.declaredCondition} />
             </div>
 
-            {/* 8. Chi phí baseline T_A */}
+            {/* 8. Chi phí trả rỗng dự kiến */}
             <div className="space-y-1">
-              <label className="text-slate-700 font-semibold block">Chi phí đưa về depot baseline T_A (VND) *</label>
+              <label htmlFor="offer-baselineDepotCostVnd" className="text-slate-700 font-semibold block">Chi phí đưa về depot dự kiến (VND) <RequiredMark /></label>
               <input
+                id="offer-baselineDepotCostVnd"
+                data-field="baselineDepotCostVnd"
                 type="number"
                 value={form.baselineDepotCostVnd}
-                onChange={e => setForm(p => ({ ...p, baselineDepotCostVnd: parseInt(e.target.value, 10) || 0 }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                onChange={e => {
+                  clearFormError('baselineDepotCostVnd');
+                  setForm(p => ({ ...p, baselineDepotCostVnd: parseInt(e.target.value, 10) || 0 }));
+                }}
+                aria-invalid={Boolean(formErrors.baselineDepotCostVnd)}
+                className={getFieldErrorClass(Boolean(formErrors.baselineDepotCostVnd), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
               />
+              <FieldError message={formErrors.baselineDepotCostVnd} />
               <p className="text-[11px] text-slate-400">Cước xe kéo + chi phí nâng hạ thông thường nếu phải trả vỏ về depot</p>
             </div>
 
             {/* 9. Mô tả chi tiết tình trạng container */}
             <div className="md:col-span-2 space-y-1">
-              <label className="text-slate-700 font-semibold block">Mô tả thông tin chi tiết tình trạng vỏ *</label>
+              <label htmlFor="offer-conditionNotes" className="text-slate-700 font-semibold block">Mô tả thông tin chi tiết tình trạng vỏ <RequiredMark /></label>
               <textarea
+                id="offer-conditionNotes"
+                data-field="conditionNotes"
                 rows={2}
                 value={form.conditionNotes}
-                onChange={e => setForm(p => ({ ...p, conditionNotes: e.target.value }))}
+                onChange={e => {
+                  clearFormError('conditionNotes');
+                  setForm(p => ({ ...p, conditionNotes: e.target.value }));
+                }}
                 placeholder="Mô tả sàn, vách, trần, gioăng cửa, độ sạch, mùi hôi..."
-                className="w-full border border-slate-200 rounded-xl p-3 text-xs sm:text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                aria-invalid={Boolean(formErrors.conditionNotes)}
+                className={getFieldErrorClass(Boolean(formErrors.conditionNotes), 'w-full border border-slate-200 rounded-xl p-3 text-xs sm:text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
               />
+              <FieldError message={formErrors.conditionNotes} />
             </div>
 
             {/* 10. Ảnh container (Tối đa 6 ảnh) */}
-            <div className="md:col-span-2 lg:col-span-3 p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-3">
+            <div
+              id="offer-photos"
+              data-field="photos"
+              className={getFieldErrorClass(Boolean(formErrors.photos), 'md:col-span-2 lg:col-span-3 p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-3')}
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <span className="font-bold text-slate-800 flex items-center gap-2 text-xs sm:text-sm">
                     <Camera className="w-4 h-4 text-emerald-600" />
-                    Bộ ảnh container ({form.photos.length}/6 ảnh)
+                    Bộ ảnh container ({form.photos.length}/6 ảnh) <RequiredMark />
                     <span className="text-[11px] font-normal text-amber-700">
                       (Bảo mật: KHÔNG công khai ảnh khi Bên B xem option)
                     </span>
@@ -644,6 +798,8 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                   </label>
                 </div>
               </div>
+
+              <FieldError message={formErrors.photos} />
 
               {/* Thumbnails */}
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
@@ -827,7 +983,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                       <span className="text-slate-500 font-medium block">Tình trạng vỏ</span>
                       <strong className="text-emerald-700 text-xs font-bold mt-0.5 block">
-                        ✅ {offer.asset.declaredCondition === 'GOOD' ? 'Đạt chuẩn xuất khẩu (GOOD)' : 'Hư hỏng nhẹ'}
+                        ✅ {offer.asset.declaredCondition === 'GOOD' ? 'Đạt chuẩn xuất khẩu' : 'Hư hỏng nhẹ'}
                       </strong>
                     </div>
 
@@ -1035,23 +1191,46 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900">Rút tin Offer: {withdrawId}</h3>
-              <button onClick={() => setWithdrawId(null)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => { setWithdrawId(null); setWithdrawErrors({}); }} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div>
-              <label className="text-slate-700 font-semibold text-xs block mb-1">Lý do rút tin *</label>
+              <label htmlFor="withdrawReason" className="text-slate-700 font-semibold text-xs block mb-1">
+                Lý do rút tin <RequiredMark />
+              </label>
               <textarea
+                id="withdrawReason"
+                data-field="withdrawReason"
                 value={withdrawReason}
-                onChange={e => setWithdrawReason(e.target.value)}
+                onChange={e => {
+                  setWithdrawErrors(prev => {
+                    const next = { ...prev };
+                    delete next.withdrawReason;
+                    return next;
+                  });
+                  setWithdrawReason(e.target.value);
+                }}
                 placeholder="Container đã được điều phối khác hoặc thay đổi kế hoạch đóng hàng..."
                 rows={3}
-                className="w-full p-3 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+                aria-invalid={Boolean(withdrawErrors.withdrawReason)}
+                className={getFieldErrorClass(Boolean(withdrawErrors.withdrawReason), 'w-full p-3 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
               />
+              <FieldError message={withdrawErrors.withdrawReason} />
             </div>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setWithdrawId(null)} className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl">Hủy</button>
-              <button onClick={handleWithdraw} className="px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-500 text-white rounded-xl">Xác nhận Rút</button>
+              <button
+                onClick={() => { setWithdrawId(null); setWithdrawErrors({}); }}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleWithdraw}
+                className="px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-500 text-white rounded-xl"
+              >
+                Xác nhận Rút
+              </button>
             </div>
           </div>
         </div>

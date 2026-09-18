@@ -53,13 +53,13 @@ export const OnlineDatabasePage: React.FC = () => {
 
   // Bản đồ các bảng dữ liệu
   const tablesMap: Record<string, { label: string; count: number; data: unknown[] }> = {
-    companies: { label: 'Doanh nghiệp (companies)', count: companies.length, data: companies },
-    container_assets: { label: 'Vỏ Container (container_assets)', count: assets.length, data: assets },
-    offers: { label: 'Nguồn cung (offers)', count: offers.length, data: offers },
-    container_requests: { label: 'Nhu cầu (container_requests)', count: requests.length, data: requests },
-    transactions: { label: 'Giao dịch (transactions)', count: transactions.length, data: transactions },
-    cases: { label: 'Khiếu nại (cases)', count: cases.length, data: cases },
-    audit_events: { label: 'Nhật ký kiểm toán (audit_events)', count: auditLogs.length, data: auditLogs }
+    companies: { label: 'Doanh nghiệp', count: companies.length, data: companies },
+    container_assets: { label: 'Vỏ Container', count: assets.length, data: assets },
+    offers: { label: 'Nguồn cung', count: offers.length, data: offers },
+    container_requests: { label: 'Nhu cầu', count: requests.length, data: requests },
+    transactions: { label: 'Giao dịch', count: transactions.length, data: transactions },
+    cases: { label: 'Khiếu nại', count: cases.length, data: cases },
+    audit_events: { label: 'Nhật ký kiểm toán', count: auditLogs.length, data: auditLogs }
   };
 
   const handleRunSql = async () => {

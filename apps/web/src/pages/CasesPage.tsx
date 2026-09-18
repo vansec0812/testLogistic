@@ -511,17 +511,17 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
             </div>
           </div>
 
-          {/* SRS rules reminder */}
+          {/* Case rules reminder */}
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
             <div className="flex items-start gap-2">
               <Shield className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
               <div>
-                <p className="text-xs font-semibold text-amber-700">Quy tắc xử lý Case (SRS)</p>
+                <p className="text-xs font-semibold text-amber-700">Quy định xử lý Sự cố & Khiếu nại</p>
                 <ul className="text-xs text-amber-700 mt-1.5 space-y-1 list-disc list-inside">
-                  <li>Case DAMAGE_DISPUTE → xem xét ảnh + biên bản kiểm tra</li>
-                  <li>Case PAYMENT_ISSUE → đối chiếu với ngân hàng trước khi kết luận</li>
-                  <li>Nếu CRITICAL → tạm dừng (ON_HOLD) giao dịch liên quan</li>
-                  <li>Bằng chứng gốc được lưu trữ, không được xóa</li>
+                  <li>Tranh chấp hư hại vỏ cont: đối chiếu ảnh chụp IICL-5 và biên bản bàn giao</li>
+                  <li>Vấn đề đối soát thanh toán: đối chiếu mã giao dịch ngân hàng trước khi kết luận</li>
+                  <li>Sự cố mức độ Khẩn cấp: hệ thống tạm dừng giao dịch liên quan để bảo vệ các bên</li>
+                  <li>Toàn bộ bằng chứng và hồ sơ được lưu trữ minh bạch, bảo mật</li>
                 </ul>
               </div>
             </div>

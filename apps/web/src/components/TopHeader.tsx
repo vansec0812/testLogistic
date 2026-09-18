@@ -72,8 +72,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   };
 
   const handleApplyEdoData = (data: ExtractedEdoData) => {
-    alert(`Đã trích xuất e-DO ${data.edoNumber}: Cont ${data.containerNumber} (${data.carrierCode}). Hãy mở Đăng ký vỏ Cont, tải tối thiểu 6 ảnh và hoàn tất đối chiếu AI trước khi lưu.`);
-    if (currentRole === 'ENTERPRISE_A') setCurrentTab('assets');
+    alert(`Đã trích xuất thành công e-DO ${data.edoNumber}: Container ${data.containerNumber} (${data.carrierCode}). Hệ thống đang chuyển đến trang Nguồn cung để tạo Offer.`);
+    if (currentRole === 'ENTERPRISE_A') {
+      setCurrentTab('offers');
+    }
   };
 
   return (

@@ -96,7 +96,7 @@ function MatchCandidateCard({
         <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
           <span className="text-slate-500 block">Tình trạng vỏ</span>
           <strong className="text-emerald-700 text-xs font-bold mt-0.5 block">
-            ✅ {offer.asset.declaredCondition === 'GOOD' ? 'Đạt chuẩn đóng hàng (GOOD)' : 'Hư hỏng nhẹ'}
+            ✅ {offer.asset.declaredCondition === 'GOOD' ? 'Đạt chuẩn đóng hàng' : 'Hư hỏng nhẹ'}
           </strong>
         </div>
 

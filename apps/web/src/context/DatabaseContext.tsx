@@ -482,7 +482,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: false, message: 'Khung thời gian sẵn sàng không hợp lệ.' };
     }
     if (!Number.isFinite(form.baselineDepotCostVnd) || form.baselineDepotCostVnd <= 0) {
-      return { success: false, message: 'Chi phí baseline T_A phải lớn hơn 0.' };
+      return { success: false, message: 'Chi phí đưa về depot phải lớn hơn 0.' };
     }
 
     let targetAsset = form.assetId ? assets.find(a => a.id === form.assetId) : undefined;
@@ -609,7 +609,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: false, message: 'Khung thời gian Offer không hợp lệ.' };
     }
     if (!Number.isFinite(finalBaseline) || finalBaseline <= 0) {
-      return { success: false, message: 'Chi phí baseline T_A phải lớn hơn 0.' };
+      return { success: false, message: 'Chi phí đưa về depot phải lớn hơn 0.' };
     }
     const hasMajorChange = Object.keys(updates).some(k => majorChanges.includes(k));
     const newStatus = (offer.status === 'AVAILABLE' && hasMajorChange) ? 'UNDER_REVIEW' : offer.status;

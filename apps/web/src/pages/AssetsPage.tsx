@@ -18,7 +18,7 @@ import { INITIAL_CARRIERS, INITIAL_DEPOTS } from '../data/mockData';
 import { AiEdoScannerModal, ExtractedEdoData } from '../components/AiEdoScannerModal';
 import { FieldErrors, FieldError, FormErrorSummary, RequiredMark, getFieldErrorClass, scrollToFirstFieldError } from '../components/FormValidation';
 import { required, validateIsoContainer, setError } from '../lib/formValidation';
-import { verifyContainerPhotosWithAI, ContainerPhotoVerificationResult } from '../services/aiService';
+import { verifyContainerPhotosWithAI, inspectContainerWithAI, ContainerPhotoVerificationResult } from '../services/aiService';
 
 export const AssetsPage: React.FC = () => {
   const { assets, addAsset, updateAsset, deleteAsset, offers } = useDatabase();
@@ -327,7 +327,6 @@ export const AssetsPage: React.FC = () => {
     setInspectionResult(null);
 
     try {
-      const { inspectContainerWithAI } = await import('../services/aiService');
       const result = await inspectContainerWithAI(asset.photos);
 
       if (result.success) {
@@ -497,9 +496,9 @@ export const AssetsPage: React.FC = () => {
               <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-1">Chất lượng vỏ khai báo</label>
               <select value={form.declaredCondition} onChange={e => setForm(p => ({ ...p, declaredCondition: e.target.value as PhysicalCondition }))}
                 className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="GOOD">Đạt chuẩn đóng hàng (GOOD)</option>
-                <option value="MINOR_DAMAGE">Hư hỏng nhẹ (MINOR_DAMAGE)</option>
-                <option value="MAJOR_DAMAGE">Hư hỏng nặng (MAJOR_DAMAGE)</option>
+                <option value="GOOD">Đạt chuẩn đóng hàng</option>
+                <option value="MINOR_DAMAGE">Hư hỏng nhẹ</option>
+                <option value="MAJOR_DAMAGE">Hư hỏng nặng</option>
               </select>
             </div>
             <div>
@@ -654,7 +653,7 @@ export const AssetsPage: React.FC = () => {
                     onChange={e => setEditForm(p => ({ ...p, declaredCondition: e.target.value as PhysicalCondition }))}
                     className="w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
                   >
-                    <option value="GOOD">Đạt chuẩn (GOOD)</option>
+                    <option value="GOOD">Đạt chuẩn đóng hàng</option>
                     <option value="MINOR_DAMAGE">Hư hỏng nhẹ</option>
                     <option value="MAJOR_DAMAGE">Hư hỏng nặng</option>
                   </select>

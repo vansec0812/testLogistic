@@ -66,7 +66,7 @@ export function findMatchesForRequest(
     // === HARD CONSTRAINTS (SRS mục 5.2) ===
     // BR01-03: Không ghép cùng công ty
     if (offer.companyId === request.companyId) {
-      eliminatedReasons.push('Cùng công ty với bên đăng nhu cầu (BR01)');
+      eliminatedReasons.push('Cùng công ty với bên đăng nhu cầu');
     }
 
     // Khớp hãng tàu

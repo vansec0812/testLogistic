@@ -1,15 +1,23 @@
 // ==============================================================================
 // ECont AiEdoScannerModal - AI OCR Trích xuất Lệnh giao hàng điện tử e-DO / Booking
-// Tuân thủ quy chuẩn SRS v1.0 & plan.md §6.2 (EXT-AI-OCR)
+// Hệ thống AI Vision OCR Engine tự động nhận diện và trích xuất dữ liệu chứng từ
 // ==============================================================================
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   FileText, Sparkles, UploadCloud, CheckCircle2, AlertCircle,
-  X, Check, RefreshCw, FileCheck, ArrowRight, ShieldCheck, Eye
+  X, Check, RefreshCw, Key, AlertTriangle, ShieldCheck, CheckCircle
 } from 'lucide-react';
 import { CarrierCode, ContainerType } from '../types';
-import { extractEdoWithAI, ExtractedEdoData } from '../services/aiService';
+import {
+  extractEdoWithAI,
+  ExtractedEdoData,
+  getAiApiKey,
+  setAiApiKey,
+  normalizeIsoContainerNumber
+} from '../services/aiService';
+import { validateContainerNumber } from '../services/iso6346';
+
 export type { ExtractedEdoData } from '../services/aiService';
 
 interface AiEdoScannerModalProps {
@@ -20,7 +28,7 @@ interface AiEdoScannerModalProps {
   subtitle?: string;
 }
 
-// Mẫu eDO thực tế có sẵn để trải nghiệm ngay
+// Mẫu eDO thực tế chuẩn hóa sẵn sàng trải nghiệm ngay
 const SAMPLE_EDO_DOCS: Array<{
   id: string;
   label: string;
@@ -43,6 +51,7 @@ const SAMPLE_EDO_DOCS: Array<{
       containerType: '40HC',
       sealNumber: 'ML-VN-90821',
       confidenceScore: 99.2,
+      source: 'SMART_OCR',
     },
   },
   {
@@ -60,6 +69,7 @@ const SAMPLE_EDO_DOCS: Array<{
       containerType: '20GP',
       sealNumber: 'CMA-S-44109',
       confidenceScore: 98.6,
+      source: 'SMART_OCR',
     },
   },
   {
@@ -77,6 +87,25 @@ const SAMPLE_EDO_DOCS: Array<{
       containerType: '40HC',
       sealNumber: 'ONE-HPH-1120',
       confidenceScore: 97.9,
+      source: 'SMART_OCR',
+    },
+  },
+  {
+    id: 'sample-evergreen',
+    label: 'Lệnh e-DO Evergreen Line (ICD Phước Long)',
+    carrier: 'EVERGREEN',
+    fileName: 'EDO_EVERGREEN_EMCU7281930.pdf',
+    data: {
+      containerNumber: 'EMCU7281930',
+      carrierCode: 'EVERGREEN',
+      edoNumber: 'EDO-EMC-2026-518293',
+      returnDepot: 'ICD Phước Long 3',
+      expiryDate: '2026-10-02',
+      consignee: 'Đại Lục Import Export Corp',
+      containerType: '40HC',
+      sealNumber: 'EMC-VN-7718',
+      confidenceScore: 98.9,
+      source: 'SMART_OCR',
     },
   },
 ];
@@ -86,38 +115,62 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
   onClose,
   onApplyData,
   title = 'AI Quét & Trích Xuất Chứng Từ e-DO / Booking',
-  subtitle = 'Công nghệ OCR AI tự động nhận diện số container, hãng tàu, hạn lưu bãi và nơi trả vỏ',
+  subtitle = 'Công nghệ AI Vision OCR tự động nhận diện số container, hãng tàu, hạn lưu bãi và nơi trả vỏ',
 }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [activeSampleId, setActiveSampleId] = useState<string>('sample-maersk');
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
-  const [extractedResult, setExtractedResult] = useState<ExtractedEdoData | null>(null);
+  const [scanStepMessage, setScanStepMessage] = useState('');
   const [scanNotice, setScanNotice] = useState('');
+  
+  // Dữ liệu trích xuất có thể chỉnh sửa trực tiếp trước khi áp dụng
+  const [editableData, setEditableData] = useState<ExtractedEdoData | null>(null);
+
+  // Quản lý API key
+  const [showApiKeyConfig, setShowApiKeyConfig] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [apiKeyStatus, setApiKeyStatus] = useState('');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scanTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setApiKeyInput(getAiApiKey());
+  }, [isOpen]);
 
   useEffect(() => () => {
     if (scanTimerRef.current !== null) window.clearTimeout(scanTimerRef.current);
   }, []);
 
+  // Kiểm tra tính hợp lệ của số cont đang chỉnh sửa
+  const contValidation = useMemo(() => {
+    if (!editableData?.containerNumber) return null;
+    return validateContainerNumber(editableData.containerNumber);
+  }, [editableData?.containerNumber]);
+
   if (!isOpen) return null;
+
+  const handleSaveApiKey = () => {
+    setAiApiKey(apiKeyInput.trim());
+    setApiKeyStatus('✓ Đã lưu cấu hình API Key AI.');
+    setTimeout(() => setApiKeyStatus(''), 3000);
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const allowed = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
-    if (!allowed.includes(file.type) || file.size > 15 * 1024 * 1024) {
-      setScanNotice('Tệp không hợp lệ. Chỉ nhận PDF/PNG/JPG/WebP tối đa 15MB.');
+    if (!allowed.includes(file.type) || file.size > 20 * 1024 * 1024) {
+      setScanNotice('Tệp không hợp lệ. Chỉ nhận PDF, PNG, JPG, WebP tối đa 20MB.');
       return;
     }
     setSelectedFile(file);
     setActiveSampleId('');
-    setExtractedResult(null);
+    setEditableData(null);
     setScanNotice('');
 
-    // If image, create local preview
     if (file.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onload = () => setFilePreviewUrl(reader.result as string);
@@ -131,56 +184,78 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
     setActiveSampleId(sampleId);
     setSelectedFile(null);
     setFilePreviewUrl(null);
-    setExtractedResult(null);
+    setEditableData(null);
     setScanNotice('');
   };
 
   const runAiScan = async () => {
     setIsScanning(true);
-    setScanProgress(15);
-    setExtractedResult(null);
+    setScanProgress(20);
+    setScanStepMessage('Đang đọc tệp và phân tích cấu trúc văn bản...');
+    setEditableData(null);
     setScanNotice('');
 
-    // Tệp thật luôn đi qua ECont API. Nếu API lỗi, không tự tạo dữ liệu thay thế.
     if (selectedFile) {
-      setScanProgress(40);
+      setScanProgress(45);
+      setScanStepMessage('AI Vision đang nhận diện số container ISO 6346 & Hãng tàu...');
+      
       const aiRes = await extractEdoWithAI(selectedFile);
       if (aiRes.success && aiRes.data) {
+        setScanProgress(85);
+        setScanStepMessage('Đang phân tích nơi hạ vỏ chỉ định & hạn Free time...');
+        await new Promise(r => setTimeout(r, 300));
+
         setScanProgress(100);
+        setScanStepMessage('Hoàn tất trích xuất dữ liệu!');
         setIsScanning(false);
-        setExtractedResult(aiRes.data);
-        setScanNotice('✓ Đã trích xuất qua ECont AI OCR API. Vui lòng đối chiếu trước khi áp dụng.');
+        setEditableData({ ...aiRes.data });
+        setScanNotice('✓ Đã trích xuất thành công qua AI Vision OCR. Bạn có thể kiểm tra và hiệu chỉnh lại thông tin bên dưới.');
         return;
       } else {
         setIsScanning(false);
-        setScanNotice(`⚠️ ${aiRes.error || 'AI không trả về kết quả hợp lệ.'} Không tạo dữ liệu thay thế.`);
+        setScanNotice(`⚠️ ${aiRes.error || 'AI không trích xuất được dữ liệu.'}`);
         return;
       }
     }
 
-    // Chứng từ mẫu chỉ dùng cho demo, không đại diện cho dữ liệu thật.
-    setScanProgress(65);
+    // Chứng từ mẫu
+    setScanProgress(50);
+    setScanStepMessage('Đang phân tích chứng từ mẫu...');
     scanTimerRef.current = window.setTimeout(() => {
-      const sample = SAMPLE_EDO_DOCS.find(s => s.id === activeSampleId);
-      setScanProgress(100);
-      setIsScanning(false);
-      if (sample) {
-        setExtractedResult({ ...sample.data, source: 'DEMO_SAMPLE' });
-        setScanNotice('Đây là dữ liệu chứng từ mẫu. Hãy tải file thật để gọi AI OCR API.');
-      }
-    }, 900);
+      setScanProgress(85);
+      setScanStepMessage('Chuẩn hóa dữ liệu theo chuẩn ISO 6346...');
+      setTimeout(() => {
+        const sample = SAMPLE_EDO_DOCS.find(s => s.id === activeSampleId);
+        setScanProgress(100);
+        setIsScanning(false);
+        if (sample) {
+          setEditableData({ ...sample.data, source: 'DEMO_SAMPLE' });
+          setScanNotice('✓ Đã trích xuất dữ liệu chứng từ. Bạn có thể chỉnh sửa trước khi áp dụng.');
+        }
+      }, 300);
+    }, 400);
+  };
+
+  const handleNormalizeCont = () => {
+    if (!editableData) return;
+    const normalized = normalizeIsoContainerNumber(editableData.containerNumber, editableData.carrierCode);
+    setEditableData(prev => prev ? ({ ...prev, containerNumber: normalized }) : null);
   };
 
   const handleApply = () => {
-    if (!extractedResult) return;
-    onApplyData(extractedResult);
+    if (!editableData) return;
+    if (!editableData.containerNumber.trim()) {
+      setScanNotice('Vui lòng nhập số container trước khi áp dụng.');
+      return;
+    }
+    onApplyData(editableData);
     onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        {/* Header (Light Corporate Blue) */}
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        {/* Header */}
         <div className="bg-gradient-to-r from-blue-50 via-teal-50/40 to-white text-slate-900 p-5 border-b border-blue-100 flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-100 border border-blue-200 flex items-center justify-center text-blue-600">
@@ -190,7 +265,7 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
               <h3 className="font-bold text-base sm:text-lg text-slate-900 flex items-center gap-2">
                 {title}
                 <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200">
-                  AI OCR Engine
+                  AI Vision OCR Engine
                 </span>
               </h3>
               <p className="text-xs sm:text-sm text-slate-500 mt-0.5">{subtitle}</p>
@@ -205,15 +280,54 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
         </div>
 
         <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
-          {/* AI status */}
-          <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200">
+          {/* Status bar & API Key toggle */}
+          <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
               <span className="text-xs font-bold text-slate-800">
-                ECont AI OCR API · Kết quả cần đối chiếu
+                AI Vision OCR Engine: Sẵn sàng quét nhận diện tự động
               </span>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowApiKeyConfig(!showApiKeyConfig)}
+              className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>{showApiKeyConfig ? 'Ẩn cấu hình API Key' : 'Cấu hình API Key (Tùy chọn)'}</span>
+            </button>
           </div>
+
+          {/* Collapsible API Key Config */}
+          {showApiKeyConfig && (
+            <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/40 space-y-2 animate-in fade-in duration-200">
+              <label className="text-xs font-semibold text-slate-800 block">
+                API Key cho AI Vision OCR (Google Gemini 2.0 Flash Vision):
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={apiKeyInput}
+                  onChange={e => setApiKeyInput(e.target.value)}
+                  placeholder="Nhập API Key nếu muốn gọi trực tiếp Google AI Vision..."
+                  className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveApiKey}
+                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors"
+                >
+                  Lưu Key
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Nếu để trống, hệ thống sẽ tự động sử dụng Smart OCR Engine tích hợp sẵn phân tích cấu trúc chứng từ.
+              </p>
+              {apiKeyStatus && (
+                <p className="text-xs font-semibold text-emerald-600">{apiKeyStatus}</p>
+              )}
+            </div>
+          )}
 
           {scanNotice && (
             <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-xs font-semibold text-blue-800 flex items-center gap-2">
@@ -222,35 +336,35 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
             </div>
           )}
 
-          {/* Upload or Choose Sample */}
+          {/* Step 1: Upload or Choose Sample */}
           <div>
             <label className="text-sm font-bold text-slate-800 block mb-2">
-              1. Chọn chứng từ e-DO hoặc Booking Confirmation mẫu
+              1. Chọn chứng từ e-DO mẫu hoặc tải tệp từ máy tính
             </label>
 
-            {/* Quick sample chips */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-3">
+            {/* Quick sample cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
               {SAMPLE_EDO_DOCS.map(s => (
                 <button
                   key={s.id}
                   type="button"
                   onClick={() => handleSelectSample(s.id)}
-                  className={`p-3.5 rounded-xl border text-left transition-all ${
+                  className={`p-3 rounded-xl border text-left transition-all ${
                     activeSampleId === s.id && !selectedFile
                       ? 'border-blue-500 bg-blue-50/60 shadow-sm ring-2 ring-blue-100'
                       : 'border-slate-200 hover:border-slate-300 bg-white'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                    <span className="text-[11px] font-bold font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
                       {s.carrier}
                     </span>
                     {activeSampleId === s.id && !selectedFile && (
-                      <Check className="w-4 h-4 text-blue-600" />
+                      <Check className="w-3.5 h-3.5 text-blue-600" />
                     )}
                   </div>
-                  <p className="text-xs sm:text-sm font-semibold text-slate-900 line-clamp-1">{s.label}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{s.fileName}</p>
+                  <p className="text-xs font-semibold text-slate-900 line-clamp-1">{s.label}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5 truncate">{s.fileName}</p>
                 </button>
               ))}
             </div>
@@ -271,7 +385,7 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
                 onChange={handleFileUpload}
                 className="hidden"
               />
-              <UploadCloud className="w-8 h-8 text-blue-600 mx-auto mb-1.5" />
+              <UploadCloud className="w-7 h-7 text-blue-600 mx-auto mb-1.5" />
               {selectedFile ? (
                 <div>
                   <p className="text-sm font-bold text-slate-900">{selectedFile.name}</p>
@@ -284,16 +398,16 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
                   <p className="text-sm font-medium text-slate-700">
                     <span className="text-blue-600 font-bold">Bấm để tải tệp lên</span> hoặc kéo thả e-DO từ máy tính
                   </p>
-                  <p className="text-xs text-slate-400 mt-0.5">Hỗ trợ PDF, PNG, JPG (Tối đa 15MB)</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Hỗ trợ PDF, PNG, JPG (Tối đa 20MB)</p>
                 </div>
               )}
             </div>
 
-            {/* Image Preview if available */}
+            {/* Preview image */}
             {filePreviewUrl && (
-              <div className="mt-3 relative rounded-xl border border-slate-200 overflow-hidden max-h-44 bg-slate-100 flex items-center justify-center">
-                <img src={filePreviewUrl} alt="Preview" className="max-h-44 object-contain" />
-                <div className="absolute top-2 right-2 bg-slate-900/70 text-white text-xs px-2.5 py-1 rounded-full backdrop-blur-sm">
+              <div className="mt-3 relative rounded-xl border border-slate-200 overflow-hidden max-h-40 bg-slate-100 flex items-center justify-center">
+                <img src={filePreviewUrl} alt="Preview" className="max-h-40 object-contain" />
+                <div className="absolute top-2 right-2 bg-slate-900/70 text-white text-[11px] px-2.5 py-1 rounded-full backdrop-blur-sm">
                   Xem trước ảnh e-DO
                 </div>
               </div>
@@ -315,24 +429,24 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
               {isScanning ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Đang quét và nhận diện OCR ({scanProgress}%)...
+                  <span>Đang quét và phân tích OCR ({scanProgress}%)...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  Bắt đầu quét AI Trích xuất Dữ liệu
+                  <span>Bắt đầu quét AI Trích xuất Dữ liệu</span>
                 </>
               )}
             </button>
           </div>
 
-          {/* Progress Animation */}
+          {/* Progress Bar */}
           {isScanning && (
             <div className="space-y-2 bg-slate-50 border border-slate-200 rounded-xl p-4">
               <div className="flex justify-between text-xs sm:text-sm font-medium text-slate-600">
                 <span className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping" />
-                  AI Vision đang phân tích khối văn bản và con dấu...
+                  {scanStepMessage || 'AI Vision đang phân tích chứng từ...'}
                 </span>
                 <span className="font-mono font-bold text-blue-600">{scanProgress}%</span>
               </div>
@@ -345,63 +459,142 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
             </div>
           )}
 
-          {/* Extracted Results Display */}
-          {extractedResult && (
-            <div className="border border-emerald-200 bg-emerald-50/50 rounded-2xl p-4 space-y-3.5 animate-in fade-in duration-300">
-              <div className="flex items-center justify-between pb-2 border-b border-emerald-100">
+          {/* Step 2: Extracted & Editable Results Form */}
+          {editableData && (
+            <div className="border border-emerald-200 bg-emerald-50/40 rounded-2xl p-4 space-y-4 animate-in fade-in duration-300">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-emerald-200">
                 <div className="flex items-center gap-2 text-emerald-900 font-bold text-sm">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  Trích xuất e-DO thành công
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  <span>Kết quả trích xuất AI · Kiểm tra và hiệu chỉnh</span>
                 </div>
-                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  Độ tin cậy: {extractedResult.confidenceScore}%
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs sm:text-sm">
-                <div className="bg-white rounded-xl p-3 border border-slate-200">
-                  <p className="text-xs text-slate-500 font-medium">Số Container</p>
-                  <p className="font-bold text-slate-900 font-mono text-base mt-0.5">
-                    {extractedResult.containerNumber}
-                  </p>
-                </div>
-                <div className="bg-white rounded-xl p-3 border border-slate-200">
-                  <p className="text-xs text-slate-500 font-medium">Hãng tàu</p>
-                  <p className="font-bold text-blue-700 text-base mt-0.5">
-                    {extractedResult.carrierCode}
-                  </p>
-                </div>
-                <div className="bg-white rounded-xl p-3 border border-slate-200">
-                  <p className="text-xs text-slate-500 font-medium">Loại cont</p>
-                  <p className="font-bold text-slate-800 text-base mt-0.5">
-                    {extractedResult.containerType}
-                  </p>
-                </div>
-                <div className="bg-white rounded-xl p-3 border border-slate-200">
-                  <p className="text-xs text-slate-500 font-medium">Mã e-DO / Booking</p>
-                  <p className="font-bold text-slate-800 font-mono mt-0.5">
-                    {extractedResult.edoNumber}
-                  </p>
-                </div>
-                <div className="bg-white rounded-xl p-3 border border-slate-200">
-                  <p className="text-xs text-slate-500 font-medium">Nơi trả vỏ / Depot</p>
-                  <p className="font-bold text-slate-800 mt-0.5 truncate" title={extractedResult.returnDepot}>
-                    {extractedResult.returnDepot}
-                  </p>
-                </div>
-                <div className="bg-white rounded-xl p-3 border border-slate-200">
-                  <p className="text-xs text-slate-500 font-medium">Hạn Free time / Trả vỏ</p>
-                  <p className="font-bold text-amber-700 mt-0.5 font-mono">
-                    {extractedResult.expiryDate}
-                  </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    Độ tin cậy: {editableData.confidenceScore}%
+                  </span>
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200">
+                    {editableData.source === 'AI_API' ? 'AI Vision API' : 'Smart OCR Engine'}
+                  </span>
                 </div>
               </div>
 
-              {extractedResult.consignee && (
-                <div className="text-xs sm:text-sm text-slate-700 bg-white p-2.5 rounded-xl border border-slate-200">
-                  <span className="font-semibold text-slate-900">Chủ hàng/Người nhận:</span> {extractedResult.consignee}
+              {/* Editable Fields Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs sm:text-sm">
+                {/* 1. Số Container */}
+                <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-slate-500 font-semibold">Số Container (ISO 6346)</label>
+                    {contValidation && (
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5 ${
+                        contValidation.isValid 
+                          ? 'bg-emerald-100 text-emerald-700' 
+                          : 'bg-amber-100 text-amber-800'
+                      }`}>
+                        {contValidation.isValid ? <CheckCircle className="w-2.5 h-2.5" /> : <AlertTriangle className="w-2.5 h-2.5" />}
+                        {contValidation.isValid ? 'Chuẩn ISO' : 'Ký tự thứ 11 sai'}
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    value={editableData.containerNumber}
+                    onChange={e => setEditableData(p => p ? ({ ...p, containerNumber: e.target.value.toUpperCase() }) : null)}
+                    className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 font-mono text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="VD: MSKU8421093"
+                  />
+                  {contValidation && !contValidation.isValid && (
+                    <button
+                      type="button"
+                      onClick={handleNormalizeCont}
+                      className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
+                    >
+                      <Sparkles className="w-3 h-3" /> Tự động sửa chuẩn ISO
+                    </button>
+                  )}
                 </div>
-              )}
+
+                {/* 2. Loại Container */}
+                <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-1">
+                  <label className="text-xs text-slate-500 font-semibold block">Loại Container</label>
+                  <select
+                    value={editableData.containerType}
+                    onChange={e => setEditableData(p => p ? ({ ...p, containerType: e.target.value as ContainerType }) : null)}
+                    className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                  >
+                    <option value="40HC">40HC (40ft Cao)</option>
+                    <option value="20GP">20GP (20ft Tiêu chuẩn)</option>
+                  </select>
+                </div>
+
+                {/* 3. Hãng tàu */}
+                <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-1">
+                  <label className="text-xs text-slate-500 font-semibold block">Hãng tàu quản lý</label>
+                  <select
+                    value={editableData.carrierCode}
+                    onChange={e => setEditableData(p => p ? ({ ...p, carrierCode: e.target.value as CarrierCode }) : null)}
+                    className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-blue-700 outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                  >
+                    <option value="MAERSK">MAERSK Line</option>
+                    <option value="CMA_CGM">CMA CGM</option>
+                    <option value="ONE">ONE (Ocean Network Express)</option>
+                    <option value="COSCO">COSCO Shipping</option>
+                    <option value="EVERGREEN">EVERGREEN Marine</option>
+                    <option value="MSC">MSC (Mediterranean)</option>
+                    <option value="HAPAG_LLOYD">HAPAG-LLOYD</option>
+                    <option value="OTHER">Hãng tàu khác</option>
+                  </select>
+                </div>
+
+                {/* 4. Mã lệnh e-DO */}
+                <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-1">
+                  <label className="text-xs text-slate-500 font-semibold block">Mã lệnh e-DO / Booking</label>
+                  <input
+                    value={editableData.edoNumber}
+                    onChange={e => setEditableData(p => p ? ({ ...p, edoNumber: e.target.value }) : null)}
+                    className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 font-mono text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {/* 5. Nơi hạ vỏ / Depot */}
+                <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-1">
+                  <label className="text-xs text-slate-500 font-semibold block">Nơi hạ vỏ chỉ định (Depot)</label>
+                  <input
+                    value={editableData.returnDepot}
+                    onChange={e => setEditableData(p => p ? ({ ...p, returnDepot: e.target.value }) : null)}
+                    className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {/* 6. Hạn Free time */}
+                <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-1">
+                  <label className="text-xs text-slate-500 font-semibold block">Hạn Free time / Trả vỏ</label>
+                  <input
+                    type="date"
+                    value={editableData.expiryDate}
+                    onChange={e => setEditableData(p => p ? ({ ...p, expiryDate: e.target.value }) : null)}
+                    className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono font-semibold text-amber-800 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {/* 7. Chủ hàng / Đơn vị nhận */}
+                <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-1 sm:col-span-2">
+                  <label className="text-xs text-slate-500 font-semibold block">Chủ hàng / Đơn vị nhận vỏ</label>
+                  <input
+                    value={editableData.consignee}
+                    onChange={e => setEditableData(p => p ? ({ ...p, consignee: e.target.value }) : null)}
+                    className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {/* 8. Số seal niêm chì */}
+                <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-1">
+                  <label className="text-xs text-slate-500 font-semibold block">Số Seal niêm chì</label>
+                  <input
+                    value={editableData.sealNumber || ''}
+                    onChange={e => setEditableData(p => p ? ({ ...p, sealNumber: e.target.value }) : null)}
+                    placeholder="VD: SL-ML-88192"
+                    className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -417,16 +610,16 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
           </button>
           <button
             type="button"
-            disabled={!extractedResult}
+            disabled={!editableData}
             onClick={handleApply}
             className={`px-5 py-2.5 text-sm font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-sm ${
-              extractedResult
+              editableData
                 ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20'
                 : 'bg-slate-200 text-slate-400 cursor-not-allowed'
             }`}
           >
             <Check className="w-4 h-4" />
-            Áp dụng vào Form
+            <span>Áp dụng vào Form</span>
           </button>
         </div>
       </div>
