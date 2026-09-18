@@ -119,7 +119,8 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
 }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
-  const [activeSampleId, setActiveSampleId] = useState<string>('sample-maersk');
+  const [activeSampleId, setActiveSampleId] = useState<string>('');
+  const [showSamples, setShowSamples] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanStepMessage, setScanStepMessage] = useState('');
@@ -161,9 +162,10 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const allowed = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
-    if (!allowed.includes(file.type) || file.size > 20 * 1024 * 1024) {
-      setScanNotice('Tệp không hợp lệ. Chỉ nhận PDF, PNG, JPG, WebP tối đa 20MB.');
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const isImage = file.type.startsWith('image/');
+    if ((!isPdf && !isImage) || file.size > 20 * 1024 * 1024) {
+      setScanNotice('Tệp không hợp lệ. Chỉ chấp nhận tệp hình ảnh (PNG, JPG, WebP) hoặc file PDF (tối đa 20MB).');
       return;
     }
     setSelectedFile(file);
@@ -171,7 +173,7 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
     setEditableData(null);
     setScanNotice('');
 
-    if (file.type.startsWith('image/')) {
+    if (isImage) {
       const reader = new FileReader();
       reader.onload = () => setFilePreviewUrl(reader.result as string);
       reader.readAsDataURL(file);
@@ -189,6 +191,10 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
   };
 
   const runAiScan = async () => {
+    if (!selectedFile && !activeSampleId) {
+      setScanNotice('Vui lòng tải lên ảnh chụp hoặc file PDF chứng từ e-DO trước khi bắt đầu quét.');
+      return;
+    }
     setIsScanning(true);
     setScanProgress(20);
     setScanStepMessage('Đang đọc tệp và phân tích cấu trúc văn bản...');
@@ -213,7 +219,7 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
         return;
       } else {
         setIsScanning(false);
-        setScanNotice(`⚠️ ${aiRes.error || 'AI không trích xuất được dữ liệu.'}`);
+        setScanNotice(`⚠️ ${aiRes.error || 'AI không trích xuất được dữ liệu từ tệp tải lên.'}`);
         return;
       }
     }
@@ -336,82 +342,144 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
             </div>
           )}
 
-          {/* Step 1: Upload or Choose Sample */}
-          <div>
-            <label className="text-sm font-bold text-slate-800 block mb-2">
-              1. Chọn chứng từ e-DO mẫu hoặc tải tệp từ máy tính
-            </label>
-
-            {/* Quick sample cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-              {SAMPLE_EDO_DOCS.map(s => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => handleSelectSample(s.id)}
-                  className={`p-3 rounded-xl border text-left transition-all ${
-                    activeSampleId === s.id && !selectedFile
-                      ? 'border-blue-500 bg-blue-50/60 shadow-sm ring-2 ring-blue-100'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[11px] font-bold font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                      {s.carrier}
-                    </span>
-                    {activeSampleId === s.id && !selectedFile && (
-                      <Check className="w-3.5 h-3.5 text-blue-600" />
-                    )}
-                  </div>
-                  <p className="text-xs font-semibold text-slate-900 line-clamp-1">{s.label}</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5 truncate">{s.fileName}</p>
-                </button>
-              ))}
+          {/* Step 1: Upload Image or PDF File */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-blue-600" />
+                <span>Tải ảnh chụp hoặc file PDF chứng từ e-DO / Booking</span>
+              </label>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                Chỉ đăng ảnh hoặc file PDF
+              </span>
             </div>
 
-            {/* Upload custom file */}
+            {/* Custom file dropzone / display */}
             <div
               onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-colors ${
+              className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
                 selectedFile
-                  ? 'border-blue-400 bg-blue-50/30'
-                  : 'border-slate-300 hover:border-blue-400 hover:bg-slate-50'
+                  ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100'
+                  : 'border-slate-300 hover:border-blue-400 hover:bg-slate-50/80 bg-white'
               }`}
             >
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,image/png,image/jpeg,image/webp"
+                accept=".pdf,image/png,image/jpeg,image/jpg,image/webp"
                 onChange={handleFileUpload}
                 className="hidden"
               />
-              <UploadCloud className="w-7 h-7 text-blue-600 mx-auto mb-1.5" />
+
               {selectedFile ? (
-                <div>
-                  <p className="text-sm font-bold text-slate-900">{selectedFile.name}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {(selectedFile.size / 1024).toFixed(1)} KB · Sẵn sàng quét
-                  </p>
+                <div className="space-y-3">
+                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 mx-auto">
+                    {selectedFile.type.startsWith('image/') ? (
+                      <UploadCloud className="w-6 h-6 text-blue-600" />
+                    ) : (
+                      <FileText className="w-6 h-6 text-blue-600" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900 truncate max-w-md mx-auto">{selectedFile.name}</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {selectedFile.type.startsWith('image/') ? 'Tệp hình ảnh' : 'Tệp PDF'} · {(selectedFile.size / 1024).toFixed(1)} KB · <span className="text-emerald-600 font-semibold">Đã tải lên sẵn sàng quét AI</span>
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 shadow-sm"
+                    >
+                      Chọn tệp khác
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedFile(null);
+                        setFilePreviewUrl(null);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold hover:bg-red-100 shadow-sm"
+                    >
+                      Xóa tệp
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <div>
-                  <p className="text-sm font-medium text-slate-700">
-                    <span className="text-blue-600 font-bold">Bấm để tải tệp lên</span> hoặc kéo thả e-DO từ máy tính
-                  </p>
-                  <p className="text-xs text-slate-400 mt-0.5">Hỗ trợ PDF, PNG, JPG (Tối đa 20MB)</p>
+                <div className="space-y-2">
+                  <UploadCloud className="w-10 h-10 text-blue-600 mx-auto" />
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">
+                      <span className="text-blue-600 font-bold hover:underline">Bấm để chọn tệp</span> hoặc kéo thả chứng từ vào đây
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">
+                      Hệ thống chỉ nhận định dạng hình ảnh (.png, .jpg, .webp) hoặc tài liệu .pdf (tối đa 20MB)
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
 
             {/* Preview image */}
             {filePreviewUrl && (
-              <div className="mt-3 relative rounded-xl border border-slate-200 overflow-hidden max-h-40 bg-slate-100 flex items-center justify-center">
-                <img src={filePreviewUrl} alt="Preview" className="max-h-40 object-contain" />
-                <div className="absolute top-2 right-2 bg-slate-900/70 text-white text-[11px] px-2.5 py-1 rounded-full backdrop-blur-sm">
+              <div className="relative rounded-xl border border-slate-200 overflow-hidden max-h-48 bg-slate-100 flex items-center justify-center p-2">
+                <img src={filePreviewUrl} alt="Xem trước e-DO" className="max-h-44 object-contain rounded-lg shadow-sm" />
+                <div className="absolute top-3 right-3 bg-slate-900/75 text-white text-[11px] px-2.5 py-1 rounded-full backdrop-blur-sm font-semibold">
                   Xem trước ảnh e-DO
                 </div>
               </div>
             )}
+
+            {/* Collapsible Sample documents for testing */}
+            <div className="pt-1">
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setShowSamples(!showSamples)}
+                  className="text-xs text-slate-500 hover:text-blue-600 font-medium flex items-center gap-1 transition-colors"
+                >
+                  <span>{showSamples ? '▼ Ẩn chứng từ mẫu' : '▶ Thử nghiệm nhanh với chứng từ e-DO mẫu'}</span>
+                </button>
+                {activeSampleId && !selectedFile && (
+                  <span className="text-xs font-semibold text-blue-700">
+                    Đang chọn mẫu: {SAMPLE_EDO_DOCS.find(s => s.id === activeSampleId)?.label}
+                  </span>
+                )}
+              </div>
+
+              {showSamples && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 pt-2 border-t border-slate-100 animate-in fade-in duration-150">
+                  {SAMPLE_EDO_DOCS.map(s => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => handleSelectSample(s.id)}
+                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                        activeSampleId === s.id && !selectedFile
+                          ? 'border-blue-500 bg-blue-50/60 shadow-sm ring-2 ring-blue-100'
+                          : 'border-slate-200 hover:border-slate-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-bold font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                          {s.carrier}
+                        </span>
+                        {activeSampleId === s.id && !selectedFile && (
+                          <Check className="w-3.5 h-3.5 text-blue-600" />
+                        )}
+                      </div>
+                      <p className="text-xs font-semibold text-slate-900 line-clamp-1">{s.label}</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5 truncate">{s.fileName}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Action: Run Scan */}

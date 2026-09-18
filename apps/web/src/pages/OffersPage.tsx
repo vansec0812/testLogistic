@@ -203,12 +203,21 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
     showMsg(`✓ Đã trích xuất e-DO ${data.edoNumber}! Đã điền tự động thông tin vào Offer.`);
   };
 
-  // Xử lý tải ảnh từ máy tính
+  // Xử lý tải ảnh từ máy tính (Chỉ nhận tệp hình ảnh)
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     clearFormError('photos');
-    Array.from(files).forEach(file => {
+
+    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) {
+      showMsg('Chỉ chấp nhận tệp hình ảnh (PNG, JPG, WebP) cho ảnh container.', true);
+      return;
+    }
+    if (imageFiles.length < files.length) {
+      showMsg('Một số tệp không phải hình ảnh hợp lệ đã bị bỏ qua.', true);
+    }
+    imageFiles.forEach(file => {
       const reader = new FileReader();
       reader.onload = () => {
         setForm(p => ({
@@ -218,7 +227,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
       };
       reader.readAsDataURL(file);
     });
-    showMsg(`Đã thêm ảnh chụp container.`);
+    showMsg(`Đã thêm ${imageFiles.length} ảnh chụp container.`);
   };
 
   // Nạp 6 ảnh mẫu đạt chuẩn IICL-5
@@ -417,13 +426,6 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
         {currentRole === 'ENTERPRISE_A' && (
           <div className="flex items-center gap-2.5">
             <button
-              onClick={() => setShowAiEdoModal(true)}
-              className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-sm transition-all"
-            >
-              <Sparkles className="w-4 h-4 text-teal-200" />
-              <span>Quét e-DO Nhập Vỏ</span>
-            </button>
-            <button
               onClick={() => setShowAddForm(!showAddForm)}
               className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-sm transition-all"
             >
@@ -588,22 +590,30 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                   <FieldError message={formErrors.edoReturnDepot} />
                 </div>
                 <div>
-                  <label className="text-slate-700 font-medium block mb-1">Tệp chứng từ e-DO đính kèm</label>
+                  <label className="text-slate-700 font-medium block mb-1">Tệp chứng từ e-DO đính kèm (Ảnh hoặc PDF)</label>
                   <label className="flex items-center gap-2 border border-slate-200 bg-white rounded-lg px-3 py-2 cursor-pointer hover:bg-slate-50 transition-colors">
                     <UploadCloud className="w-4 h-4 text-blue-600 shrink-0" />
                     <span className="truncate text-xs font-medium text-slate-700">
-                      {form.edoFileName || 'Chọn tệp PDF/Ảnh e-DO'}
+                      {form.edoFileName || 'Chọn tệp PDF hoặc ảnh e-DO'}
                     </span>
                     <input
                       type="file"
-                      accept=".pdf,image/*"
+                      accept=".pdf,image/png,image/jpeg,image/jpg,image/webp"
                       className="hidden"
                       onChange={e => {
                         const f = e.target.files?.[0];
-                        if (f) setForm(p => ({ ...p, edoFileName: f.name }));
+                        if (f) {
+                          const isPdfOrImg = f.type === 'application/pdf' || f.type.startsWith('image/') || f.name.toLowerCase().endsWith('.pdf');
+                          if (!isPdfOrImg) {
+                            showMsg('Chỉ chấp nhận tệp hình ảnh (PNG, JPG) hoặc file PDF.', true);
+                            return;
+                          }
+                          setForm(p => ({ ...p, edoFileName: f.name }));
+                        }
                       }}
                     />
                   </label>
+                  <p className="text-[11px] text-slate-400 mt-1">Chỉ tải ảnh (.png, .jpg) hoặc file PDF</p>
                 </div>
               </div>
             </div>

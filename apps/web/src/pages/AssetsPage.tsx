@@ -15,7 +15,6 @@ import {
   Sparkles, UploadCloud, RefreshCw
 } from 'lucide-react';
 import { INITIAL_CARRIERS, INITIAL_DEPOTS } from '../data/mockData';
-import { AiEdoScannerModal, ExtractedEdoData } from '../components/AiEdoScannerModal';
 import { FieldErrors, FieldError, FormErrorSummary, RequiredMark, getFieldErrorClass, scrollToFirstFieldError } from '../components/FormValidation';
 import { required, validateIsoContainer, setError } from '../lib/formValidation';
 import { verifyContainerPhotosWithAI, inspectContainerWithAI, ContainerPhotoVerificationResult } from '../services/aiService';
@@ -26,7 +25,6 @@ export const AssetsPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [showAddForm, setShowAddForm] = useState(false);
-  const [showAiEdoModal, setShowAiEdoModal] = useState(false);
   const [isAiInspecting, setIsAiInspecting] = useState(false);
   const [isAiVerifying, setIsAiVerifying] = useState(false);
   const [inspectionResult, setInspectionResult] = useState<{ score?: number; text: string; status: string; requiresOpsReview: boolean } | null>(null);
@@ -240,31 +238,6 @@ export const AssetsPage: React.FC = () => {
     }
   };
 
-  const handleApplyEdo = (data: ExtractedEdoData) => {
-    const carrierAliases: Record<string, string> = {
-      MAERSK: 'MSK',
-      CMA_CGM: 'CMA',
-      EVERGREEN: 'EMC',
-    };
-    const matchedCarrier = INITIAL_CARRIERS.find(c => c.code === (carrierAliases[data.carrierCode] || data.carrierCode));
-    setForm(p => ({
-      ...p,
-      containerNumber: data.containerNumber,
-      carrierId: matchedCarrier?.id || p.carrierId || 'CARR-MSK',
-      containerType: data.containerType,
-      currentLocationName: data.returnDepot,
-      freeTimeDetentionEnd: data.expiryDate,
-       freeTimeSource: `eDO/Booking ${data.edoNumber}`,
-       edoEvidenceName: `eDO_${data.edoNumber}.pdf`,
-      hasEdoDocument: true,
-      edoVerificationStatus: 'UNVERIFIED',
-      physicalStatus: 'EMPTY_AT_YARD',
-      declaredCondition: 'GOOD',
-    }));
-    setShowAddForm(true);
-    showMsg(`AI đã đọc e-DO ${data.edoNumber}! Đã điền tự động form đăng ký vỏ.`);
-  };
-
   const handleRealUpload = (e: React.ChangeEvent<HTMLInputElement>, assetId: string) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -403,15 +376,6 @@ export const AssetsPage: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-2.5">
-          {canCreateOffers && (
-            <button
-              onClick={() => setShowAiEdoModal(true)}
-              className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-sm transition-all"
-            >
-              <Sparkles className="w-4 h-4 text-teal-100" />
-              <span>Quét e-DO Nhập Vỏ</span>
-            </button>
-          )}
           {canCreateOffers && (
             <button
               onClick={() => setShowAddForm(!showAddForm)}
@@ -974,13 +938,6 @@ export const AssetsPage: React.FC = () => {
           })}
         </div>
       )}
-
-      {/* AI eDO Scanner Modal */}
-      <AiEdoScannerModal
-        isOpen={showAiEdoModal}
-        onClose={() => setShowAiEdoModal(false)}
-        onApplyData={handleApplyEdo}
-      />
     </div>
   );
 };

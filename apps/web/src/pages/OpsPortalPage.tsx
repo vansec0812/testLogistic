@@ -39,7 +39,6 @@ import {
   ConditionBadge
 } from '../components/StatusBadge';
 import { Company, CompanyStatus } from '../types';
-import { AiEdoScannerModal, ExtractedEdoData } from '../components/AiEdoScannerModal';
 
 interface OpsPortalPageProps {
   setCurrentTab?: (tab: string) => void;
@@ -91,7 +90,6 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
 
   // Company CRUD state
   const [showAddCompanyModal, setShowAddCompanyModal] = useState(false);
-  const [showAiEdoModal, setShowAiEdoModal] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [companyForm, setCompanyForm] = useState<Partial<Company>>({
     businessType: 'FORWARDER',
@@ -269,13 +267,6 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowAiEdoModal(true)}
-            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
-          >
-            <Sparkles className="w-4 h-4 text-teal-200" />
-            <span>Quét AI Đối Soát e-DO</span>
-          </button>
           <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5" />
             <span>{carrierPendingTxns.length + underReviewOffers.length + underReviewRequests.length + aiReviewAssets.length + openCases.length} tác vụ</span>
@@ -1158,17 +1149,6 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
           </div>
         </div>
       )}
-
-      {/* AI eDO Scanner Modal */}
-      <AiEdoScannerModal
-        isOpen={showAiEdoModal}
-        onClose={() => setShowAiEdoModal(false)}
-        onApplyData={(data) => {
-          alert(`Ops AI Verification: e-DO ${data.edoNumber} của hãng ${data.carrierCode} hợp lệ (Độ tin cậy: ${data.confidenceScore}%). Hạn lưu bãi: ${data.expiryDate}`);
-        }}
-        title="AI Thẩm Định & Đối Soát Chứng Từ e-DO / Booking"
-        subtitle="Hệ thống tự động kiểm tra tính hợp lệ của lệnh giao hàng đối chiếu với hãng tàu"
-      />
     </div>
   );
 };

@@ -2,14 +2,10 @@
 // ECont TopHeader - Thanh Tiêu Đề & Thanh Tác Vụ Nhanh Trên Cùng
 // ==============================================================================
 
-import React, { useState } from 'react';
-import {
-  Menu, Sparkles, Plus, Boxes, PackageOpen, Search, ShieldCheck,
-  CheckCircle2, RefreshCw
-} from 'lucide-react';
+import React from 'react';
+import { Menu } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { NotificationCenter } from './NotificationCenter';
-import { AiEdoScannerModal, ExtractedEdoData } from './AiEdoScannerModal';
 
 interface TopHeaderProps {
   currentTab: string;
@@ -63,78 +59,48 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   setSelectedTxnId,
   setIsMobileOpen,
 }) => {
-  const { currentRole, roleBadge, currentCompany } = useAuth();
-  const [showAiEdoModal, setShowAiEdoModal] = useState(false);
-
   const pageInfo = PAGE_TITLES[currentTab] || {
     title: 'Hệ thống ECont',
     subtitle: 'Nền tảng kết nối và tái sử dụng container rỗng thông minh',
   };
 
-  const handleApplyEdoData = (data: ExtractedEdoData) => {
-    alert(`Đã trích xuất thành công e-DO ${data.edoNumber}: Container ${data.containerNumber} (${data.carrierCode}). Hệ thống đang chuyển đến trang Nguồn cung để tạo Offer.`);
-    if (currentRole === 'ENTERPRISE_A') {
-      setCurrentTab('offers');
-    }
-  };
-
   return (
-    <>
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4 shadow-sm">
-        {/* Left: Mobile Toggle & Page Title */}
-        <div className="flex items-center gap-3 min-w-0">
-          <button
-            type="button"
-            onClick={() => setIsMobileOpen(true)}
-            className="p-2 rounded-xl text-slate-600 hover:bg-slate-100 lg:hidden focus:outline-none"
-            aria-label="Mở menu"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
+    <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4 shadow-sm">
+      {/* Left: Mobile Toggle & Page Title */}
+      <div className="flex items-center gap-3 min-w-0">
+        <button
+          type="button"
+          onClick={() => setIsMobileOpen(true)}
+          className="p-2 rounded-xl text-slate-600 hover:bg-slate-100 lg:hidden focus:outline-none"
+          aria-label="Mở menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
 
-          <div className="min-w-0">
-            <h1 className="text-base sm:text-xl font-bold text-slate-900 truncate flex items-center gap-2">
-              {pageInfo.title}
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 hidden sm:block truncate mt-0.5 font-normal">
-              {pageInfo.subtitle}
-            </p>
-          </div>
+        <div className="min-w-0">
+          <h1 className="text-base sm:text-xl font-bold text-slate-900 truncate flex items-center gap-2">
+            {pageInfo.title}
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 hidden sm:block truncate mt-0.5 font-normal">
+            {pageInfo.subtitle}
+          </p>
+        </div>
+      </div>
+
+      {/* Right: Notifications & System Status */}
+      <div className="flex items-center gap-2.5 shrink-0">
+        {/* Online system badge */}
+        <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+          <span>Hệ thống trực tuyến</span>
         </div>
 
-        {/* Right: Quick AI Scan & Notifications */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          {/* Quick AI e-DO Scanner Trigger */}
-          <button
-            type="button"
-            onClick={() => setShowAiEdoModal(true)}
-            className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-sm transition-all"
-            title="Quét tài liệu e-DO hoặc Booking bằng AI OCR"
-          >
-            <Sparkles className="w-4 h-4 text-blue-100" />
-            <span className="hidden md:inline">Quét AI e-DO</span>
-          </button>
-
-          {/* Online system badge */}
-          <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-            <span>Hệ thống trực tuyến</span>
-          </div>
-
-          {/* Notification Center */}
-          <NotificationCenter
-            setCurrentTab={setCurrentTab}
-            setSelectedTxnId={setSelectedTxnId}
-          />
-        </div>
-      </header>
-
-      {/* AI eDO Scanner Modal */}
-      <AiEdoScannerModal
-        isOpen={showAiEdoModal}
-        onClose={() => setShowAiEdoModal(false)}
-        onApplyData={handleApplyEdoData}
-      />
-    </>
+        {/* Notification Center */}
+        <NotificationCenter
+          setCurrentTab={setCurrentTab}
+          setSelectedTxnId={setSelectedTxnId}
+        />
+      </div>
+    </header>
   );
 };
