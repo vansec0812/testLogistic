@@ -47,7 +47,7 @@ function KpiCard({
     <button
       onClick={onClick}
       disabled={!onClick}
-      className={`w-full text-left rounded-2xl border bg-white p-4 sm:p-5 shadow-sm hover:shadow-md transition-all ${
+      className={`w-full min-w-0 text-left rounded-2xl border bg-white p-4 sm:p-5 shadow-sm hover:shadow-md transition-all ${
         onClick ? 'hover:-translate-y-0.5 cursor-pointer' : 'cursor-default'
       } ${c.border}`}
     >
@@ -57,7 +57,7 @@ function KpiCard({
         </div>
         {onClick && <ArrowUpRight className="w-4 h-4 text-slate-400 mt-1" />}
       </div>
-      <p className="text-2xl sm:text-3xl font-bold text-slate-900 mt-3 font-mono">{value}</p>
+      <p className="text-2xl sm:text-3xl lg:text-2xl font-bold text-slate-900 mt-3 font-mono whitespace-nowrap truncate">{value}</p>
       <p className="text-sm text-slate-600 mt-1 font-medium">{label}</p>
       {sub && <p className="text-xs text-slate-500 mt-0.5">{sub}</p>}
     </button>
@@ -251,7 +251,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
         </h3>
 
         {(currentRole === 'ENTERPRISE_A' || currentRole === 'ENTERPRISE_B') && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+          <div className={`grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 ${
+            currentRole === 'ENTERPRISE_A' ? 'lg:grid-cols-6' : 'lg:grid-cols-5'
+          }`}>
             {currentRole === 'ENTERPRISE_A' && (
               <KpiCard
                 icon={Box} label="Container đang quản lý" value={stats.myAssets}

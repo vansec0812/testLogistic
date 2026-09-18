@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { findMatchesForRequest } from '../services/matchingEngine';
 import { INITIAL_CARRIERS } from '../data/mockData';
+import { FieldErrors, FieldError, FormErrorSummary, RequiredMark, getFieldErrorClass, scrollToFirstFieldError } from '../components/FormValidation';
+import { required, positiveNumber, validDateRange, validFutureDate, setError } from '../lib/formValidation';
 
 interface RequestsPageProps {
   setCurrentTab?: (tab: string) => void;
@@ -31,64 +33,104 @@ function MatchCandidateCard({
   onHold: () => void;
 }) {
   const [showPricing, setShowPricing] = useState(false);
-  const { offer, distanceKm, scoreM, scoreD, scoreT, scoreC, requiresLocationRefresh, locationAgeHours, quote } = candidate;
+  const { 
+    offer, 
+    distanceKm, 
+    scoreM, 
+    scoreD, 
+    scoreT, 
+    scoreC, 
+    requiresLocationRefresh, 
+    locationAgeHours, 
+    quote,
+    estimatedShippingMinutes = Math.round(distanceKm * 2 + 25),
+    trustScoreA = 94
+  } = candidate;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all p-4 space-y-3">
-      <div className="flex items-start justify-between gap-3">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all p-4 space-y-3.5">
+      {/* Top Header: Masked Container Number & Badges */}
+      <div className="flex items-start justify-between gap-3 pb-2.5 border-b border-slate-100">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-bold text-slate-900 font-mono">{offer.asset.containerNumber}</span>
-            <span className="text-xs text-slate-600 font-medium">{offer.asset.carrierCode} · {offer.asset.containerType}</span>
-            <ConditionBadge condition={offer.asset.declaredCondition} size="xs" />
+            <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+              {offer.asset.carrierCode} · {offer.asset.containerType}
+            </span>
+            {/* BẢO MẬT: ẨN CONTAINER NUMBER */}
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1 font-mono">
+              <span className="text-[10px]">🔒</span> Cont #••••••• (Bảo mật)
+            </span>
             {requiresLocationRefresh && (
               <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-0.5 flex items-center gap-1">
                 <AlertTriangle className="w-3.5 h-3.5" />
-                Vị trí {Math.round(locationAgeHours)}h · Cần A xác nhận
+                Vị trí {Math.round(locationAgeHours)}h
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-600 mt-1.5 flex items-center gap-1.5">
-            <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
-            <span>{offer.pickupLocationName} · <strong className="text-cyan-700">{formatDistance(distanceKm)}</strong></span>
-          </p>
         </div>
 
-        {/* Match Score */}
+        {/* 4. Điểm tương thích (Matching Score) */}
         <div className="text-right shrink-0">
-          <div className={`inline-flex items-center justify-center w-11 h-11 rounded-xl font-bold font-mono text-base ${
+          <div className={`inline-flex items-center justify-center px-2.5 py-1 rounded-xl font-bold font-mono text-base ${
             scoreM >= 80 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm' :
             scoreM >= 60 ? 'bg-amber-50 text-amber-700 border border-amber-200 shadow-sm' :
             'bg-slate-50 text-slate-600 border border-slate-200'
           }`}>
-            {scoreM}
+            🎯 {scoreM}<span className="text-xs font-normal text-slate-400">/100</span>
           </div>
-          <p className="text-xs text-slate-500 font-medium mt-1">Điểm ghép M</p>
+          <p className="text-[11px] text-slate-500 font-medium mt-0.5">Điểm tương thích</p>
         </div>
       </div>
 
-      {/* Score breakdown */}
-      <div className="grid grid-cols-3 gap-2 text-center text-xs">
+      {/* 7 THÔNG TIN CHUẨN MỰC HIỂN THỊ CHO BÊN B */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+        {/* 1. Khoảng cách (Distance) */}
         <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
-          <p className="font-bold font-mono text-slate-800 text-sm">{scoreD}</p>
-          <p className="text-xs text-slate-500 mt-0.5">📍 Cự ly ({distanceKm}km)</p>
+          <span className="text-slate-500 block">Khoảng cách</span>
+          <strong className="text-slate-900 text-sm font-mono mt-0.5 block">
+            📍 {formatDistance(distanceKm)}
+          </strong>
         </div>
+
+        {/* 3. Tình trạng vỏ khai báo (Declared condition) */}
         <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
-          <p className="font-bold font-mono text-slate-800 text-sm">{scoreT}</p>
-          <p className="text-xs text-slate-500 mt-0.5">⏱️ Thời gian</p>
+          <span className="text-slate-500 block">Tình trạng vỏ</span>
+          <strong className="text-emerald-700 text-xs font-bold mt-0.5 block">
+            ✅ {offer.asset.declaredCondition === 'GOOD' ? 'Đạt chuẩn đóng hàng (GOOD)' : 'Hư hỏng nhẹ'}
+          </strong>
         </div>
+
+        {/* 5. Điểm uy tín (Trust Score) */}
         <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
-          <p className="font-bold font-mono text-slate-800 text-sm">{scoreC}</p>
-          <p className="text-xs text-slate-500 mt-0.5">✅ Chất lượng</p>
+          <span className="text-slate-500 block">Điểm uy tín Bên A</span>
+          <strong className="text-amber-700 text-xs font-bold mt-0.5 block">
+            ⭐ {trustScoreA}/100 (5★)
+          </strong>
+        </div>
+
+        {/* 6. Thời gian vận chuyển ước tính (Estimated shipping time) */}
+        <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
+          <span className="text-slate-500 block">TG vận chuyển ước tính</span>
+          <strong className="text-slate-800 text-xs font-bold mt-0.5 block">
+            🚚 ~{estimatedShippingMinutes} phút
+          </strong>
+        </div>
+
+        {/* 2. Thời gian có thể bàn giao (Available time) */}
+        <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100 col-span-2">
+          <span className="text-slate-500 block">Thời gian có thể bàn giao</span>
+          <strong className="text-slate-800 text-xs mt-0.5 block leading-tight">
+            ⏱️ {formatDateTime(offer.availableFrom)} → {formatDateTime(offer.availableTo)}
+          </strong>
         </div>
       </div>
 
-      {/* Savings preview */}
+      {/* 7. Mức tiết kiệm ước tính (Estimated saving) & Báo giá */}
       <div className="flex items-center justify-between text-xs pt-1.5 border-t border-slate-100">
         <div>
-          <span className="text-slate-600">Bên B tiết kiệm: </span>
+          <span className="text-slate-600">Tiết kiệm ước tính cho Bên B: </span>
           <span className={`font-bold font-mono text-sm ${quote.negativeSavingB ? 'text-red-500' : 'text-emerald-700'}`}>
-            {formatVnd(Math.abs(quote.sBVnd))}
+            💰 +{formatVnd(Math.abs(quote.sBVnd))}
           </span>
         </div>
         <button
@@ -106,8 +148,9 @@ function MatchCandidateCard({
 
       {/* Action */}
       <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
-        <span className="text-xs text-slate-500 font-medium truncate">
-          Chủ vỏ: {offer.companyName}
+        <span className="text-xs text-slate-500 font-medium truncate flex items-center gap-1">
+          <MapPin className="w-3.5 h-3.5 text-slate-400" />
+          Khu vực: {offer.pickupLocationName}
         </span>
         <button
           onClick={onHold}
@@ -115,7 +158,7 @@ function MatchCandidateCard({
           className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
         >
           <Sparkles className="w-3.5 h-3.5" />
-           <span>Chọn Offer · Gửi Match</span>
+          <span>Chọn vỏ này · Giữ chỗ</span>
         </button>
       </div>
     </div>
@@ -148,6 +191,10 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [holdingId, setHoldingId] = useState<string | null>(null);
+  const [formErrors, setFormErrors] = useState<FieldErrors>({});
+  const [editErrors, setEditErrors] = useState<FieldErrors>({});
+  const [withdrawErrors, setWithdrawErrors] = useState<FieldErrors>({});
+  const [opsErrors, setOpsErrors] = useState<FieldErrors>({});
 
   // Auto-Match Alert Modal when new request is created
   const [autoMatchModalReq, setAutoMatchModalReq] = useState<ContainerRequest | null>(null);
@@ -203,39 +250,65 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     return findMatchesForRequest(req, availableOffers);
   }, [matchingForId, requests, availableOffers]);
 
-  const handleAddRequest = () => {
-    if (!form.bookingNumber?.trim()) { showMsg('Số Booking không được trống.', true); return; }
-    if (!form.deliveryLocationName?.trim()) { showMsg('Địa điểm giao hàng không được trống.', true); return; }
-    if (!form.carrierId) { showMsg('Vui lòng chọn hãng tàu.', true); return; }
+  const clearRequestError = (field: string) => {
+    setFormErrors(previous => {
+      if (!previous[field]) return previous;
+      const next = { ...previous };
+      delete next[field];
+      return next;
+    });
+  };
 
+  const validateRequestForm = (): FieldErrors => {
+    const errors: FieldErrors = {};
+    setError(errors, 'bookingNumber', required(form.bookingNumber, 'Vui lòng nhập số Booking.'));
+    if (form.bookingNumber && !/^[A-Z0-9][A-Z0-9-]{4,}$/.test(form.bookingNumber.trim().toUpperCase())) {
+      errors.bookingNumber = 'Số Booking phải có ít nhất 5 ký tự, chỉ gồm chữ, số và dấu gạch ngang.';
+    }
+    setError(errors, 'carrierId', required(form.carrierId, 'Vui lòng chọn hãng tàu cấp vỏ.'));
+    setError(errors, 'deliveryLocationName', required(form.deliveryLocationName, 'Vui lòng nhập địa điểm nhận cont/đóng hàng.'));
+    setError(errors, 'pickupWindowStart', validFutureDate(form.pickupWindowStart, 'thời điểm lấy cont sớm nhất'));
+    setError(errors, 'pickupWindowEnd', validDateRange(form.pickupWindowStart, form.pickupWindowEnd, 'khung thời gian lấy cont'));
+    setError(errors, 'cutOffTime', validFutureDate(form.cutOffTime, 'thời hạn cut-off booking'));
+    if (!Number.isFinite(Number(form.maxDistanceKm)) || Number(form.maxDistanceKm) < 5 || Number(form.maxDistanceKm) > 100) {
+      errors.maxDistanceKm = 'Bán kính Dmax phải từ 5 đến 100 km.';
+    }
+    setError(errors, 'baselinePickupCostVnd', positiveNumber(form.baselinePickupCostVnd, 'Chi phí baseline phải lớn hơn 0.'));
+    return errors;
+  };
+
+  const handleAddRequest = () => {
+    const errors = validateRequestForm();
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      showMsg(Object.values(errors)[0], true);
+      scrollToFirstFieldError(errors);
+      return;
+    }
     const result = addRequest({
       carrierId: form.carrierId!,
-      containerType: form.containerType as '20GP' | '40HC' || '40HC',
-      bookingNumber: form.bookingNumber!,
-      deliveryLocationName: form.deliveryLocationName!,
+      containerType: form.containerType || '40HC',
+      bookingNumber: form.bookingNumber!.trim().toUpperCase(),
+      deliveryLocationName: form.deliveryLocationName!.trim(),
       deliveryLatitude: form.deliveryLatitude || 10.74,
       deliveryLongitude: form.deliveryLongitude || 106.70,
-      pickupWindowStart: form.pickupWindowStart || new Date(Date.now() + 2 * 3600000).toISOString(),
-      pickupWindowEnd: form.pickupWindowEnd || new Date(Date.now() + 24 * 3600000).toISOString(),
-      cutOffTime: form.cutOffTime || new Date(Date.now() + 48 * 3600000).toISOString(),
-      maxDistanceKm: form.maxDistanceKm || 40,
-      cargoType: form.cargoType,
-      cargoRequirements: form.cargoRequirements,
-      baselinePickupCostVnd: form.baselinePickupCostVnd || 3400000,
+      pickupWindowStart: form.pickupWindowStart!,
+      pickupWindowEnd: form.pickupWindowEnd!,
+      cutOffTime: form.cutOffTime!,
+      maxDistanceKm: Number(form.maxDistanceKm),
+      cargoType: form.cargoType?.trim() || 'Hàng tổng hợp',
+      cargoRequirements: form.cargoRequirements?.trim(),
+      baselinePickupCostVnd: Number(form.baselinePickupCostVnd),
     });
-
     if (result.success) {
       showMsg(result.message);
       setShowAddForm(false);
       const createdReq = result.data as ContainerRequest;
       setForm({ containerType: '40HC', maxDistanceKm: 40, baselinePickupCostVnd: 3400000, carrierId: 'CARR-MSK' });
-
-      // Auto-match check immediately!
+      setFormErrors({});
       if (createdReq) {
         const instantMatches = findMatchesForRequest(createdReq, availableOffers);
-        if (instantMatches.candidates.length > 0) {
-          setAutoMatchModalReq(createdReq);
-        }
+        if (instantMatches.candidates.length > 0) setAutoMatchModalReq(createdReq);
       }
     } else {
       showMsg(result.message, true);
@@ -248,6 +321,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
       return;
     }
     setEditingRequest(req);
+    setEditErrors({});
     setEditForm({
       bookingNumber: req.bookingNumber,
       deliveryLocationName: req.deliveryLocationName,
@@ -260,10 +334,31 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
 
   const handleSaveEdit = () => {
     if (!editingRequest) return;
-    const result = updateRequest(editingRequest.id, editForm);
+    const errors: FieldErrors = {};
+    setError(errors, 'edit-bookingNumber', required(editForm.bookingNumber, 'Vui lòng nhập số Booking.'));
+    setError(errors, 'edit-deliveryLocationName', required(editForm.deliveryLocationName, 'Vui lòng nhập địa điểm giao hàng.'));
+    if (!Number.isFinite(Number(editForm.maxDistanceKm)) || Number(editForm.maxDistanceKm) < 5 || Number(editForm.maxDistanceKm) > 100) {
+      errors['edit-maxDistanceKm'] = 'Bán kính Dmax phải từ 5 đến 100 km.';
+    }
+    setError(errors, 'edit-baselinePickupCostVnd', positiveNumber(editForm.baselinePickupCostVnd, 'Chi phí baseline phải lớn hơn 0.'));
+    setEditErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      showMsg(Object.values(errors)[0], true);
+      scrollToFirstFieldError(errors);
+      return;
+    }
+    const result = updateRequest(editingRequest.id, {
+      ...editForm,
+      bookingNumber: editForm.bookingNumber!.trim().toUpperCase(),
+      deliveryLocationName: editForm.deliveryLocationName!.trim(),
+      maxDistanceKm: Number(editForm.maxDistanceKm),
+      baselinePickupCostVnd: Number(editForm.baselinePickupCostVnd),
+      cargoType: editForm.cargoType?.trim(),
+    });
     showMsg(result.message, !result.success);
     if (result.success) {
       setEditingRequest(null);
+      setEditErrors({});
     }
   };
 
@@ -273,6 +368,44 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     showMsg(result.message, !result.success);
     if (result.success && selectedRequest?.id === requestId) {
       setSelectedRequest(null);
+    }
+  };
+
+  const handleOpsDecision = (requestId: string, decision: 'APPROVE' | 'REQUEST_CHANGES' | 'REJECT') => {
+    const field = `opsNotes-${requestId}`;
+    const errors: FieldErrors = {};
+    setError(errors, field, required(opsNotes, 'Vui lòng nhập ghi chú xác minh Booking.'));
+    setOpsErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      showMsg(Object.values(errors)[0], true);
+      scrollToFirstFieldError(errors);
+      return;
+    }
+    const result = opsReviewRequest(requestId, decision, opsNotes.trim());
+    showMsg(result.message, !result.success);
+    if (result.success) { setOpsNotes(''); setOpsErrors({}); }
+    else {
+      setOpsErrors({ [field]: result.message });
+      scrollToFirstFieldError({ [field]: result.message });
+    }
+  };
+
+  const handleWithdraw = () => {
+    if (!withdrawId) return;
+    const errors: FieldErrors = {};
+    setError(errors, 'withdrawReason', required(withdrawReason, 'Vui lòng nhập lý do rút nhu cầu.'));
+    setWithdrawErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      showMsg(Object.values(errors)[0], true);
+      scrollToFirstFieldError(errors);
+      return;
+    }
+    const result = withdrawRequest(withdrawId, withdrawReason.trim());
+    showMsg(result.message, !result.success);
+    if (result.success) {
+      setWithdrawId(null);
+      setWithdrawReason('');
+      setWithdrawErrors({});
     }
   };
 
@@ -307,7 +440,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
         <div>
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
             <Search className="w-6 h-6 text-cyan-600" />
-            <span>{currentRole === 'ENTERPRISE_B' ? 'Quản lý Nhu cầu & Tự động Ghép đôi' : 'Danh sách Nhu cầu (Requests)'}</span>
+            <span>{currentRole === 'ENTERPRISE_B' ? 'Quản lý Nhu cầu & Tự động Ghép đôi' : 'Danh sách Nhu cầu tìm vỏ'}</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1">
             {currentRole === 'ENTERPRISE_B'
@@ -349,34 +482,43 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
               <Plus className="w-4 h-4 text-cyan-600" />
-              <span>ĐĂNG NHU CẦU TÌM VỎ CONTAINER (CREATE REQUEST)</span>
+              <span>ĐĂNG NHU CẦU TÌM VỎ CONTAINER</span>
             </h3>
             <button onClick={() => setShowAddForm(false)} className="text-slate-400 hover:text-slate-600">
               <X className="w-5 h-5" />
             </button>
           </div>
 
+          <FormErrorSummary errors={formErrors} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
-              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Số Booking (từ hãng tàu) *</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Số Booking (từ hãng tàu) <RequiredMark /></label>
               <input
+                id="request-bookingNumber"
+                data-field="bookingNumber"
                 value={form.bookingNumber || ''}
-                onChange={e => setForm(p => ({ ...p, bookingNumber: e.target.value.toUpperCase() }))}
+                onChange={e => { clearRequestError('bookingNumber'); setForm(p => ({ ...p, bookingNumber: e.target.value.toUpperCase() })); }}
                 placeholder="MSKBKG2026-981..."
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase outline-none focus:ring-2 focus:ring-cyan-500 bg-white"
+                aria-invalid={Boolean(formErrors.bookingNumber)}
+                className={getFieldErrorClass(Boolean(formErrors.bookingNumber), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               />
+              <FieldError message={formErrors.bookingNumber} />
             </div>
             <div>
-              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Hãng tàu cấp vỏ *</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Hãng tàu cấp vỏ <RequiredMark /></label>
               <select 
-                value={form.carrierId} 
-                onChange={e => setForm(p => ({ ...p, carrierId: e.target.value }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white"
+                id="request-carrierId"
+                data-field="carrierId"
+                value={form.carrierId || ''}
+                onChange={e => { clearRequestError('carrierId'); setForm(p => ({ ...p, carrierId: e.target.value })); }}
+                aria-invalid={Boolean(formErrors.carrierId)}
+                className={getFieldErrorClass(Boolean(formErrors.carrierId), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               >
                 {INITIAL_CARRIERS.filter(c => c.isActive).map(c => (
                   <option key={c.id} value={c.id}>{c.code} · {c.name}</option>
                 ))}
-              </select>
+                </select>
+                <FieldError message={formErrors.carrierId} />
             </div>
             <div>
               <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Loại container</label>
@@ -390,57 +532,84 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
               </select>
             </div>
             <div>
-              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Địa điểm nhận cont / đóng hàng *</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Địa điểm nhận cont / đóng hàng <RequiredMark /></label>
               <input
+                id="request-deliveryLocationName"
+                data-field="deliveryLocationName"
                 value={form.deliveryLocationName || ''}
-                onChange={e => setForm(p => ({ ...p, deliveryLocationName: e.target.value }))}
+                onChange={e => { clearRequestError('deliveryLocationName'); setForm(p => ({ ...p, deliveryLocationName: e.target.value })); }}
                 placeholder="Kho KCN VSIP 1, Bình Dương..."
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white"
+                aria-invalid={Boolean(formErrors.deliveryLocationName)}
+                className={getFieldErrorClass(Boolean(formErrors.deliveryLocationName), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               />
+              <FieldError message={formErrors.deliveryLocationName} />
             </div>
             <div>
-              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Lấy cont sớm nhất</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Lấy cont sớm nhất <RequiredMark /></label>
               <input 
+                id="request-pickupWindowStart"
+                data-field="pickupWindowStart"
                 type="datetime-local"
-                onChange={e => setForm(p => ({ ...p, pickupWindowStart: new Date(e.target.value).toISOString() }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white" 
+                value={form.pickupWindowStart ? form.pickupWindowStart.slice(0, 16) : ''}
+                onChange={e => { clearRequestError('pickupWindowStart'); clearRequestError('pickupWindowEnd'); setForm(p => ({ ...p, pickupWindowStart: e.target.value ? new Date(e.target.value).toISOString() : undefined })); }}
+                aria-invalid={Boolean(formErrors.pickupWindowStart)}
+                className={getFieldErrorClass(Boolean(formErrors.pickupWindowStart), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               />
+              <FieldError message={formErrors.pickupWindowStart} />
             </div>
             <div>
-              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Lấy cont muộn nhất</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Lấy cont muộn nhất <RequiredMark /></label>
               <input 
+                id="request-pickupWindowEnd"
+                data-field="pickupWindowEnd"
                 type="datetime-local"
-                onChange={e => setForm(p => ({ ...p, pickupWindowEnd: new Date(e.target.value).toISOString() }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white" 
+                value={form.pickupWindowEnd ? form.pickupWindowEnd.slice(0, 16) : ''}
+                onChange={e => { clearRequestError('pickupWindowStart'); clearRequestError('pickupWindowEnd'); setForm(p => ({ ...p, pickupWindowEnd: e.target.value ? new Date(e.target.value).toISOString() : undefined })); }}
+                aria-invalid={Boolean(formErrors.pickupWindowEnd)}
+                className={getFieldErrorClass(Boolean(formErrors.pickupWindowEnd), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               />
+              <FieldError message={formErrors.pickupWindowEnd} />
             </div>
             <div>
-              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Thời hạn Cut-off booking</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Thời hạn Cut-off booking <RequiredMark /></label>
               <input 
+                id="request-cutOffTime"
+                data-field="cutOffTime"
                 type="datetime-local"
-                onChange={e => setForm(p => ({ ...p, cutOffTime: new Date(e.target.value).toISOString() }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white" 
+                value={form.cutOffTime ? form.cutOffTime.slice(0, 16) : ''}
+                onChange={e => { clearRequestError('cutOffTime'); setForm(p => ({ ...p, cutOffTime: e.target.value ? new Date(e.target.value).toISOString() : undefined })); }}
+                aria-invalid={Boolean(formErrors.cutOffTime)}
+                className={getFieldErrorClass(Boolean(formErrors.cutOffTime), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               />
+              <FieldError message={formErrors.cutOffTime} />
             </div>
             <div>
-              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Bán kính quét ghép đôi tối đa (Dmax: km)</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Bán kính quét ghép đôi tối đa (Dmax: km) <RequiredMark /></label>
               <input 
                 type="number" 
                 min="5" 
                 max="100" 
-                value={form.maxDistanceKm || 40}
-                onChange={e => setForm(p => ({ ...p, maxDistanceKm: parseInt(e.target.value) || 40 }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white" 
+                id="request-maxDistanceKm"
+                data-field="maxDistanceKm"
+                value={form.maxDistanceKm ?? ''}
+                onChange={e => { clearRequestError('maxDistanceKm'); setForm(p => ({ ...p, maxDistanceKm: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })); }}
+                aria-invalid={Boolean(formErrors.maxDistanceKm)}
+                className={getFieldErrorClass(Boolean(formErrors.maxDistanceKm), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               />
+              <FieldError message={formErrors.maxDistanceKm} />
             </div>
             <div>
-              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Chi phí lấy baseline T_B (VND)</label>
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Chi phí lấy baseline T_B (VND) <RequiredMark /></label>
               <input 
                 type="number" 
-                value={form.baselinePickupCostVnd || 3400000}
-                onChange={e => setForm(p => ({ ...p, baselinePickupCostVnd: parseInt(e.target.value) || 3400000 }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white" 
+                id="request-baselinePickupCostVnd"
+                data-field="baselinePickupCostVnd"
+                value={form.baselinePickupCostVnd ?? ''}
+                onChange={e => { clearRequestError('baselinePickupCostVnd'); setForm(p => ({ ...p, baselinePickupCostVnd: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })); }}
+                aria-invalid={Boolean(formErrors.baselinePickupCostVnd)}
+                className={getFieldErrorClass(Boolean(formErrors.baselinePickupCostVnd), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               />
+              <FieldError message={formErrors.baselinePickupCostVnd} />
               <p className="text-xs text-slate-500 mt-1">Cước nếu xe phải chạy lên depot lấy cont thông thường</p>
             </div>
             <div>
@@ -479,36 +648,61 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
               </button>
             </div>
 
+            <FormErrorSummary errors={editErrors} />
             <div className="space-y-3 text-xs">
               <div>
-                <label className="text-slate-700 font-semibold block mb-1">Địa điểm giao hàng *</label>
+                <label className="text-slate-700 font-semibold block mb-1">Số Booking <RequiredMark /></label>
+                <input
+                  id="edit-bookingNumber"
+                  data-field="edit-bookingNumber"
+                  value={editForm.bookingNumber || ''}
+                  onChange={e => { setEditErrors(previous => { const next = { ...previous }; delete next['edit-bookingNumber']; return next; }); setEditForm(p => ({ ...p, bookingNumber: e.target.value.toUpperCase() })); }}
+                  aria-invalid={Boolean(editErrors['edit-bookingNumber'])}
+                  className={getFieldErrorClass(Boolean(editErrors['edit-bookingNumber']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500')}
+                />
+                <FieldError message={editErrors['edit-bookingNumber']} />
+              </div>
+              <div>
+                <label className="text-slate-700 font-semibold block mb-1">Địa điểm giao hàng <RequiredMark /></label>
                 <input
                   type="text"
+                  id="edit-deliveryLocationName"
+                  data-field="edit-deliveryLocationName"
                   value={editForm.deliveryLocationName || ''}
-                  onChange={e => setEditForm(p => ({ ...p, deliveryLocationName: e.target.value }))}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500"
+                  onChange={e => { setEditErrors(previous => { const next = { ...previous }; delete next['edit-deliveryLocationName']; return next; }); setEditForm(p => ({ ...p, deliveryLocationName: e.target.value })); }}
+                  aria-invalid={Boolean(editErrors['edit-deliveryLocationName'])}
+                  className={getFieldErrorClass(Boolean(editErrors['edit-deliveryLocationName']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500')}
                 />
+                <FieldError message={editErrors['edit-deliveryLocationName']} />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-slate-700 font-semibold block mb-1">Bán kính quét Dmax (km)</label>
+                  <label className="text-slate-700 font-semibold block mb-1">Bán kính quét Dmax (km) <RequiredMark /></label>
                   <input
                     type="number"
-                    value={editForm.maxDistanceKm || 40}
-                    onChange={e => setEditForm(p => ({ ...p, maxDistanceKm: parseInt(e.target.value) || 40 }))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500"
+                    id="edit-maxDistanceKm"
+                    data-field="edit-maxDistanceKm"
+                    value={editForm.maxDistanceKm ?? ''}
+                    onChange={e => { setEditErrors(previous => { const next = { ...previous }; delete next['edit-maxDistanceKm']; return next; }); setEditForm(p => ({ ...p, maxDistanceKm: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })); }}
+                    aria-invalid={Boolean(editErrors['edit-maxDistanceKm'])}
+                    className={getFieldErrorClass(Boolean(editErrors['edit-maxDistanceKm']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500')}
                   />
+                  <FieldError message={editErrors['edit-maxDistanceKm']} />
                 </div>
 
                 <div>
-                  <label className="text-slate-700 font-semibold block mb-1">Chi phí baseline T_B (VND)</label>
+                  <label className="text-slate-700 font-semibold block mb-1">Chi phí baseline T_B (VND) <RequiredMark /></label>
                   <input
                     type="number"
-                    value={editForm.baselinePickupCostVnd || 0}
-                    onChange={e => setEditForm(p => ({ ...p, baselinePickupCostVnd: parseInt(e.target.value) || 0 }))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500"
+                    id="edit-baselinePickupCostVnd"
+                    data-field="edit-baselinePickupCostVnd"
+                    value={editForm.baselinePickupCostVnd ?? ''}
+                    onChange={e => { setEditErrors(previous => { const next = { ...previous }; delete next['edit-baselinePickupCostVnd']; return next; }); setEditForm(p => ({ ...p, baselinePickupCostVnd: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })); }}
+                    aria-invalid={Boolean(editErrors['edit-baselinePickupCostVnd'])}
+                    className={getFieldErrorClass(Boolean(editErrors['edit-baselinePickupCostVnd']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500')}
                   />
+                  <FieldError message={editErrors['edit-baselinePickupCostVnd']} />
                 </div>
               </div>
 
@@ -739,15 +933,28 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
 
                   {/* Ops quick review */}
                   {canOpsReview && req.status === 'UNDER_REVIEW' && (
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-end gap-1.5">
+                      <div>
+                        <label htmlFor={`opsNotes-${req.id}`} className="block text-[11px] font-semibold text-slate-600 mb-1">Ghi chú xác minh <RequiredMark /></label>
+                        <input
+                          id={`opsNotes-${req.id}`}
+                          data-field={`opsNotes-${req.id}`}
+                          value={opsNotes}
+                          onChange={e => { setOpsNotes(e.target.value); setOpsErrors(previous => ({ ...previous, [`opsNotes-${req.id}`]: '' })); }}
+                          aria-invalid={Boolean(opsErrors[`opsNotes-${req.id}`])}
+                          className={getFieldErrorClass(Boolean(opsErrors[`opsNotes-${req.id}`]), 'w-56 px-3 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-cyan-500')}
+                          placeholder="Kết luận Ops..."
+                        />
+                        <FieldError message={opsErrors[`opsNotes-${req.id}`]} />
+                      </div>
                       <button
-                        onClick={() => opsReviewRequest(req.id, 'APPROVE', 'Booking hợp lệ từ hãng tàu')}
+                        onClick={() => handleOpsDecision(req.id, 'APPROVE')}
                         className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm"
                       >
                         Xác nhận Booking (OPEN)
                       </button>
                       <button
-                        onClick={() => opsReviewRequest(req.id, 'REJECT', 'Số booking không hợp lệ')}
+                        onClick={() => handleOpsDecision(req.id, 'REJECT')}
                         className="px-3.5 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs font-semibold"
                       >
                         Từ chối
@@ -829,24 +1036,25 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                 <X className="w-5 h-5" />
               </button>
             </div>
+            <FormErrorSummary errors={withdrawErrors} />
             <div>
-              <label className="text-slate-700 font-semibold text-xs block mb-1">Lý do rút *</label>
+              <label className="text-slate-700 font-semibold text-xs block mb-1">Lý do rút <RequiredMark /></label>
               <textarea
+                id="request-withdrawReason"
+                data-field="withdrawReason"
                 value={withdrawReason}
-                onChange={e => setWithdrawReason(e.target.value)}
+                onChange={e => { setWithdrawErrors({}); setWithdrawReason(e.target.value); }}
                 placeholder="Đã tìm được vỏ khác hoặc thay đổi kế hoạch xuất hàng..."
                 rows={3}
-                className="w-full p-3 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-cyan-500"
+                aria-invalid={Boolean(withdrawErrors.withdrawReason)}
+                className={getFieldErrorClass(Boolean(withdrawErrors.withdrawReason), 'w-full p-3 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-cyan-500')}
               />
+              <FieldError message={withdrawErrors.withdrawReason} />
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={() => setWithdrawId(null)} className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl">Hủy</button>
               <button 
-                onClick={() => {
-                  const r = withdrawRequest(withdrawId, withdrawReason);
-                  showMsg(r.message, !r.success);
-                  if (r.success) setWithdrawId(null);
-                }}
+                onClick={handleWithdraw}
                 className="px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-500 text-white rounded-xl"
               >
                 Xác nhận Rút

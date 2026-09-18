@@ -4,6 +4,8 @@
 // ==============================================================================
 
 import React, { useState } from 'react';
+import { FieldErrors, FieldError, FormErrorSummary, RequiredMark, getFieldErrorClass, scrollToFirstFieldError } from '../components/FormValidation';
+import { required, validEmail, validFutureDate, validPhone, setError } from '../lib/formValidation';
 import { useDatabase } from '../context/DatabaseContext';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -95,6 +97,10 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
     businessType: 'FORWARDER',
     verificationStatus: 'VERIFIED'
   });
+  const [companyErrors, setCompanyErrors] = useState<FieldErrors>({});
+  const [carrierErrors, setCarrierErrors] = useState<FieldErrors>({});
+  const [caseErrors, setCaseErrors] = useState<FieldErrors>({});
+  const [assetReviewErrors, setAssetReviewErrors] = useState<Record<string, string>>({});
 
   // Role guard
   if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
@@ -117,14 +123,28 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
     (a.hasEdoDocument && a.edoVerificationStatus !== 'VERIFIED')
   );
 
+  const validateCarrierForm = (): FieldErrors => {
+    const errors: FieldErrors = {};
+    setError(errors, 'carrierRef', required(carrierRef, 'Vui lòng nhập số văn bản RU của hãng tàu.'));
+    setError(errors, 'evidenceFile', required(evidenceFile, 'Vui lòng nhập tên file công văn RU.'));
+    setError(errors, 'validUntil', validFutureDate(validUntil, 'Thời hạn hiệu lực'));
+    return errors;
+  };
+
   const handleCarrierSubmit = (action: 'approve' | 'reject') => {
     if (!carrierModalTxnId) return;
     if (action === 'approve') {
-      if (!carrierRef.trim()) { alert('Vui lòng nhập số công văn'); return; }
+      const errors = validateCarrierForm();
+      setCarrierErrors(errors);
+      if (Object.keys(errors).length > 0) {
+        scrollToFirstFieldError(errors);
+        return;
+      }
       const res = opsApproveCarrier(carrierModalTxnId, carrierRef, evidenceFile, new Date(validUntil).toISOString());
       if (res.success) {
         alert(res.message);
         setCarrierModalTxnId(null);
+        setCarrierErrors({});
       } else {
         alert(res.message);
       }
@@ -138,8 +158,11 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
   };
 
   const handleResolveCaseSubmit = () => {
-    if (!caseModalId || !caseSummary.trim()) {
-      alert('Vui lòng nhập tóm tắt kết luận của Ops.');
+    const errors: FieldErrors = {};
+    setError(errors, 'caseSummary', required(caseSummary, 'Vui lòng nhập tóm tắt kết luận của Ops.'));
+    setCaseErrors(errors);
+    if (!caseModalId || Object.keys(errors).length > 0) {
+      if (Object.keys(errors).length > 0) scrollToFirstFieldError(errors);
       return;
     }
     resolveCase(caseModalId, {
@@ -150,7 +173,85 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
     });
     setCaseModalId(null);
     setCaseSummary('');
+    setCaseErrors({});
     alert('Đã kết luận giải quyết Case thành công.');
+  };
+
+  const validateCompanyForm = (): FieldErrors => {
+    const errors: FieldErrors = {};
+    setError(errors, 'companyName', required(companyForm.companyName, 'Vui lòng nhập tên đầy đủ công ty.'));
+    setError(errors, 'shortName', required(companyForm.shortName, 'Vui lòng nhập tên viết tắt.'));
+    setError(errors, 'taxCode', required(companyForm.taxCode, 'Vui lòng nhập mã số thuế.'));
+    if (companyForm.taxCode?.trim() && !/^\d{8,14}$/.test(companyForm.taxCode.trim())) {
+      errors.taxCode = 'Mã số thuế phải gồm 8–14 chữ số.';
+    }
+    setError(errors, 'address', required(companyForm.address, 'Vui lòng nhập địa chỉ trụ sở.'));
+    setError(errors, 'representativeName', required(companyForm.representativeName, 'Vui lòng nhập người đại diện.'));
+    setError(errors, 'representativePhone', required(companyForm.representativePhone, 'Vui lòng nhập số điện thoại đại diện.'));
+    if (companyForm.representativePhone?.trim()) {
+      setError(errors, 'representativePhone', validPhone(companyForm.representativePhone, 'Số điện thoại đại diện không hợp lệ.'));
+    }
+    setError(errors, 'representativeEmail', required(companyForm.representativeEmail, 'Vui lòng nhập email liên hệ.'));
+    if (companyForm.representativeEmail?.trim()) {
+      setError(errors, 'representativeEmail', validEmail(companyForm.representativeEmail, 'Email liên hệ không hợp lệ.'));
+    }
+    return errors;
+  };
+
+  const handleSaveCompany = () => {
+    const errors = validateCompanyForm();
+    setCompanyErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      scrollToFirstFieldError(errors);
+      return;
+    }
+
+    if (editingCompany) {
+      const res = updateCompany(editingCompany.id, companyForm);
+      alert(res.message);
+      if (res.success) {
+        setEditingCompany(null);
+        setCompanyErrors({});
+      }
+      return;
+    }
+
+    const res = addCompany({
+      companyName: companyForm.companyName!,
+      shortName: companyForm.shortName!,
+      taxCode: companyForm.taxCode!,
+      businessType: companyForm.businessType || 'FORWARDER',
+      address: companyForm.address!,
+      representativeName: companyForm.representativeName!,
+      representativePhone: companyForm.representativePhone!,
+      representativeEmail: companyForm.representativeEmail!,
+      verificationStatus: (companyForm.verificationStatus as CompanyStatus) || 'VERIFIED',
+    });
+    alert(res.message);
+    if (res.success) {
+      setShowAddCompanyModal(false);
+      setCompanyForm({ businessType: 'FORWARDER', verificationStatus: 'VERIFIED' });
+      setCompanyErrors({});
+    }
+  };
+
+  const handleAssetReview = (assetId: string, decision: 'APPROVE' | 'REJECT') => {
+    const note = (assetReviewNotes[assetId] || '').trim();
+    if (!note) {
+      const message = 'Vui lòng ghi kết luận kiểm tra ảnh trước khi quyết định.';
+      setAssetReviewErrors(previous => ({ ...previous, [assetId]: message }));
+      scrollToFirstFieldError({ [`assetReviewNote-${assetId}`]: message });
+      return;
+    }
+    const result = opsReviewAsset(assetId, decision, note);
+    alert(result.message);
+    if (result.success) {
+      setAssetReviewErrors(previous => ({ ...previous, [assetId]: '' }));
+      setAssetReviewNotes(previous => ({ ...previous, [assetId]: '' }));
+    } else {
+      setAssetReviewErrors(previous => ({ ...previous, [assetId]: result.message }));
+      scrollToFirstFieldError({ [`assetReviewNote-${assetId}`]: result.message });
+    }
   };
 
   return (
@@ -263,7 +364,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">CASE TRANH CHẤP</span>
+            <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">KHIẾU NẠI TRANH CHẤP</span>
             <AlertTriangle className="w-5 h-5 text-rose-600" />
           </div>
           <div className="text-2xl sm:text-3xl font-bold font-mono text-slate-900 mt-2">
@@ -383,6 +484,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                       <button
                         onClick={() => {
                           setCarrierModalTxnId(txn.id);
+                          setCarrierErrors({});
                           setCarrierRef(`RU-2026-${txn.asset.carrierCode}-${txn.id.slice(-4)}`);
                         }}
                         className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow-sm"
@@ -409,43 +511,102 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                 {underReviewOffers.map((o) => (
                   <div
                     key={o.id}
-                    className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3"
+                    className="p-5 rounded-2xl border border-slate-200 bg-white shadow-sm space-y-4"
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-slate-900">{o.id}</span>
+                        <span className="font-mono font-bold text-slate-900 text-sm">{o.id}</span>
                         <OfferStatusBadge status={o.status} size="xs" />
-                        <span className="font-mono text-slate-700">{o.asset.containerNumber}</span>
+                        <span className="font-mono font-bold text-slate-800 text-base">{o.asset.containerNumber}</span>
+                        <span className="text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded font-bold">
+                          {o.asset.carrierCode} · {o.asset.containerType}
+                        </span>
                         <ConditionBadge condition={o.asset.declaredCondition} size="xs" />
                       </div>
-                      <span className="text-xs text-slate-500">{o.companyName}</span>
+                      <span className="text-xs font-semibold text-slate-600">Bên A: {o.companyName}</span>
                     </div>
 
-                    <div className="text-xs text-slate-600 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <div>Vị trí: <strong>{o.pickupLocationName}</strong></div>
-                      <div>Cước hạ baseline A: <strong>{formatVnd(o.baselineDepotCostVnd)}</strong></div>
-                      <div>Bộ ảnh: <strong>{o.photoUrls.length} ảnh</strong> ({o.photoChecklistComplete ? 'Đủ 6 góc' : 'Chưa đủ 6 góc'})</div>
+                    {/* Cảnh báo AI nếu phát hiện bất thường */}
+                    {o.requiresOpsManualReview && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center gap-2 font-medium">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>
+                          <strong>⚠️ CẢNH BÁO AI:</strong> Phát hiện dấu hiệu bất thường trên vỏ container! Ops cần kiểm tra kỹ ảnh chụp thủ công trước khi duyệt.
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Thông tin e-DO & AI Check */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                      <div>
+                        <span className="text-slate-500 block font-medium">Chứng từ e-DO đính kèm</span>
+                        <strong className="text-blue-800 font-mono text-xs mt-0.5 block">
+                          📄 {o.edoNumber || 'EDO-CHUA-RO'} ({o.edoFileName || 'eDO_Doc.pdf'})
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block font-medium">Vị trí lấy vỏ</span>
+                        <strong className="text-slate-800 text-xs mt-0.5 block">📍 {o.pickupLocationName}</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block font-medium">Kết quả AI OCR & Giám định</span>
+                        <strong className="text-emerald-700 text-xs mt-0.5 block">
+                          ✨ {o.aiCheck?.summary || 'IICL-5 Đạt chuẩn đóng hàng'} ({o.aiCheck?.score || 96}/100)
+                        </strong>
+                      </div>
                     </div>
 
-                    <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
-                      <button
-                        onClick={() => opsReviewOffer(o.id, 'REJECT', 'Không đủ điều kiện tái sử dụng')}
-                        className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 text-xs font-semibold"
-                      >
-                        Từ chối
-                      </button>
-                      <button
-                        onClick={() => opsReviewOffer(o.id, 'REQUEST_CHANGES', 'Cần bổ sung ảnh chụp sàn và nóc')}
-                        className="px-3 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-semibold"
-                      >
-                        Yêu cầu bổ sung
-                      </button>
-                      <button
-                        onClick={() => opsReviewOffer(o.id, 'APPROVE', 'Đã thẩm định đạt chuẩn IICL')}
-                        className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm"
-                      >
-                        Phê duyệt (AVAILABLE)
-                      </button>
+                    {/* Mô tả chi tiết nếu có */}
+                    {o.conditionNotes && (
+                      <div className="text-xs text-slate-600 bg-slate-50/60 p-2.5 rounded-xl border border-slate-100">
+                        <span className="font-semibold text-slate-800">Mô tả chi tiết tình trạng vỏ:</span> {o.conditionNotes}
+                      </div>
+                    )}
+
+                    {/* Bộ ảnh Container phục vụ Ops kiểm tra thủ công */}
+                    <div>
+                      <span className="text-xs font-bold text-slate-700 block mb-2">
+                        Ảnh chụp container ({o.photoUrls.length}/6 ảnh - Kiểm tra thủ công):
+                      </span>
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                        {o.photoUrls.map((url, idx) => (
+                          <div key={idx} className="h-20 rounded-xl overflow-hidden bg-slate-100 border border-slate-200">
+                            <img src={url} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-cover" />
+                          </div>
+                        ))}
+                        {o.photoUrls.length === 0 && (
+                          <div className="col-span-full py-4 text-center text-slate-400 text-xs">
+                            Chưa có ảnh container
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Nút Phê Duyệt / Yêu Cầu Bổ Sung / Từ Chối */}
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-200">
+                      <p className="text-[11px] text-slate-500">
+                        * Duyệt thành công sẽ chuyển trạng thái sang AVAILABLE để hiển thị cho Bên B ghép đôi.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => opsReviewOffer(o.id, 'REJECT', 'Không đủ điều kiện tái sử dụng theo tiêu chuẩn IICL-5')}
+                          className="px-3.5 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 text-xs font-semibold"
+                        >
+                          Từ chối
+                        </button>
+                        <button
+                          onClick={() => opsReviewOffer(o.id, 'REQUEST_CHANGES', 'Cần bổ sung ảnh chụp rõ sàn và vách container')}
+                          className="px-3.5 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-semibold"
+                        >
+                          Yêu cầu bổ sung
+                        </button>
+                        <button
+                          onClick={() => opsReviewOffer(o.id, 'APPROVE', 'Đã thẩm định e-DO và ảnh chụp đạt chuẩn IICL-5')}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm"
+                        >
+                          Phê duyệt Offer (AVAILABLE)
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -534,28 +695,27 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                       <strong>Nhận định AI:</strong> {asset.aiInspection?.summary}
                       {asset.aiInspection?.details?.length ? <ul className="list-disc pl-5 mt-1">{asset.aiInspection.details.map((detail, index) => <li key={index}>{detail}</li>)}</ul> : null}
                     </div>
+                    <label htmlFor={`assetReviewNote-${asset.id}`} className="block text-xs font-semibold text-slate-700">Kết luận kiểm tra của Ops <RequiredMark /></label>
                     <textarea
+                      id={`assetReviewNote-${asset.id}`}
+                      data-field={`assetReviewNote-${asset.id}`}
                       value={assetReviewNotes[asset.id] || ''}
-                      onChange={e => setAssetReviewNotes(prev => ({ ...prev, [asset.id]: e.target.value }))}
+                      onChange={e => { setAssetReviewNotes(prev => ({ ...prev, [asset.id]: e.target.value })); setAssetReviewErrors(prev => ({ ...prev, [asset.id]: '' })); }}
                       placeholder="Ops ghi kết luận: đã xem đủ ảnh, tình trạng thực tế, yêu cầu bổ sung nếu có..."
                       rows={2}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-violet-500"
+                      aria-invalid={Boolean(assetReviewErrors[asset.id])}
+                      className={getFieldErrorClass(Boolean(assetReviewErrors[asset.id]), 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-violet-500')}
                     />
+                    <FieldError message={assetReviewErrors[asset.id]} />
                     <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
                       <button
-                        onClick={() => {
-                          const result = opsReviewAsset(asset.id, 'REJECT', assetReviewNotes[asset.id] || 'Ảnh chưa đủ rõ hoặc tình trạng không đạt; yêu cầu bổ sung và kiểm tra lại.');
-                          alert(result.message);
-                        }}
+                        onClick={() => handleAssetReview(asset.id, 'REJECT')}
                         className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 text-xs font-semibold"
                       >
                         Từ chối / kiểm tra lại
                       </button>
                       <button
-                        onClick={() => {
-                          const result = opsReviewAsset(asset.id, 'APPROVE', assetReviewNotes[asset.id] || 'Ops đã đối chiếu bộ ảnh và xác nhận kết quả.');
-                          alert(result.message);
-                        }}
+                        onClick={() => handleAssetReview(asset.id, 'APPROVE')}
                         className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm"
                       >
                         Ops xác nhận
@@ -610,6 +770,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                           onClick={() => {
                             setCaseModalId(c.id);
                             setCaseSummary('');
+                            setCaseErrors({});
                           }}
                           className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm"
                         >
@@ -632,6 +793,8 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
               <button
                 onClick={() => {
                   setCompanyForm({ businessType: 'FORWARDER', verificationStatus: 'VERIFIED' });
+                  setCompanyErrors({});
+                  setEditingCompany(null);
                   setShowAddCompanyModal(true);
                 }}
                 className="px-3.5 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm"
@@ -688,6 +851,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                         onClick={() => {
                           setEditingCompany(co);
                           setCompanyForm(co);
+                          setCompanyErrors({});
                         }}
                         className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600"
                         title="Chỉnh sửa doanh nghiệp"
@@ -732,116 +896,121 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
             </div>
 
             <div className="space-y-3 text-xs">
+              <FormErrorSummary errors={companyErrors} />
               <div>
-                <label className="text-slate-700 font-semibold block mb-1">Tên đầy đủ công ty *</label>
+                <label htmlFor="companyName" className="text-slate-700 font-semibold block mb-1">Tên đầy đủ công ty <RequiredMark /></label>
                 <input
+                  id="companyName"
+                  data-field="companyName"
                   type="text"
                   value={companyForm.companyName || ''}
-                  onChange={e => setCompanyForm(p => ({ ...p, companyName: e.target.value }))}
+                  onChange={e => { setCompanyForm(p => ({ ...p, companyName: e.target.value })); setCompanyErrors(p => ({ ...p, companyName: '' })); }}
                   placeholder="Công ty Cổ phần Vận tải Toàn Cầu..."
-                  className="w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
+                  className={getFieldErrorClass(Boolean(companyErrors.companyName), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500')}
+                  aria-invalid={Boolean(companyErrors.companyName)}
                 />
+                <FieldError message={companyErrors.companyName} />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-slate-700 font-semibold block mb-1">Tên viết tắt *</label>
+                  <label htmlFor="shortName" className="text-slate-700 font-semibold block mb-1">Tên viết tắt <RequiredMark /></label>
                   <input
+                    id="shortName"
+                    data-field="shortName"
                     type="text"
                     value={companyForm.shortName || ''}
-                    onChange={e => setCompanyForm(p => ({ ...p, shortName: e.target.value }))}
+                    onChange={e => { setCompanyForm(p => ({ ...p, shortName: e.target.value })); setCompanyErrors(p => ({ ...p, shortName: '' })); }}
                     placeholder="Logistics Toàn Cầu"
-                    className="w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
+                    className={getFieldErrorClass(Boolean(companyErrors.shortName), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500')}
+                    aria-invalid={Boolean(companyErrors.shortName)}
                   />
+                  <FieldError message={companyErrors.shortName} />
                 </div>
                 <div>
-                  <label className="text-slate-700 font-semibold block mb-1">Mã số thuế *</label>
+                  <label htmlFor="taxCode" className="text-slate-700 font-semibold block mb-1">Mã số thuế <RequiredMark /></label>
                   <input
+                    id="taxCode"
+                    data-field="taxCode"
                     type="text"
                     value={companyForm.taxCode || ''}
-                    onChange={e => setCompanyForm(p => ({ ...p, taxCode: e.target.value }))}
+                    onChange={e => { setCompanyForm(p => ({ ...p, taxCode: e.target.value })); setCompanyErrors(p => ({ ...p, taxCode: '' })); }}
                     placeholder="0312345678"
-                    className="w-full p-2.5 rounded-xl border border-slate-200 font-mono outline-none focus:ring-2 focus:ring-brand-500"
+                    className={getFieldErrorClass(Boolean(companyErrors.taxCode), 'w-full p-2.5 rounded-xl border border-slate-200 font-mono outline-none focus:ring-2 focus:ring-brand-500')}
+                    aria-invalid={Boolean(companyErrors.taxCode)}
                   />
+                  <FieldError message={companyErrors.taxCode} />
                 </div>
               </div>
 
               <div>
-                <label className="text-slate-700 font-semibold block mb-1">Địa chỉ trụ sở</label>
+                <label htmlFor="companyAddress" className="text-slate-700 font-semibold block mb-1">Địa chỉ trụ sở <RequiredMark /></label>
                 <input
+                  id="companyAddress"
+                  data-field="address"
                   type="text"
                   value={companyForm.address || ''}
-                  onChange={e => setCompanyForm(p => ({ ...p, address: e.target.value }))}
+                  onChange={e => { setCompanyForm(p => ({ ...p, address: e.target.value })); setCompanyErrors(p => ({ ...p, address: '' })); }}
                   placeholder="Số 10 Mai Chí Thọ, TP. Thủ Đức..."
-                  className="w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
+                  className={getFieldErrorClass(Boolean(companyErrors.address), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500')}
+                  aria-invalid={Boolean(companyErrors.address)}
                 />
+                <FieldError message={companyErrors.address} />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-slate-700 font-semibold block mb-1">Người đại diện</label>
+                  <label htmlFor="representativeName" className="text-slate-700 font-semibold block mb-1">Người đại diện <RequiredMark /></label>
                   <input
+                    id="representativeName"
+                    data-field="representativeName"
                     type="text"
                     value={companyForm.representativeName || ''}
-                    onChange={e => setCompanyForm(p => ({ ...p, representativeName: e.target.value }))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
+                    onChange={e => { setCompanyForm(p => ({ ...p, representativeName: e.target.value })); setCompanyErrors(p => ({ ...p, representativeName: '' })); }}
+                    className={getFieldErrorClass(Boolean(companyErrors.representativeName), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500')}
+                    aria-invalid={Boolean(companyErrors.representativeName)}
                   />
+                  <FieldError message={companyErrors.representativeName} />
                 </div>
                 <div>
-                  <label className="text-slate-700 font-semibold block mb-1">Số điện thoại</label>
+                  <label htmlFor="representativePhone" className="text-slate-700 font-semibold block mb-1">Số điện thoại <RequiredMark /></label>
                   <input
+                    id="representativePhone"
+                    data-field="representativePhone"
                     type="text"
                     value={companyForm.representativePhone || ''}
-                    onChange={e => setCompanyForm(p => ({ ...p, representativePhone: e.target.value }))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
+                    onChange={e => { setCompanyForm(p => ({ ...p, representativePhone: e.target.value })); setCompanyErrors(p => ({ ...p, representativePhone: '' })); }}
+                    className={getFieldErrorClass(Boolean(companyErrors.representativePhone), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500')}
+                    aria-invalid={Boolean(companyErrors.representativePhone)}
                   />
+                  <FieldError message={companyErrors.representativePhone} />
                 </div>
               </div>
 
               <div>
-                <label className="text-slate-700 font-semibold block mb-1">Email liên hệ</label>
+                <label htmlFor="representativeEmail" className="text-slate-700 font-semibold block mb-1">Email liên hệ <RequiredMark /></label>
                 <input
+                  id="representativeEmail"
+                  data-field="representativeEmail"
                   type="email"
                   value={companyForm.representativeEmail || ''}
-                  onChange={e => setCompanyForm(p => ({ ...p, representativeEmail: e.target.value }))}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
+                  onChange={e => { setCompanyForm(p => ({ ...p, representativeEmail: e.target.value })); setCompanyErrors(p => ({ ...p, representativeEmail: '' })); }}
+                  className={getFieldErrorClass(Boolean(companyErrors.representativeEmail), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500')}
+                  aria-invalid={Boolean(companyErrors.representativeEmail)}
                 />
+                <FieldError message={companyErrors.representativeEmail} />
               </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <button
-                onClick={() => { setShowAddCompanyModal(false); setEditingCompany(null); }}
+                onClick={() => { setShowAddCompanyModal(false); setEditingCompany(null); setCompanyErrors({}); }}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
               >
                 Hủy
               </button>
               <button
-                onClick={() => {
-                  if (editingCompany) {
-                    const res = updateCompany(editingCompany.id, companyForm);
-                    alert(res.message);
-                    if (res.success) setEditingCompany(null);
-                  } else {
-                    if (!companyForm.companyName || !companyForm.taxCode || !companyForm.shortName) {
-                      alert('Vui lòng nhập đầy đủ Tên công ty, Tên viết tắt và Mã số thuế.');
-                      return;
-                    }
-                    const res = addCompany({
-                      companyName: companyForm.companyName!,
-                      shortName: companyForm.shortName!,
-                      taxCode: companyForm.taxCode!,
-                      businessType: companyForm.businessType || 'FORWARDER',
-                      address: companyForm.address || 'TP. Hồ Chí Minh',
-                      representativeName: companyForm.representativeName || 'Đại diện',
-                      representativePhone: companyForm.representativePhone || '0901234567',
-                      representativeEmail: companyForm.representativeEmail || 'contact@example.com',
-                      verificationStatus: (companyForm.verificationStatus as CompanyStatus) || 'VERIFIED',
-                    });
-                    alert(res.message);
-                    if (res.success) setShowAddCompanyModal(false);
-                  }
-                }}
+                onClick={handleSaveCompany}
                 className="px-4 py-2 text-xs font-bold bg-brand-600 hover:bg-brand-500 text-white rounded-xl shadow-sm"
               >
                 {editingCompany ? 'Lưu Thay Đổi' : 'Tạo Doanh Nghiệp'}
@@ -862,32 +1031,45 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
               </button>
             </div>
             <div className="space-y-3 text-xs">
+              <FormErrorSummary errors={carrierErrors} />
               <div>
-                <label className="text-slate-700 font-semibold block mb-1">Số văn bản RU của Hãng tàu *</label>
+                <label htmlFor="carrierRef" className="text-slate-700 font-semibold block mb-1">Số văn bản RU của Hãng tàu <RequiredMark /></label>
                 <input
+                  id="carrierRef"
+                  data-field="carrierRef"
                   type="text"
                   value={carrierRef}
-                  onChange={e => setCarrierRef(e.target.value)}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 font-mono uppercase outline-none focus:ring-2 focus:ring-brand-500"
+                  onChange={e => { setCarrierRef(e.target.value); setCarrierErrors(p => ({ ...p, carrierRef: '' })); }}
+                  className={getFieldErrorClass(Boolean(carrierErrors.carrierRef), 'w-full p-2.5 rounded-lg border border-slate-200 font-mono uppercase outline-none focus:ring-2 focus:ring-brand-500')}
+                  aria-invalid={Boolean(carrierErrors.carrierRef)}
                 />
+                <FieldError message={carrierErrors.carrierRef} />
               </div>
               <div>
-                <label className="text-slate-700 font-semibold block mb-1">Tên file công văn đính kèm *</label>
+                <label htmlFor="evidenceFile" className="text-slate-700 font-semibold block mb-1">Tên file công văn đính kèm <RequiredMark /></label>
                 <input
+                  id="evidenceFile"
+                  data-field="evidenceFile"
                   type="text"
                   value={evidenceFile}
-                  onChange={e => setEvidenceFile(e.target.value)}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
+                  onChange={e => { setEvidenceFile(e.target.value); setCarrierErrors(p => ({ ...p, evidenceFile: '' })); }}
+                  className={getFieldErrorClass(Boolean(carrierErrors.evidenceFile), 'w-full p-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500')}
+                  aria-invalid={Boolean(carrierErrors.evidenceFile)}
                 />
+                <FieldError message={carrierErrors.evidenceFile} />
               </div>
               <div>
-                <label className="text-slate-700 font-semibold block mb-1">Thời hạn hiệu lực *</label>
+                <label htmlFor="validUntil" className="text-slate-700 font-semibold block mb-1">Thời hạn hiệu lực <RequiredMark /></label>
                 <input
+                  id="validUntil"
+                  data-field="validUntil"
                   type="datetime-local"
                   value={validUntil}
-                  onChange={e => setValidUntil(e.target.value)}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
+                  onChange={e => { setValidUntil(e.target.value); setCarrierErrors(p => ({ ...p, validUntil: '' })); }}
+                  className={getFieldErrorClass(Boolean(carrierErrors.validUntil), 'w-full p-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500')}
+                  aria-invalid={Boolean(carrierErrors.validUntil)}
                 />
+                <FieldError message={carrierErrors.validUntil} />
               </div>
             </div>
             <div className="flex justify-between gap-2 pt-2">
@@ -927,9 +1109,12 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
               </button>
             </div>
             <div className="space-y-3 text-xs">
+              <FormErrorSummary errors={caseErrors} />
               <div>
-                <label className="text-slate-700 font-semibold block mb-1">Xác định lỗi thuộc bên *</label>
+                <label htmlFor="faultParty" className="text-slate-700 font-semibold block mb-1">Xác định lỗi thuộc bên <RequiredMark /></label>
                 <select
+                  id="faultParty"
+                  data-field="faultParty"
                   value={faultParty}
                   onChange={e => setFaultParty(e.target.value as typeof faultParty)}
                   className="w-full p-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
@@ -942,14 +1127,18 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                 </select>
               </div>
               <div>
-                <label className="text-slate-700 font-semibold block mb-1">Tóm tắt kết luận của Ops *</label>
+                <label htmlFor="caseSummary" className="text-slate-700 font-semibold block mb-1">Tóm tắt kết luận của Ops <RequiredMark /></label>
                 <textarea
+                  id="caseSummary"
+                  data-field="caseSummary"
                   value={caseSummary}
-                  onChange={e => setCaseSummary(e.target.value)}
+                  onChange={e => { setCaseSummary(e.target.value); setCaseErrors(p => ({ ...p, caseSummary: '' })); }}
                   placeholder="Mô tả phương án xử lý, bồi hoàn hoặc kết thúc tranh chấp..."
-                  className="w-full p-3 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
+                  className={getFieldErrorClass(Boolean(caseErrors.caseSummary), 'w-full p-3 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500')}
+                  aria-invalid={Boolean(caseErrors.caseSummary)}
                   rows={3}
                 />
+                <FieldError message={caseErrors.caseSummary} />
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">

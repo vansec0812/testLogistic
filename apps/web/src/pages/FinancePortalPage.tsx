@@ -24,6 +24,8 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { PaymentOrder, PaymentOrderStatus } from '../types';
+import { FieldErrors, FieldError, FormErrorSummary, RequiredMark, getFieldErrorClass, scrollToFirstFieldError } from '../components/FormValidation';
+import { required, positiveNumber, setError } from '../lib/formValidation';
 
 interface FinancePortalPageProps {
   setCurrentTab?: (tab: string) => void;
@@ -44,6 +46,7 @@ export const FinancePortalPage: React.FC<FinancePortalPageProps> = ({
   const [settleModalOrder, setSettleModalOrder] = useState<{ txnId: string; party: 'A' | 'B'; order: PaymentOrder } | null>(null);
   const [bankRefInput, setBankRefInput] = useState('');
   const [paidAmountInput, setPaidAmountInput] = useState<number>(0);
+  const [settleErrors, setSettleErrors] = useState<FieldErrors>({});
 
   // All payment orders flattened
   const allPaymentOrders = transactions.flatMap(t => {
@@ -74,20 +77,25 @@ export const FinancePortalPage: React.FC<FinancePortalPageProps> = ({
 
   const handleConfirmSettle = () => {
     if (!settleModalOrder) return;
-    if (!bankRefInput.trim()) { alert('Vui lòng nhập mã tham chiếu ngân hàng'); return; }
-    if (paidAmountInput <= 0) { alert('Số tiền phải lớn hơn 0'); return; }
-
-    const res = settlePayment(
-      settleModalOrder.txnId,
-      settleModalOrder.party,
-      bankRefInput,
-      paidAmountInput
-    );
+    const errors: FieldErrors = {};
+    setError(errors, 'bankRefInput', required(bankRefInput, 'Vui lòng nhập mã tham chiếu ngân hàng.'));
+    setError(errors, 'paidAmountInput', positiveNumber(paidAmountInput, 'Số tiền thực tế nhận phải lớn hơn 0.'));
+    if (paidAmountInput !== settleModalOrder.order.amountVnd) {
+      errors.paidAmountInput = `Số tiền phải đúng bằng ${formatVnd(settleModalOrder.order.amountVnd)}.`;
+    }
+    setSettleErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      scrollToFirstFieldError(errors);
+      return;
+    }
+    const res = settlePayment(settleModalOrder.txnId, settleModalOrder.party, bankRefInput.trim(), paidAmountInput);
     if (res.success) {
       alert(res.message);
       setSettleModalOrder(null);
+      setSettleErrors({});
     } else {
-      alert(res.message);
+      setSettleErrors({ bankRefInput: res.message });
+      scrollToFirstFieldError({ bankRefInput: res.message });
     }
   };
 
@@ -297,6 +305,7 @@ export const FinancePortalPage: React.FC<FinancePortalPageProps> = ({
                 <X className="w-5 h-5" />
               </button>
             </div>
+            <FormErrorSummary errors={settleErrors} />
 
             <div className="space-y-3 text-xs">
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
@@ -306,23 +315,31 @@ export const FinancePortalPage: React.FC<FinancePortalPageProps> = ({
               </div>
 
               <div>
-                <label className="text-slate-700 font-semibold block mb-1">Mã tham chiếu ngân hàng (FT / Ref ID) *</label>
+                <label className="text-slate-700 font-semibold block mb-1">Mã tham chiếu ngân hàng (FT / Ref ID) <RequiredMark /></label>
                 <input
+                  id="bankRefInput"
+                  data-field="bankRefInput"
                   type="text"
                   value={bankRefInput}
-                  onChange={e => setBankRefInput(e.target.value)}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 font-mono outline-none focus:ring-2 focus:ring-brand-500"
+                  onChange={e => { setSettleErrors({}); setBankRefInput(e.target.value); }}
+                  aria-invalid={Boolean(settleErrors.bankRefInput)}
+                  className={getFieldErrorClass(Boolean(settleErrors.bankRefInput), 'w-full p-2.5 rounded-lg border border-slate-200 font-mono outline-none focus:ring-2 focus:ring-brand-500')}
                 />
+                <FieldError message={settleErrors.bankRefInput} />
               </div>
 
               <div>
-                <label className="text-slate-700 font-semibold block mb-1">Số tiền thực tế nhận được (VND) *</label>
+                <label className="text-slate-700 font-semibold block mb-1">Số tiền thực tế nhận được (VND) <RequiredMark /></label>
                 <input
+                  id="paidAmountInput"
+                  data-field="paidAmountInput"
                   type="number"
                   value={paidAmountInput}
-                  onChange={e => setPaidAmountInput(parseInt(e.target.value) || 0)}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 font-mono outline-none focus:ring-2 focus:ring-brand-500"
+                  onChange={e => { setSettleErrors({}); setPaidAmountInput(parseInt(e.target.value, 10) || 0); }}
+                  aria-invalid={Boolean(settleErrors.paidAmountInput)}
+                  className={getFieldErrorClass(Boolean(settleErrors.paidAmountInput), 'w-full p-2.5 rounded-lg border border-slate-200 font-mono outline-none focus:ring-2 focus:ring-brand-500')}
                 />
+                <FieldError message={settleErrors.paidAmountInput} />
               </div>
             </div>
 

@@ -16,6 +16,9 @@ import {
 } from 'lucide-react';
 import { INITIAL_CARRIERS, INITIAL_DEPOTS } from '../data/mockData';
 import { AiEdoScannerModal, ExtractedEdoData } from '../components/AiEdoScannerModal';
+import { FieldErrors, FieldError, FormErrorSummary, RequiredMark, getFieldErrorClass, scrollToFirstFieldError } from '../components/FormValidation';
+import { required, validateIsoContainer, setError } from '../lib/formValidation';
+import { verifyContainerPhotosWithAI, ContainerPhotoVerificationResult } from '../services/aiService';
 
 export const AssetsPage: React.FC = () => {
   const { assets, addAsset, updateAsset, deleteAsset, offers } = useDatabase();
@@ -25,11 +28,15 @@ export const AssetsPage: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showAiEdoModal, setShowAiEdoModal] = useState(false);
   const [isAiInspecting, setIsAiInspecting] = useState(false);
+  const [isAiVerifying, setIsAiVerifying] = useState(false);
   const [inspectionResult, setInspectionResult] = useState<{ score?: number; text: string; status: string; requiresOpsReview: boolean } | null>(null);
+  const [photoVerification, setPhotoVerification] = useState<ContainerPhotoVerificationResult | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<ContainerAsset | null>(null);
   const [editingAsset, setEditingAsset] = useState<ContainerAsset | null>(null);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [formErrors, setFormErrors] = useState<FieldErrors>({});
+  const [editErrors, setEditErrors] = useState<FieldErrors>({});
 
   // Add form state
   const [form, setForm] = useState<Partial<CreateAssetForm>>({
@@ -72,33 +79,110 @@ export const AssetsPage: React.FC = () => {
     return list;
   }, [assets, currentRole, currentCompany.id, search, filterStatus]);
 
-  const handleAdd = () => {
-    if (!form.containerNumber?.trim()) { showMsg('Số container không được trống.', true); return; }
-    if (!form.currentLocationName?.trim()) { showMsg('Tên vị trí hiện tại không được trống.', true); return; }
+  const clearFormError = (field: string) => {
+    setFormErrors(previous => {
+      if (!previous[field]) return previous;
+      const next = { ...previous };
+      delete next[field];
+      return next;
+    });
+  };
 
+  const clearEditError = (field: string) => {
+    setEditErrors(previous => {
+      if (!previous[field]) return previous;
+      const next = { ...previous };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const validateAssetForm = (): FieldErrors => {
+    const errors: FieldErrors = {};
+    setError(errors, 'containerNumber', validateIsoContainer(form.containerNumber));
+    setError(errors, 'currentLocationName', required(form.currentLocationName, 'Vui lòng nhập vị trí hiện tại của container.'));
+    setError(errors, 'photos', formPhotos.length >= 6 ? undefined : 'Vui lòng tải đủ tối thiểu 6 ảnh container (6 góc IICL).');
+    setError(errors, 'edoEvidence', required(form.edoEvidenceName, 'Vui lòng tải e-DO/hồ sơ tương đương.'));
+    return errors;
+  };
+
+  const handleAdd = async () => {
+    const errors = validateAssetForm();
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      showMsg(Object.values(errors)[0], true);
+      scrollToFirstFieldError(errors);
+      return;
+    }
+
+    const carrierCode = INITIAL_CARRIERS.find(c => c.id === form.carrierId)?.code || form.carrierId || '';
+    setIsAiVerifying(true);
+    setPhotoVerification(null);
+    const verification = await verifyContainerPhotosWithAI(formPhotos, {
+      containerNumber: form.containerNumber!.trim().toUpperCase(),
+      containerType: form.containerType || '40HC',
+      carrierCode,
+      declaredCondition: form.declaredCondition || 'GOOD',
+    });
+    setIsAiVerifying(false);
+    setPhotoVerification(verification);
+
+    if (!verification.success || verification.status === 'ERROR') {
+      const nextErrors = { photos: verification.error || verification.summary || 'Không thể hoàn tất kiểm tra AI ảnh container.' };
+      setFormErrors(previous => ({ ...previous, ...nextErrors }));
+      showMsg(nextErrors.photos, true);
+      scrollToFirstFieldError(nextErrors);
+      return;
+    }
+
+    if (verification.status === 'MISMATCH') {
+      const mismatchMessage = verification.mismatchDetails.length > 0
+        ? verification.mismatchDetails.join(' ')
+        : verification.summary;
+      const nextErrors = { photos: `Ảnh không khớp thông tin đăng ký: ${mismatchMessage}` };
+      setFormErrors(previous => ({ ...previous, ...nextErrors }));
+      showMsg(nextErrors.photos, true);
+      scrollToFirstFieldError(nextErrors);
+      return;
+    }
+
+    const now = new Date().toISOString();
     const result = addAsset({
-      containerNumber: form.containerNumber!,
+      containerNumber: form.containerNumber!.trim().toUpperCase(),
       containerType: form.containerType || '40HC',
       carrierId: form.carrierId || 'CARR-MSK',
       physicalStatus: form.physicalStatus || 'EMPTY_AT_YARD',
       declaredCondition: form.declaredCondition || 'GOOD',
       conditionNotes: form.conditionNotes,
-      currentLocationName: form.currentLocationName!,
+      currentLocationName: form.currentLocationName!.trim(),
       currentLatitude: form.currentLatitude || 10.78,
       currentLongitude: form.currentLongitude || 106.78,
       currentDepotReturnId: form.currentDepotReturnId,
       freeTimeDetentionEnd: form.freeTimeDetentionEnd,
       freeTimeSource: form.freeTimeSource,
       photos: formPhotos,
-      hasEdoDocument: form.hasEdoDocument,
-      edoVerificationStatus: form.edoVerificationStatus,
+      hasEdoDocument: true,
+      edoVerificationStatus: 'UNVERIFIED',
       edoEvidenceName: form.edoEvidenceName,
+      aiInspection: {
+        status: verification.status === 'MATCHED' ? 'CLEAN' : 'ANOMALY',
+        score: verification.score,
+        condition: verification.actualCondition || form.declaredCondition || 'GOOD',
+        summary: verification.summary,
+        details: verification.mismatchDetails,
+        requiresOpsReview: verification.requiresOpsReview,
+        inspectedAt: now,
+      },
     });
     if (result.success) {
-      showMsg(result.message);
+      showMsg(verification.requiresOpsReview
+        ? `${result.message} Ảnh đã nhận đủ nhưng đang chờ Ops kiểm tra thủ công.`
+        : result.message);
       setShowAddForm(false);
       setForm({ containerType: '40HC', physicalStatus: 'EMPTY_AT_YARD', declaredCondition: 'GOOD', carrierId: 'CARR-MSK', currentLatitude: 10.78, currentLongitude: 106.78 });
       setFormPhotos([]);
+      setFormErrors({});
+      setPhotoVerification(null);
     } else {
       showMsg(result.message, true);
     }
@@ -110,6 +194,7 @@ export const AssetsPage: React.FC = () => {
       return;
     }
     setEditingAsset(asset);
+    setEditErrors({});
     setEditForm({
       declaredCondition: asset.declaredCondition,
       physicalStatus: asset.physicalStatus,
@@ -121,16 +206,27 @@ export const AssetsPage: React.FC = () => {
 
   const handleSaveEdit = () => {
     if (!editingAsset) return;
+    const errors: FieldErrors = {};
+    setError(errors, 'edit-currentLocationName', required(editForm.currentLocationName, 'Vui lòng nhập vị trí hiện tại của container.'));
+    if (editForm.freeTimeDetentionEnd && new Date(editForm.freeTimeDetentionEnd).getTime() <= Date.now()) {
+      errors['edit-freeTimeDetentionEnd'] = 'Hạn detention phải là thời điểm trong tương lai.';
+    }
+    setEditErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      showMsg(Object.values(errors)[0], true);
+      scrollToFirstFieldError(errors);
+      return;
+    }
     const result = updateAsset(editingAsset.id, {
       ...editForm,
-      locationObservedAt: new Date().toISOString()
+      currentLocationName: editForm.currentLocationName!.trim(),
+      locationObservedAt: new Date().toISOString(),
     });
     showMsg(result.message, !result.success);
     if (result.success) {
       setEditingAsset(null);
-      if (selectedAsset?.id === editingAsset.id) {
-        setSelectedAsset(null);
-      }
+      setEditErrors({});
+      if (selectedAsset?.id === editingAsset.id) setSelectedAsset(null);
     }
   };
 
@@ -196,6 +292,8 @@ export const AssetsPage: React.FC = () => {
   const handleFormPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+    clearFormError('photos');
+    setPhotoVerification(null);
     const acceptedFiles = Array.from(files).filter(file => file.type.startsWith('image/') && file.size <= 10 * 1024 * 1024);
     if (acceptedFiles.length !== files.length) {
       showMsg('Chỉ nhận ảnh hợp lệ tối đa 10MB mỗi tệp.', true);
@@ -212,6 +310,7 @@ export const AssetsPage: React.FC = () => {
   const handleEdoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    clearFormError('edoEvidence');
     const validType = file.type === 'application/pdf' || file.type.startsWith('image/');
     if (!validType || file.size > 20 * 1024 * 1024) {
       showMsg('e-DO chỉ nhận PDF/ảnh, tối đa 20MB.', true);
@@ -298,7 +397,7 @@ export const AssetsPage: React.FC = () => {
         <div>
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
             <Boxes className="w-6 h-6 text-blue-600" />
-            <span>Quản lý Vỏ Container (Assets CRUD)</span>
+            <span>Quản lý Vỏ Container</span>
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
             {currentRole === 'ENTERPRISE_A' ? `${filtered.length} container thuộc quyền quản lý của ${currentCompany.shortName}` : `${filtered.length} container trong toàn hệ thống`}
@@ -346,21 +445,26 @@ export const AssetsPage: React.FC = () => {
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="font-bold text-slate-900 flex items-center gap-2 text-sm sm:text-base">
               <Plus className="w-4 h-4 text-blue-600" />
-              <span>ĐĂNG KÝ VỎ CONTAINER MỚI (CREATE)</span>
+              <span>ĐĂNG KÝ VỎ CONTAINER MỚI</span>
             </h3>
             <button onClick={() => setShowAddForm(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
               <X className="w-5 h-5" />
             </button>
           </div>
+          <FormErrorSummary errors={formErrors} />
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-              <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-1">Số Container ISO 6346 *</label>
+              <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-1">Số Container ISO 6346 <RequiredMark /></label>
               <input
+                id="asset-containerNumber"
+                data-field="containerNumber"
                 value={form.containerNumber || ''}
-                onChange={e => setForm(p => ({ ...p, containerNumber: e.target.value.toUpperCase() }))}
+                onChange={e => { clearFormError('containerNumber'); setForm(p => ({ ...p, containerNumber: e.target.value.toUpperCase() })); }}
                 placeholder="MSKU1234567"
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase focus:ring-2 focus:ring-blue-500 outline-none"
+                aria-invalid={Boolean(formErrors.containerNumber)}
+                className={getFieldErrorClass(Boolean(formErrors.containerNumber), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase focus:ring-2 focus:ring-blue-500 outline-none')}
               />
+              <FieldError message={formErrors.containerNumber} />
             </div>
             <div>
               <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-1">Loại Container</label>
@@ -399,13 +503,17 @@ export const AssetsPage: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-1">Vị trí hiện tại *</label>
+              <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-1">Vị trí hiện tại <RequiredMark /></label>
               <input
+                id="asset-currentLocationName"
+                data-field="currentLocationName"
                 value={form.currentLocationName || ''}
-                onChange={e => setForm(p => ({ ...p, currentLocationName: e.target.value }))}
+                onChange={e => { clearFormError('currentLocationName'); setForm(p => ({ ...p, currentLocationName: e.target.value })); }}
                 placeholder="Kho CFS Cát Lái, Kho KCN Tân Tạo..."
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-brand-500 outline-none"
+                aria-invalid={Boolean(formErrors.currentLocationName)}
+                className={getFieldErrorClass(Boolean(formErrors.currentLocationName), 'w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-brand-500 outline-none')}
               />
+              <FieldError message={formErrors.currentLocationName} />
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-700 block mb-1">Hạn Detention (Hạn lưu vỏ)</label>
@@ -427,11 +535,12 @@ export const AssetsPage: React.FC = () => {
             </div>
           </div>
           {/* Photo Upload Section */}
-          <div className="col-span-full border-t border-slate-100 pt-4 mt-2">
+          <div id="asset-photos" data-field="photos" className={getFieldErrorClass(Boolean(formErrors.photos), 'col-span-full border-t border-slate-100 pt-4 mt-2')}>
             <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-2 flex items-center gap-2">
               <Camera className="w-4 h-4 text-blue-600" />
               Ảnh tình trạng container ({formPhotos.length}/6)
             </label>
+            <p className="text-xs font-semibold text-red-600 mb-2"><RequiredMark /> Bắt buộc tối thiểu 6 ảnh, đúng 6 góc container</p>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-3">
               {formPhotos.map((url, idx) => (
                 <div key={idx} className="relative h-20 rounded-lg overflow-hidden bg-slate-100 border border-slate-200">
@@ -455,8 +564,25 @@ export const AssetsPage: React.FC = () => {
             )}
             <p className="text-xs text-slate-400 mt-1.5">Khuyến nghị: Chụp 6 góc (mặt trước, sau, trái, phải, sàn, trần) để đạt chuẩn IICL-5</p>
           </div>
-          <div className="border-t border-slate-100 pt-4">
-            <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-2">e-DO / hồ sơ tương đương *</label>
+            <FieldError message={formErrors.photos} />
+            {photoVerification && (
+              <div className={`mt-2 rounded-xl border px-3 py-2 text-xs ${
+                photoVerification.status === 'MISMATCH' || photoVerification.status === 'ERROR'
+                  ? 'border-red-300 bg-red-50 text-red-800'
+                  : photoVerification.status === 'MANUAL_REVIEW'
+                    ? 'border-amber-300 bg-amber-50 text-amber-800'
+                    : 'border-emerald-300 bg-emerald-50 text-emerald-800'
+              }`} role="status">
+                <p className="font-bold">{photoVerification.summary}</p>
+                {photoVerification.mismatchDetails.length > 0 && (
+                  <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                    {photoVerification.mismatchDetails.map((detail, index) => <li key={index}>{detail}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
+          <div id="asset-edoEvidence" data-field="edoEvidence" className={getFieldErrorClass(Boolean(formErrors.edoEvidence), 'border-t border-slate-100 pt-4')}>
+            <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-2">e-DO / hồ sơ tương đương <RequiredMark /></label>
             <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-dashed border-teal-300 bg-teal-50 text-teal-700 text-xs font-semibold cursor-pointer hover:bg-teal-100">
               <UploadCloud className="w-4 h-4" />
               <span>{form.edoEvidenceName || 'Tải e-DO lên (PDF/ảnh, tối đa 20MB)'}</span>
@@ -464,11 +590,13 @@ export const AssetsPage: React.FC = () => {
             </label>
             {form.edoEvidenceName && <p className="text-xs text-amber-700 mt-1">Đã nhận file nhưng chưa VERIFIED: Ops phải đối chiếu cont, carrier, depot, validity và return deadline.</p>}
           </div>
+            <p className="text-xs font-semibold text-red-600 mt-1"><RequiredMark /> Bắt buộc có e-DO/hồ sơ tương đương</p>
+            <FieldError message={formErrors.edoEvidence} />
           <div className="flex gap-2 justify-end pt-2">
             <button onClick={() => setShowAddForm(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl">
               Hủy
             </button>
-            <button onClick={handleAdd} className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold rounded-xl shadow-sm">
+            <button onClick={handleAdd} disabled={isAiVerifying} className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white text-xs font-bold rounded-xl shadow-sm">
               Lưu Container
             </button>
           </div>
@@ -491,13 +619,17 @@ export const AssetsPage: React.FC = () => {
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="text-slate-700 font-semibold block mb-1">Vị trí hiện tại *</label>
+                <label className="text-slate-700 font-semibold block mb-1">Vị trí hiện tại <RequiredMark /></label>
                 <input
                   type="text"
+                  id="edit-currentLocationName"
+                  data-field="edit-currentLocationName"
                   value={editForm.currentLocationName || ''}
-                  onChange={e => setEditForm(p => ({ ...p, currentLocationName: e.target.value }))}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
+                  onChange={e => { clearEditError('edit-currentLocationName'); setEditForm(p => ({ ...p, currentLocationName: e.target.value })); }}
+                  aria-invalid={Boolean(editErrors['edit-currentLocationName'])}
+                  className={getFieldErrorClass(Boolean(editErrors['edit-currentLocationName']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500')}
                 />
+                <FieldError message={editErrors['edit-currentLocationName']} />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -532,11 +664,15 @@ export const AssetsPage: React.FC = () => {
               <div>
                 <label className="text-slate-700 font-semibold block mb-1">Hạn Detention</label>
                 <input
+                  id="edit-freeTimeDetentionEnd"
+                  data-field="edit-freeTimeDetentionEnd"
                   type="datetime-local"
                   value={editForm.freeTimeDetentionEnd ? editForm.freeTimeDetentionEnd.slice(0, 16) : ''}
                   onChange={e => setEditForm(p => ({ ...p, freeTimeDetentionEnd: new Date(e.target.value).toISOString() }))}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
+                  aria-invalid={Boolean(editErrors['edit-freeTimeDetentionEnd'])}
+                  className={getFieldErrorClass(Boolean(editErrors['edit-freeTimeDetentionEnd']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500')}
                 />
+                <FieldError message={editErrors['edit-freeTimeDetentionEnd']} />
               </div>
 
               <div>

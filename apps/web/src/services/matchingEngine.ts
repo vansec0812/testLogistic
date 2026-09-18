@@ -201,6 +201,8 @@ export function findMatchesForRequest(
       scoreC,
       scoreM,
       quote,
+      estimatedShippingMinutes: tAbMinutes,
+      trustScoreA: (offer.companyId === 'COMP-A01' ? 94 : offer.companyId === 'COMP-C01' ? 87 : 92),
     });
   }
 

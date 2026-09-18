@@ -10,7 +10,7 @@ import { TransactionStepper } from '../components/TransactionStepper';
 import { PricingBreakdownCard } from '../components/PricingBreakdownCard';
 import { TransactionStatusBadge, ConditionBadge } from '../components/StatusBadge';
 import { formatVnd, formatDateTime, formatRelativeTime } from '../lib/utils';
-import { 
+import {
   FileText, 
   Ship, 
   CreditCard, 
@@ -33,6 +33,8 @@ import {
   Send,
   X
 } from 'lucide-react';
+import { FieldErrors, FieldError, FormErrorSummary, RequiredMark, getFieldErrorClass, scrollToFirstFieldError } from '../components/FormValidation';
+import { required, validFutureDate, setError } from '../lib/formValidation';
 
 interface TransactionsPageProps {
   selectedTxnId?: string;
@@ -115,13 +117,111 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
   const [cancelReason, setCancelReason] = useState('');
   const [showHoldModal, setShowHoldModal] = useState(false);
   const [holdReason, setHoldReason] = useState('');
+  const [carrierErrors, setCarrierErrors] = useState<FieldErrors>({});
+  const [inspectionErrors, setInspectionErrors] = useState<FieldErrors>({});
+  const [cancelErrors, setCancelErrors] = useState<FieldErrors>({});
+  const [holdErrors, setHoldErrors] = useState<FieldErrors>({});
+
+  const handleCarrierApproval = () => {
+    if (!activeTxn) return;
+    const errors: FieldErrors = {};
+    setError(errors, 'carrierRef', required(carrierRef, 'Vui lòng nhập số văn bản RU của hãng tàu.'));
+    setError(errors, 'evidenceName', required(evidenceName, 'Vui lòng nhập tên file bằng chứng RU.'));
+    setError(errors, 'carrierExpiry', validFutureDate(carrierExpiry, 'hạn hiệu lực RU'));
+    setCarrierErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      scrollToFirstFieldError(errors);
+      return;
+    }
+    const result = opsApproveCarrier(activeTxn.id, carrierRef.trim(), evidenceName.trim(), new Date(carrierExpiry).toISOString());
+    if (!result.success) {
+      setCarrierErrors({ carrierRef: result.message });
+      scrollToFirstFieldError({ carrierRef: result.message });
+      return;
+    }
+    setCarrierErrors({});
+  };
+
+  const handleInspectionSubmit = () => {
+    if (!activeTxn) return;
+    const errors: FieldErrors = {};
+    if (![chkFloor, chkWalls, chkRoof, chkDoors, chkGaskets, chkUndercarriage].every(Boolean)) {
+      errors.inspectionChecklist = 'Vui lòng xác nhận đủ 6 hạng mục kiểm tra IICL.';
+    }
+    if (isDiscrepancy && !discrepancyNote.trim()) {
+      errors.discrepancyNote = 'Vui lòng mô tả chi tiết sai lệch/hư hỏng thực tế.';
+    }
+    setInspectionErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      scrollToFirstFieldError(errors);
+      return;
+    }
+    const result = submitInspection(activeTxn.id, {
+      inspectorName: 'Nguyễn Văn Tài (Tài xế/Đại diện bên B)',
+      checklistFloor: chkFloor,
+      checklistWalls: chkWalls,
+      checklistRoof: chkRoof,
+      checklistDoors: chkDoors,
+      checklistGaskets: chkGaskets,
+      checklistUndercarriage: chkUndercarriage,
+      isDiscrepancyFound: isDiscrepancy,
+      discrepancyNotes: discrepancyNote.trim(),
+      discrepancySeverity: isDiscrepancy ? discrepancySeverity : undefined,
+    });
+    if (!result.success) {
+      setInspectionErrors({ inspectionChecklist: result.message });
+      scrollToFirstFieldError({ inspectionChecklist: result.message });
+    } else {
+      setInspectionErrors({});
+    }
+  };
+
+  const handleCancelTransaction = () => {
+    if (!activeTxn) return;
+    const errors: FieldErrors = {};
+    setError(errors, 'cancelReason', required(cancelReason, 'Vui lòng nhập lý do hủy giao dịch.'));
+    setCancelErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      scrollToFirstFieldError(errors);
+      return;
+    }
+    const result = cancelTransaction(activeTxn.id, cancelReason.trim());
+    if (!result.success) {
+      setCancelErrors({ cancelReason: result.message });
+      scrollToFirstFieldError({ cancelReason: result.message });
+      return;
+    }
+    setShowCancelModal(false);
+    setCancelReason('');
+    setCancelErrors({});
+  };
+
+  const handleHoldTransaction = () => {
+    if (!activeTxn) return;
+    const errors: FieldErrors = {};
+    setError(errors, 'holdReason', required(holdReason, 'Vui lòng nhập lý do tạm dừng giao dịch.'));
+    setHoldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      scrollToFirstFieldError(errors);
+      return;
+    }
+    const result = toggleHold(activeTxn.id, true, holdReason.trim());
+    if (!result.success) {
+      setHoldErrors({ holdReason: result.message });
+      scrollToFirstFieldError({ holdReason: result.message });
+      return;
+    }
+    setShowHoldModal(false);
+    setHoldReason('');
+    setHoldErrors({});
+  };
 
   if (!activeTxn) {
     return (
       <div className="py-16 text-center space-y-3 bg-white border border-slate-200 rounded-2xl p-8">
         <FileText className="w-12 h-12 text-slate-300 mx-auto" />
         <h3 className="text-lg font-bold text-slate-700">Chưa có giao dịch nào</h3>
-        <p className="text-xs text-slate-500">Hãy vào mục Nhu cầu (Requests) để ghép đôi và giữ chỗ container.</p>
+        <p className="text-xs text-slate-500">Hãy vào mục Nhu cầu để ghép đôi và giữ chỗ container.</p>
       </div>
     );
   }
@@ -335,6 +435,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
               </div>
 
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-4 text-xs text-slate-700">
+                <FormErrorSummary errors={carrierErrors} />
                 <p>
                   Hãng tàu ({activeTxn.asset.carrierCode}) cấp văn bản chấp thuận cho phép container {activeTxn.asset.containerNumber} được tái sử dụng cho Booking của Bên B. 
                   Bộ phận Điều phối (Ops) xác thực số công văn và đính kèm bằng chứng PDF để chuyển giao dịch sang bước Thanh toán.
@@ -342,34 +443,46 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-slate-700 font-semibold block mb-1">Số văn bản RU của Hãng tàu *</label>
+                    <label className="text-slate-700 font-semibold block mb-1">Số văn bản RU của Hãng tàu <RequiredMark /></label>
                     <input
+                      id="carrierRef"
+                      data-field="carrierRef"
                       type="text"
                       value={carrierRef}
-                      onChange={(e) => setCarrierRef(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none uppercase focus:ring-2 focus:ring-brand-500"
+                      onChange={(e) => { setCarrierErrors({}); setCarrierRef(e.target.value); }}
+                      aria-invalid={Boolean(carrierErrors.carrierRef)}
+                      className={getFieldErrorClass(Boolean(carrierErrors.carrierRef), 'w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none uppercase focus:ring-2 focus:ring-brand-500')}
                       required
                     />
+                    <FieldError message={carrierErrors.carrierRef} />
                   </div>
                   <div>
-                    <label className="text-slate-700 font-semibold block mb-1">Tên file công văn đính kèm *</label>
+                    <label className="text-slate-700 font-semibold block mb-1">Tên file công văn đính kèm <RequiredMark /></label>
                     <input
+                      id="evidenceName"
+                      data-field="evidenceName"
                       type="text"
                       value={evidenceName}
-                      onChange={(e) => setEvidenceName(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus:ring-2 focus:ring-brand-500"
+                      onChange={(e) => { setCarrierErrors({}); setEvidenceName(e.target.value); }}
+                      aria-invalid={Boolean(carrierErrors.evidenceName)}
+                      className={getFieldErrorClass(Boolean(carrierErrors.evidenceName), 'w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus:ring-2 focus:ring-brand-500')}
                       required
                     />
+                    <FieldError message={carrierErrors.evidenceName} />
                   </div>
                   <div>
-                    <label className="text-slate-700 font-semibold block mb-1">Hiệu lực đến *</label>
+                    <label className="text-slate-700 font-semibold block mb-1">Hiệu lực đến <RequiredMark /></label>
                     <input
+                      id="carrierExpiry"
+                      data-field="carrierExpiry"
                       type="datetime-local"
                       value={carrierExpiry}
-                      onChange={(e) => setCarrierExpiry(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus:ring-2 focus:ring-brand-500"
+                      onChange={(e) => { setCarrierErrors({}); setCarrierExpiry(e.target.value); }}
+                      aria-invalid={Boolean(carrierErrors.carrierExpiry)}
+                      className={getFieldErrorClass(Boolean(carrierErrors.carrierExpiry), 'w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus:ring-2 focus:ring-brand-500')}
                       required
                     />
+                    <FieldError message={carrierErrors.carrierExpiry} />
                   </div>
                 </div>
 
@@ -390,8 +503,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       </button>
                       <button
                         onClick={() => {
-                          const res = opsApproveCarrier(activeTxn.id, carrierRef, evidenceName, new Date(carrierExpiry).toISOString());
-                          if (!res.success) alert(res.message);
+                          handleCarrierApproval();
                         }}
                         className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold flex items-center gap-2 shadow-sm text-xs"
                       >
@@ -569,33 +681,35 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
               {/* 6 hạng mục kiểm tra theo tiêu chuẩn IICL */}
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-4 text-xs text-slate-700">
-                <div className="font-semibold text-slate-900">Checklist tình trạng vỏ container (IICL Standard):</div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="font-semibold text-slate-900">Checklist tình trạng vỏ container (IICL Standard) <RequiredMark />:</div>
+                <FormErrorSummary errors={inspectionErrors} />
+                <div id="inspectionChecklist" data-field="inspectionChecklist" className={getFieldErrorClass(Boolean(inspectionErrors.inspectionChecklist), 'grid grid-cols-2 sm:grid-cols-3 gap-3')}>
                   <label className="flex items-center gap-2 p-2.5 rounded-lg bg-white border border-slate-200 cursor-pointer shadow-sm">
-                    <input type="checkbox" checked={chkFloor} onChange={e => setChkFloor(e.target.checked)} className="rounded text-brand-600" />
+                    <input type="checkbox" checked={chkFloor} onChange={e => { setChkFloor(e.target.checked); setInspectionErrors(p => ({ ...p, inspectionChecklist: '' })); }} className="rounded text-brand-600" />
                     <span>1. Sàn gỗ khô, sạch</span>
                   </label>
                   <label className="flex items-center gap-2 p-2.5 rounded-lg bg-white border border-slate-200 cursor-pointer shadow-sm">
-                    <input type="checkbox" checked={chkWalls} onChange={e => setChkWalls(e.target.checked)} className="rounded text-brand-600" />
+                    <input type="checkbox" checked={chkWalls} onChange={e => { setChkWalls(e.target.checked); setInspectionErrors(p => ({ ...p, inspectionChecklist: '' })); }} className="rounded text-brand-600" />
                     <span>2. Vách không thủng</span>
                   </label>
                   <label className="flex items-center gap-2 p-2.5 rounded-lg bg-white border border-slate-200 cursor-pointer shadow-sm">
-                    <input type="checkbox" checked={chkRoof} onChange={e => setChkRoof(e.target.checked)} className="rounded text-brand-600" />
+                    <input type="checkbox" checked={chkRoof} onChange={e => { setChkRoof(e.target.checked); setInspectionErrors(p => ({ ...p, inspectionChecklist: '' })); }} className="rounded text-brand-600" />
                     <span>3. Nóc kín nước 100%</span>
                   </label>
                   <label className="flex items-center gap-2 p-2.5 rounded-lg bg-white border border-slate-200 cursor-pointer shadow-sm">
-                    <input type="checkbox" checked={chkDoors} onChange={e => setChkDoors(e.target.checked)} className="rounded text-brand-600" />
+                    <input type="checkbox" checked={chkDoors} onChange={e => { setChkDoors(e.target.checked); setInspectionErrors(p => ({ ...p, inspectionChecklist: '' })); }} className="rounded text-brand-600" />
                     <span>4. Cửa đóng mở nhẹ</span>
                   </label>
                   <label className="flex items-center gap-2 p-2.5 rounded-lg bg-white border border-slate-200 cursor-pointer shadow-sm">
-                    <input type="checkbox" checked={chkGaskets} onChange={e => setChkGaskets(e.target.checked)} className="rounded text-brand-600" />
+                    <input type="checkbox" checked={chkGaskets} onChange={e => { setChkGaskets(e.target.checked); setInspectionErrors(p => ({ ...p, inspectionChecklist: '' })); }} className="rounded text-brand-600" />
                     <span>5. Gioăng cao su kín</span>
                   </label>
                   <label className="flex items-center gap-2 p-2.5 rounded-lg bg-white border border-slate-200 cursor-pointer shadow-sm">
-                    <input type="checkbox" checked={chkUndercarriage} onChange={e => setChkUndercarriage(e.target.checked)} className="rounded text-brand-600" />
+                    <input type="checkbox" checked={chkUndercarriage} onChange={e => { setChkUndercarriage(e.target.checked); setInspectionErrors(p => ({ ...p, inspectionChecklist: '' })); }} className="rounded text-brand-600" />
                     <span>6. Đà đáy vững chắc</span>
                   </label>
                 </div>
+                <FieldError message={inspectionErrors.inspectionChecklist} />
 
                 {/* Photo upload at inspection */}
                 <div className="pt-2 border-t border-slate-200">
@@ -657,14 +771,19 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                           <span>Hư nặng (Không nhận cont - Kích hoạt ON_HOLD)</span>
                         </label>
                       </div>
+                      <label htmlFor="inspection-discrepancyNote" className="block text-xs font-semibold text-rose-700">Mô tả sai lệch/hư hỏng <RequiredMark /></label>
                       <textarea
+                        id="inspection-discrepancyNote"
+                        data-field="discrepancyNote"
                         value={discrepancyNote}
-                        onChange={e => setDiscrepancyNote(e.target.value)}
+                        onChange={e => { setInspectionErrors({}); setDiscrepancyNote(e.target.value); }}
                         placeholder="Mô tả chi tiết sai lệch (vd: thủng nóc 10cm, rách đà đáy)..."
-                        className="w-full px-3 py-2 rounded-lg bg-white border border-rose-300 text-slate-900 outline-none focus:ring-2 focus:ring-rose-400"
+                        aria-invalid={Boolean(inspectionErrors.discrepancyNote)}
+                        className={getFieldErrorClass(Boolean(inspectionErrors.discrepancyNote), 'w-full px-3 py-2 rounded-lg bg-white border border-rose-300 text-slate-900 outline-none focus:ring-2 focus:ring-rose-400')}
                         rows={2}
                         required
                       />
+                      <FieldError message={inspectionErrors.discrepancyNote} />
                     </div>
                   )}
                 </div>
@@ -673,19 +792,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                   {(canSignAsB || canOperate) && (
                     <button
                       onClick={() => {
-                        const res = submitInspection(activeTxn.id, {
-                          inspectorName: 'Nguyễn Văn Tài (Tài xế/Đại diện bên B)',
-                          checklistFloor: chkFloor,
-                          checklistWalls: chkWalls,
-                          checklistRoof: chkRoof,
-                          checklistDoors: chkDoors,
-                          checklistGaskets: chkGaskets,
-                          checklistUndercarriage: chkUndercarriage,
-                          isDiscrepancyFound: isDiscrepancy,
-                          discrepancyNotes: discrepancyNote,
-                          discrepancySeverity: isDiscrepancy ? discrepancySeverity : undefined
-                        });
-                        if (!res.success) alert(res.message);
+                        handleInspectionSubmit();
                       }}
                       className={`px-4 py-2 rounded-lg text-white font-bold text-xs shadow-sm transition-colors ${
                         isDiscrepancy && discrepancySeverity === 'MAJOR'
@@ -888,15 +995,20 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
             <p className="text-xs text-slate-600">
               Việc hủy giao dịch sẽ giải phóng Offer và Request để tham gia ghép đôi mới.
             </p>
+            <FormErrorSummary errors={cancelErrors} />
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Lý do hủy *</label>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Lý do hủy <RequiredMark /></label>
               <textarea
+                id="cancelReason"
+                data-field="cancelReason"
                 value={cancelReason}
-                onChange={e => setCancelReason(e.target.value)}
+                onChange={e => { setCancelErrors({}); setCancelReason(e.target.value); }}
                 placeholder="Nhập lý do hủy giao dịch..."
-                className="w-full p-3 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-brand-500"
+                aria-invalid={Boolean(cancelErrors.cancelReason)}
+                className={getFieldErrorClass(Boolean(cancelErrors.cancelReason), 'w-full p-3 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-brand-500')}
                 rows={3}
               />
+              <FieldError message={cancelErrors.cancelReason} />
             </div>
             <div className="flex justify-end gap-2">
               <button
@@ -906,11 +1018,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                 Đóng
               </button>
               <button
-                onClick={() => {
-                  if (!cancelReason.trim()) { alert('Vui lòng nhập lý do'); return; }
-                  cancelTransaction(activeTxn.id, cancelReason);
-                  setShowCancelModal(false);
-                }}
+                onClick={handleCancelTransaction}
                 className="px-4 py-2 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 text-white"
               >
                 Xác nhận Hủy
@@ -925,7 +1033,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900">Tạm dừng giao dịch (ON_HOLD)</h3>
+              <h3 className="text-base font-bold text-slate-900">Tạm dừng giao dịch</h3>
               <button onClick={() => setShowHoldModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>
@@ -933,15 +1041,20 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
             <p className="text-xs text-slate-600">
               Trạng thái ON_HOLD chặn toàn bộ các bước chuyển trạng thái cho đến khi được Ops gỡ bỏ.
             </p>
+            <FormErrorSummary errors={holdErrors} />
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Lý do tạm dừng *</label>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Lý do tạm dừng <RequiredMark /></label>
               <textarea
+                id="holdReason"
+                data-field="holdReason"
                 value={holdReason}
-                onChange={e => setHoldReason(e.target.value)}
+                onChange={e => { setHoldErrors({}); setHoldReason(e.target.value); }}
                 placeholder="Nhập lý do tạm dừng..."
-                className="w-full p-3 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-brand-500"
+                aria-invalid={Boolean(holdErrors.holdReason)}
+                className={getFieldErrorClass(Boolean(holdErrors.holdReason), 'w-full p-3 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-brand-500')}
                 rows={3}
               />
+              <FieldError message={holdErrors.holdReason} />
             </div>
             <div className="flex justify-end gap-2">
               <button
@@ -951,11 +1064,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                 Đóng
               </button>
               <button
-                onClick={() => {
-                  if (!holdReason.trim()) { alert('Vui lòng nhập lý do'); return; }
-                  toggleHold(activeTxn.id, true, holdReason);
-                  setShowHoldModal(false);
-                }}
+                onClick={handleHoldTransaction}
                 className="px-4 py-2 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white"
               >
                 Xác nhận Tạm dừng

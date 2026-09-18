@@ -362,7 +362,17 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     // Kiểm tra trùng số cont
     const containerValidation = validateContainerNumber(form.containerNumber);
+    if (!form.currentLocationName?.trim()) return { success: false, message: 'Vị trí hiện tại của container là bắt buộc.' };
     if (!containerValidation.isValid) return { success: false, message: containerValidation.message || 'Sá»‘ container khÃ´ng há»£p lá»‡ ISO 6346.' };
+    if (!form.photos || form.photos.length < QA_RULES.offer.minPhotoCount) {
+      return { success: false, message: `Pháº£i táº£i Ä‘á»§ ${QA_RULES.offer.minPhotoCount} áº£nh container trÆ°á»›c khi Ä‘Äƒng kÃ½.` };
+    }
+    if (!form.hasEdoDocument || !form.edoEvidenceName) {
+      return { success: false, message: 'Pháº£i Ä‘Ã­nh kÃ¨m e-DO/há»“ sÆ¡ tÆ°Æ¡ng Ä‘Æ°Æ¡ng trÆ°á»›c khi Ä‘Äƒng kÃ½.' };
+    }
+    if (!form.aiInspection || form.aiInspection.status === 'ERROR') {
+      return { success: false, message: 'Pháº£i hoÃ n táº¥t kiá»ƒm tra AI áº£nh container trÆ°á»›c khi lÆ°u.' };
+    }
     const exists = assets.find(a => a.containerNumber === form.containerNumber.toUpperCase());
     if (exists) {
       return { success: false, message: `Số container ${form.containerNumber} đã tồn tại trong hệ thống.` };
@@ -377,6 +387,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       currentCustodianName: currentCompany.shortName,
       reviewedCondition: undefined,
       photos: form.photos || [],
+      aiInspection: form.aiInspection,
       hasEdoDocument: Boolean(form.hasEdoDocument),
       edoVerificationStatus: form.edoVerificationStatus || 'UNVERIFIED',
       isLocked: false,
@@ -460,39 +471,85 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (currentRole !== 'ENTERPRISE_A' && currentRole !== 'SUPER_ADMIN') {
       return { success: false, message: 'Chỉ Bên A mới có thể tạo Offer nguồn vỏ.' };
     }
-    const asset = assets.find(a => a.id === form.assetId);
-    if (!asset) return { success: false, message: 'Không tìm thấy container.' };
     const ownerCompany = companies.find(c => c.id === currentCompany.id) || currentCompany;
     if (ownerCompany.verificationStatus !== 'VERIFIED') {
       return { success: false, message: 'Doanh nghiệp chưa được Ops xác minh. Chưa thể tạo Offer.' };
     }
-    if (asset.currentCustodianId !== currentCompany.id) {
-      return { success: false, message: 'Container này không thuộc custody của bạn.' };
+    if (!form.pickupLocationName?.trim()) {
+      return { success: false, message: 'Địa điểm lấy cont là bắt buộc.' };
     }
-    if (asset.physicalStatus !== 'EMPTY_AT_YARD' && asset.physicalStatus !== 'EMPTY_AT_DEPOT') {
-      return { success: false, message: 'Chỉ có thể tạo Offer cho container rỗng (EMPTY_AT_YARD/DEPOT).' };
+    if (!form.availableFrom || !form.availableTo || new Date(form.availableTo).getTime() <= new Date(form.availableFrom).getTime()) {
+      return { success: false, message: 'Khung thời gian sẵn sàng không hợp lệ.' };
     }
-    if (!asset.hasEdoDocument || asset.edoVerificationStatus !== 'VERIFIED') {
-      return { success: false, message: 'Offer requires an e-DO verified by Ops.' };
+    if (!Number.isFinite(form.baselineDepotCostVnd) || form.baselineDepotCostVnd <= 0) {
+      return { success: false, message: 'Chi phí baseline T_A phải lớn hơn 0.' };
     }
-    if (!hasRequiredOfferPhotos(asset.photos)) {
-      return { success: false, message: `Offer requires at least ${QA_RULES.offer.minPhotoCount} container photos.` };
+
+    let targetAsset = form.assetId ? assets.find(a => a.id === form.assetId) : undefined;
+
+    // Nếu không có assetId nhưng có containerNumber -> tìm hoặc tạo mới ContainerAsset
+    if (!targetAsset && form.containerNumber?.trim()) {
+      const cleanContNum = form.containerNumber.trim().toUpperCase();
+      targetAsset = assets.find(a => a.containerNumber === cleanContNum);
+      if (!targetAsset) {
+        const carrier = INITIAL_CARRIERS.find(c => c.id === form.carrierId);
+        targetAsset = {
+          id: genId('ASSET'),
+          containerNumber: cleanContNum,
+          containerType: form.containerType || '40HC',
+          carrierId: form.carrierId || 'CARR-MSK',
+          carrierCode: carrier?.code || (form.carrierId ? form.carrierId.replace('CARR-', '') : 'MAERSK'),
+          currentCustodianId: currentCompany.id,
+          currentCustodianName: currentCompany.shortName,
+          physicalStatus: 'EMPTY_AT_YARD',
+          declaredCondition: form.declaredCondition || 'GOOD',
+          conditionNotes: form.conditionNotes || '',
+          currentLocationName: form.pickupLocationName.trim(),
+          currentLatitude: form.pickupLatitude || 10.78,
+          currentLongitude: form.pickupLongitude || 106.78,
+          locationObservedAt: new Date().toISOString(),
+          photos: form.photos || [],
+          hasEdoDocument: true,
+          edoEvidenceName: form.edoFileName || 'eDO_Doc.pdf',
+          edoVerificationStatus: 'UNVERIFIED',
+          isLocked: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        persistAssets([...assets, targetAsset]);
+      }
     }
+
+    if (!targetAsset) {
+      return { success: false, message: 'Vui lòng nhập số Container hoặc chọn container có sẵn.' };
+    }
+
+    if (targetAsset.currentCustodianId !== currentCompany.id) {
+      return { success: false, message: 'Container này không thuộc quyền quản lý của bạn.' };
+    }
+
     const existingOffer = offers.find(
-      o => o.assetId === form.assetId && ['DRAFT', 'UNDER_REVIEW', 'AVAILABLE', 'HELD', 'ALLOCATED'].includes(o.status)
+      o => o.assetId === targetAsset!.id && ['DRAFT', 'UNDER_REVIEW', 'AVAILABLE', 'HELD', 'ALLOCATED'].includes(o.status)
     );
     if (existingOffer) {
-      return { success: false, message: `Container đã có Offer đang hoạt động (${existingOffer.id}).` };
+      return { success: false, message: `Container ${targetAsset.containerNumber} đã có Offer (${existingOffer.id}) đang hoạt động.` };
     }
+
+    const photos = (form.photos && form.photos.length > 0) ? form.photos : targetAsset.photos;
+
     const newOffer: Offer = {
       id: genId('OFR'),
-      assetId: form.assetId,
-      asset,
+      assetId: targetAsset.id,
+      asset: {
+        ...targetAsset,
+        photos,
+        declaredCondition: form.declaredCondition || targetAsset.declaredCondition,
+      },
       companyId: currentCompany.id,
       companyName: ownerCompany.shortName,
-      status: 'DRAFT',
+      status: 'UNDER_REVIEW', // Tự động chuyển sang chờ Ops duyệt
       version: 1,
-      pickupLocationName: form.pickupLocationName,
+      pickupLocationName: form.pickupLocationName.trim(),
       pickupLatitude: form.pickupLatitude,
       pickupLongitude: form.pickupLongitude,
       availableFrom: form.availableFrom,
@@ -501,16 +558,36 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       expectedDepotName: undefined,
       baselineDepotCostVnd: form.baselineDepotCostVnd,
       vehicleRequirements: form.vehicleRequirements,
-      photoUrls: asset.photos,
-      photoChecklistComplete: asset.photos.length >= 6,
-       edoDocumentIds: [asset.edoEvidenceName || `E_DO_${asset.id}`],
+      photoUrls: photos,
+      photoChecklistComplete: photos.length >= 1,
+      edoDocumentIds: [form.edoFileName || `eDO_${targetAsset.containerNumber}.pdf`],
+      edoFileName: form.edoFileName || 'eDO_Document.pdf',
+      edoNumber: form.edoNumber || `EDO-${Date.now().toString().slice(-6)}`,
+      conditionNotes: form.conditionNotes || targetAsset.conditionNotes || '',
+      aiCheck: form.aiCheck,
+      requiresOpsManualReview: Boolean(form.requiresOpsManualReview),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+
     persistOffers([...offers, newOffer]);
-    addAudit('OFFER_CREATED', 'Offer', newOffer.id, `Tạo nháp Offer cho container ${asset.containerNumber}`);
-    return { success: true, message: 'Đã tạo nháp Offer thành công.', data: newOffer };
-  }, [assets, offers, companies, currentRole, currentCompany, persistOffers, addAudit]);
+    addAudit('OFFER_CREATED', 'Offer', newOffer.id, `Tạo Offer nguồn vỏ container ${targetAsset.containerNumber} kèm e-DO (${newOffer.edoNumber})`);
+    
+    // Gửi thông báo đến Ops
+    addNotification(
+      'COMP-OPS',
+      'OPS_ALERT',
+      `Offer mới cần thẩm định: ${newOffer.id}`,
+      `Bên A (${ownerCompany.shortName}) đã đăng nguồn vỏ ${targetAsset.containerNumber} (${targetAsset.carrierCode} ${targetAsset.containerType}) kèm e-DO. Vui lòng kiểm tra & duyệt.`,
+      newOffer.id
+    );
+
+    return { 
+      success: true, 
+      message: 'Đã tạo Offer thành công! AI và Ops đang kiểm tra e-DO và tình trạng vỏ để duyệt.', 
+      data: newOffer 
+    };
+  }, [assets, offers, companies, currentRole, currentCompany, persistAssets, persistOffers, addAudit, addNotification]);
 
   const updateOffer = useCallback((offerId: string, updates: Partial<Offer>): ActionResult => {
     const offer = offers.find(o => o.id === offerId);
@@ -523,6 +600,17 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     // Sửa trường trọng yếu → UNDER_REVIEW
     const majorChanges = ['pickupLatitude', 'pickupLongitude', 'baselineDepotCostVnd', 'availableFrom', 'availableTo'];
+    const finalPickupLocation = String(updates.pickupLocationName ?? offer.pickupLocationName).trim();
+    const finalAvailableFrom = updates.availableFrom ?? offer.availableFrom;
+    const finalAvailableTo = updates.availableTo ?? offer.availableTo;
+    const finalBaseline = Number(updates.baselineDepotCostVnd ?? offer.baselineDepotCostVnd);
+    if (!finalPickupLocation) return { success: false, message: 'Địa điểm lấy cont là bắt buộc.' };
+    if (!finalAvailableFrom || !finalAvailableTo || new Date(finalAvailableTo).getTime() <= new Date(finalAvailableFrom).getTime()) {
+      return { success: false, message: 'Khung thời gian Offer không hợp lệ.' };
+    }
+    if (!Number.isFinite(finalBaseline) || finalBaseline <= 0) {
+      return { success: false, message: 'Chi phí baseline T_A phải lớn hơn 0.' };
+    }
     const hasMajorChange = Object.keys(updates).some(k => majorChanges.includes(k));
     const newStatus = (offer.status === 'AVAILABLE' && hasMajorChange) ? 'UNDER_REVIEW' : offer.status;
     const updated = {
@@ -542,12 +630,6 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (offer.status !== 'DRAFT' && offer.status !== 'CHANGES_REQUIRED') {
       return { success: false, message: `Chỉ có thể gửi review từ DRAFT hoặc CHANGES_REQUIRED (hiện: ${offer.status}).` };
     }
-    if (!offer.photoChecklistComplete) {
-      return { success: false, message: 'Cần tối thiểu 6 ảnh (6 góc) trước khi gửi review.' };
-    }
-    if (!offer.asset.hasEdoDocument || offer.asset.edoVerificationStatus !== 'VERIFIED' || offer.edoDocumentIds.length === 0) {
-      return { success: false, message: 'Cáº§n e-DO Ä‘Ã£ Ä‘Æ°á»£c Ops xÃ¡c minh trÆ°á»›c khi gá»­i Offer.' };
-    }
     persistOffers(offers.map(o => o.id === offerId ? { ...o, status: 'UNDER_REVIEW', updatedAt: new Date().toISOString() } : o));
     addAudit('OFFER_SUBMITTED_FOR_REVIEW', 'Offer', offerId, 'Gửi Offer để Ops thẩm định');
     return { success: true, message: 'Đã gửi Offer để Ops thẩm định.' };
@@ -556,6 +638,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const withdrawOffer = useCallback((offerId: string, reason: string): ActionResult => {
     const offer = offers.find(o => o.id === offerId);
     if (!offer) return { success: false, message: 'Không tìm thấy Offer.' };
+    if (!reason.trim()) return { success: false, message: 'Lý do rút Offer không được để trống.' };
     if (['HELD', 'ALLOCATED', 'FULFILLED', 'WITHDRAWN', 'EXPIRED'].includes(offer.status)) {
       return { success: false, message: `Không thể rút Offer ở trạng thái ${offer.status}.` };
     }
@@ -586,27 +669,45 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     const offer = offers.find(o => o.id === offerId);
     if (!offer) return { success: false, message: 'Không tìm thấy Offer.' };
+    if (!notes.trim()) return { success: false, message: 'Ghi chú thẩm định Offer không được để trống.' };
     if (offer.status !== 'UNDER_REVIEW') {
       return { success: false, message: `Offer không ở trạng thái UNDER_REVIEW (hiện: ${offer.status}).` };
     }
-    if (decision === 'APPROVE' && (!offer.asset.hasEdoDocument || offer.asset.edoVerificationStatus !== 'VERIFIED' || offer.edoDocumentIds.length === 0)) {
-      return { success: false, message: 'KhÃ´ng thá»ƒ publish Offer khi e-DO chÆ°a Ä‘Æ°á»£c Ops xÃ¡c minh.' };
-    }
     const newStatus = decision === 'APPROVE' ? 'AVAILABLE' : decision === 'REQUEST_CHANGES' ? 'CHANGES_REQUIRED' : 'REJECTED';
-    persistOffers(offers.map(o =>
-      o.id === offerId ? {
-        ...o, status: newStatus, reviewerNotes: notes,
-        reviewedBy: currentUserEmail, reviewedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      } : o
-    ));
+    
+    const updatedOffer: Offer = {
+      ...offer,
+      status: newStatus,
+      reviewerNotes: notes,
+      reviewedBy: currentUserEmail,
+      reviewedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      asset: {
+        ...offer.asset,
+        hasEdoDocument: true,
+        edoVerificationStatus: decision === 'APPROVE' ? 'VERIFIED' : 'REJECTED',
+        reviewedCondition: decision === 'APPROVE' ? offer.asset.declaredCondition : undefined,
+      },
+    };
+
+    persistOffers(offers.map(o => o.id === offerId ? updatedOffer : o));
+    
+    if (decision === 'APPROVE') {
+      persistAssets(assets.map(a => a.id === offer.assetId ? {
+        ...a,
+        hasEdoDocument: true,
+        edoVerificationStatus: 'VERIFIED',
+        reviewedCondition: offer.asset.declaredCondition,
+      } : a));
+    }
+
     addAudit(`OFFER_${decision}`, 'Offer', offerId, `Ops quyết định ${decision}: ${notes}`);
     // Notify A
     addNotification(offer.companyId, 'TRANSACTION_UPDATE',
       `Offer ${offerId} — ${newStatus === 'AVAILABLE' ? 'Đã được duyệt ✓' : newStatus === 'CHANGES_REQUIRED' ? 'Cần bổ sung tài liệu' : 'Bị từ chối'}`,
       notes, offerId);
-    return { success: true, message: `Đã ${decision === 'APPROVE' ? 'duyệt' : decision === 'REQUEST_CHANGES' ? 'yêu cầu bổ sung' : 'từ chối'} Offer.` };
-  }, [offers, currentRole, currentUserEmail, persistOffers, addAudit, addNotification]);
+    return { success: true, message: `Đã ${decision === 'APPROVE' ? 'duyệt và công khai' : decision === 'REQUEST_CHANGES' ? 'yêu cầu bổ sung' : 'từ chối'} Offer.` };
+  }, [offers, assets, currentRole, currentUserEmail, persistOffers, persistAssets, addAudit, addNotification]);
 
   // ==================== REQUEST ACTIONS ====================
 
@@ -615,9 +716,13 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: false, message: 'Chỉ Bên B mới có thể tạo nhu cầu.' };
     }
     if (!form.bookingNumber.trim()) return { success: false, message: 'Booking Note/Booking Number là bắt buộc.' };
-    if (!form.pickupWindowStart || !form.pickupWindowEnd || new Date(form.pickupWindowEnd).getTime() <= new Date(form.pickupWindowStart).getTime()) {
+    if (!form.pickupWindowStart || !form.pickupWindowEnd || new Date(form.pickupWindowStart).getTime() <= Date.now() || new Date(form.pickupWindowEnd).getTime() <= new Date(form.pickupWindowStart).getTime()) {
       return { success: false, message: 'Request phải có required_from/required_until hợp lệ.' };
     }
+    if (!form.carrierId || !form.deliveryLocationName?.trim()) return { success: false, message: 'HÃ£ng tÃ u vÃ  Ä‘á»‹a Ä‘iá»ƒm giao lÃ  báº¯t buá»™c.' };
+    if (!form.cutOffTime || new Date(form.cutOffTime).getTime() <= Date.now()) return { success: false, message: 'Cut-off booking pháº£i lÃ  thá»i Ä‘iá»ƒm trong tÆ°Æ¡ng lai.' };
+    if (!Number.isFinite(form.maxDistanceKm) || form.maxDistanceKm < 5 || form.maxDistanceKm > 100) return { success: false, message: 'Dmax pháº£i náº±m trong khoáº£ng 5-100 km.' };
+    if (!Number.isFinite(form.baselinePickupCostVnd) || form.baselinePickupCostVnd <= 0) return { success: false, message: 'Chi phÃ­ baseline T_B pháº£i lá»›n hÆ¡n 0.' };
     const requesterCompany = companies.find(c => c.id === currentCompany.id) || currentCompany;
     if (requesterCompany.verificationStatus !== 'VERIFIED') {
       return { success: false, message: 'Doanh nghiệp chưa được Ops xác minh. Chưa thể tạo Request.' };
@@ -659,7 +764,14 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (['HELD', 'ALLOCATED', 'FULFILLED'].includes(req.status)) {
       return { success: false, message: `Nhu cầu đang ở trạng thái ${req.status}, không thể chỉnh sửa trực tiếp.` };
     }
-    const updated = { ...req, ...updates, version: req.version + 1, updatedAt: new Date().toISOString() };
+    const finalBooking = String(updates.bookingNumber ?? req.bookingNumber).trim();
+    const finalDelivery = String(updates.deliveryLocationName ?? req.deliveryLocationName).trim();
+    const finalDistance = Number(updates.maxDistanceKm ?? req.maxDistanceKm);
+    const finalBaseline = Number(updates.baselinePickupCostVnd ?? req.baselinePickupCostVnd);
+    if (!finalBooking || !finalDelivery) return { success: false, message: 'Booking vÃ  Ä‘á»‹a Ä‘iá»ƒm giao lÃ  báº¯t buá»™c.' };
+    if (!Number.isFinite(finalDistance) || finalDistance < 5 || finalDistance > 100) return { success: false, message: 'Dmax pháº£i náº±m trong khoáº£ng 5-100 km.' };
+    if (!Number.isFinite(finalBaseline) || finalBaseline <= 0) return { success: false, message: 'Chi phÃ­ baseline T_B pháº£i lá»›n hÆ¡n 0.' };
+    const updated = { ...req, ...updates, bookingNumber: finalBooking, deliveryLocationName: finalDelivery, maxDistanceKm: finalDistance, baselinePickupCostVnd: finalBaseline, version: req.version + 1, updatedAt: new Date().toISOString() };
     persistRequests(requests.map(r => r.id === requestId ? updated : r));
     addAudit('REQUEST_UPDATED', 'ContainerRequest', requestId, 'Cập nhật nhu cầu');
     return { success: true, message: 'Đã cập nhật nhu cầu.' };
@@ -679,6 +791,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const withdrawRequest = useCallback((requestId: string, reason: string): ActionResult => {
     const req = requests.find(r => r.id === requestId);
     if (!req) return { success: false, message: 'Không tìm thấy nhu cầu.' };
+    if (!reason.trim()) return { success: false, message: 'Lý do rút nhu cầu không được để trống.' };
     if (['HELD', 'ALLOCATED', 'FULFILLED', 'WITHDRAWN', 'EXPIRED'].includes(req.status)) {
       return { success: false, message: `Không thể rút nhu cầu ở trạng thái ${req.status}.` };
     }
@@ -712,6 +825,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (req.status !== 'UNDER_REVIEW') {
       return { success: false, message: `Nhu cầu không ở trạng thái UNDER_REVIEW (hiện: ${req.status}).` };
     }
+    if (!notes.trim()) return { success: false, message: 'Ghi chú xác minh nhu cầu không được để trống.' };
     if (decision === 'APPROVE' && (!req.bookingNumber.trim() || !req.carrierCode || !req.containerType || !req.cutOffTime)) {
       return { success: false, message: 'Booking thiếu Carrier/Booking Number/size-type/cut-off; chưa thể OPEN.' };
     }
@@ -1434,6 +1548,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     const txn = transactions.find(t => t.id === transactionId);
     if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
+    if (isOnHold && !reason?.trim()) return { success: false, message: 'Lý do tạm dừng giao dịch không được để trống.' };
     const updatedTxn: Transaction = {
       ...txn,
       isOnHold,
@@ -1455,6 +1570,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!isOpsUser && currentRole !== 'ENTERPRISE_A' && currentRole !== 'ENTERPRISE_B') {
       return { success: false, message: 'Chá»‰ BÃªn A, BÃªn B hoáº·c Ops Ä‘Æ°á»£c má»Ÿ Case.' };
     }
+    if (!c.title?.trim() || !c.description?.trim()) return { success: false, message: 'TiÃªu Ä‘á» vÃ  mÃ´ táº£ Case lÃ  báº¯t buá»™c.' };
     if (c.transactionId) {
       const txn = transactions.find(item => item.id === c.transactionId);
       if (!txn) return { success: false, message: 'Giao dá»‹ch trong Case khÃ´ng tá»“n táº¡i.' };
@@ -1486,6 +1602,8 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const c = cases.find(item => item.id === caseId);
     if (!c) return { success: false, message: 'Không tìm thấy Case.' };
     if (c.status === 'CLOSED') return { success: false, message: 'Case đã đóng không thể chỉnh sửa.' };
+    if (updates.title !== undefined && !updates.title.trim()) return { success: false, message: 'TiÃªu Ä‘á» Case khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.' };
+    if (updates.description !== undefined && !updates.description.trim()) return { success: false, message: 'MÃ´ táº£ Case khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.' };
     setCases(prev => prev.map(item => item.id === caseId ? { ...item, ...updates, updatedAt: new Date().toISOString() } : item));
     addAudit('CASE_UPDATED', 'CaseIssue', caseId, `Cập nhật thông tin Case ${caseId}`);
     return { success: true, message: 'Đã cập nhật Case thành công.' };
@@ -1506,6 +1624,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
       return { success: false, message: 'Chỉ Ops mới có thể kết luận Case.' };
     }
+    if (!resolution.summary?.trim()) return { success: false, message: 'Tóm tắt kết luận Case không được để trống.' };
     const existingCase = cases.find(c => c.id === caseId);
     if (!existingCase) return { success: false, message: 'KhÃ´ng tÃ¬m tháº¥y Case.' };
     if (!['OPEN', 'IN_REVIEW', 'NEEDS_INFO'].includes(existingCase.status)) {
@@ -1538,8 +1657,17 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
       return { success: false, message: 'Chỉ Ops hoặc Quản trị viên mới có quyền thêm doanh nghiệp.' };
     }
+    if (!comp.companyName?.trim() || !comp.shortName?.trim() || !comp.taxCode?.trim() || !comp.address?.trim() || !comp.representativeName?.trim() || !comp.representativePhone?.trim() || !comp.representativeEmail?.trim()) {
+      return { success: false, message: 'Thông tin doanh nghiệp bắt buộc chưa đầy đủ.' };
+    }
+    if (!/^\d{8,14}$/.test(comp.taxCode.trim())) return { success: false, message: 'Mã số thuế phải gồm 8–14 chữ số.' };
+    if (!/^\S+@\S+\.\S+$/.test(comp.representativeEmail.trim())) return { success: false, message: 'Email doanh nghiệp không hợp lệ.' };
+    if (companies.some(company => company.taxCode === comp.taxCode.trim())) {
+      return { success: false, message: 'Mã số thuế đã tồn tại trong hệ thống.' };
+    }
     const newComp: Company = {
       ...comp,
+      taxCode: comp.taxCode.trim(),
       id: genId('COMP'),
       totalCompletedAsA: 0,
       totalCompletedAsB: 0,
@@ -1550,6 +1678,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [companies, currentRole, persistCompanies, addAudit]);
 
   const submitCompanyRegistration = useCallback((comp: Omit<Company, 'id' | 'totalCompletedAsA' | 'totalCompletedAsB'>): ActionResult => {
+    if (!comp.companyName?.trim() || !comp.shortName?.trim() || !comp.taxCode?.trim() || !comp.address?.trim() || !comp.representativeName?.trim() || !comp.representativePhone?.trim() || !comp.representativeEmail?.trim()) {
+      return { success: false, message: 'Thông tin doanh nghiệp bắt buộc chưa đầy đủ.' };
+    }
+    if (!/^\S+@\S+\.\S+$/.test(comp.representativeEmail.trim())) return { success: false, message: 'Email doanh nghiệp không hợp lệ.' };
     const normalizedTaxCode = comp.taxCode.trim();
     if (companies.some(company => company.taxCode === normalizedTaxCode)) {
       return { success: false, message: 'Mã số thuế đã tồn tại trong hệ thống.' };
@@ -1575,6 +1707,15 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const comp = companies.find(c => c.id === id);
     if (!comp) return { success: false, message: 'Không tìm thấy doanh nghiệp.' };
     const updated = { ...comp, ...updates };
+    if (!updated.companyName?.trim() || !updated.shortName?.trim() || !updated.taxCode?.trim() || !updated.address?.trim() || !updated.representativeName?.trim() || !updated.representativePhone?.trim() || !updated.representativeEmail?.trim()) {
+      return { success: false, message: 'Thông tin doanh nghiệp bắt buộc chưa đầy đủ.' };
+    }
+    if (!/^\d{8,14}$/.test(updated.taxCode.trim())) return { success: false, message: 'Mã số thuế phải gồm 8–14 chữ số.' };
+    if (!/^\S+@\S+\.\S+$/.test(updated.representativeEmail.trim())) return { success: false, message: 'Email doanh nghiệp không hợp lệ.' };
+    if (companies.some(company => company.id !== id && company.taxCode === updated.taxCode.trim())) {
+      return { success: false, message: 'Mã số thuế đã tồn tại trong hệ thống.' };
+    }
+    updated.taxCode = updated.taxCode.trim();
     persistCompanies(companies.map(c => c.id === id ? updated : c));
     addAudit('COMPANY_UPDATED', 'Company', id, `Cập nhật thông tin DN ${comp.shortName}`);
     return { success: true, message: `Đã cập nhật doanh nghiệp ${comp.shortName} thành công.` };
@@ -1596,6 +1737,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const cancelTransaction = useCallback((transactionId: string, reason: string): ActionResult => {
     const txn = transactions.find(t => t.id === transactionId);
     if (!txn) return { success: false, message: 'Không tìm thấy giao dịch.' };
+    if (!reason.trim()) return { success: false, message: 'Lý do hủy giao dịch không được để trống.' };
     const check = canTransitionTo(txn, 'CANCELLED');
     if (!check.allowed) return { success: false, message: check.reason || 'Không thể hủy.' };
 

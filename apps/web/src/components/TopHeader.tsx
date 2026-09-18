@@ -8,7 +8,6 @@ import {
   CheckCircle2, RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useDatabase } from '../context/DatabaseContext';
 import { NotificationCenter } from './NotificationCenter';
 import { AiEdoScannerModal, ExtractedEdoData } from './AiEdoScannerModal';
 
@@ -25,19 +24,19 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     subtitle: 'Theo dõi chỉ số, radar tự động ghép đôi và cảnh báo vòng đời',
   },
   assets: {
-    title: 'Quản lý Vỏ Container (Assets)',
+    title: 'Quản lý Vỏ Container',
     subtitle: 'Danh mục tài sản vỏ cont, tải ảnh 6 góc và thẩm định chất lượng IICL',
   },
   offers: {
-    title: 'Nguồn vỏ cont cung cấp (Offers)',
+    title: 'Nguồn cung vỏ container',
     subtitle: 'Đăng tải nguồn vỏ cont rỗng, tích hợp quét e-DO và điều phối',
   },
   requests: {
-    title: 'Nhu cầu tìm vỏ container (Requests)',
+    title: 'Nhu cầu tìm vỏ container',
     subtitle: 'Đăng nhu cầu đóng hàng, công cụ ghép đôi tự động và giữ chỗ tức thời',
   },
   transactions: {
-    title: 'Vòng đời giao dịch 7 bước (Transactions)',
+    title: 'Vòng đời giao dịch 7 bước',
     subtitle: 'Quy trình chuẩn hóa từ Thỏa thuận, Duyệt hãng tàu, Ký quỹ đến Bàn giao EIR',
   },
   chat: {
@@ -45,11 +44,11 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     subtitle: 'Trao đổi nghiệp vụ giữa Bên A, Bên B và Đội ngũ Vận hành Ops',
   },
   ops: {
-    title: 'Cổng Vận Hành ECont (Ops Portal)',
-    subtitle: 'Thẩm định Doanh nghiệp KYC, Quản lý Hãng tàu & Đối soát RU',
+    title: 'Cổng Vận Hành ECont',
+    subtitle: 'Thẩm định Doanh nghiệp, Quản lý Hãng tàu & Đối soát RU',
   },
   cases: {
-    title: 'Quản lý Sự cố & Khiếu nại (Cases)',
+    title: 'Quản lý Sự cố & Khiếu nại',
     subtitle: 'Ghi nhận, điều tra và kết luận giải quyết tranh chấp giao dịch',
   },
   database: {
@@ -65,7 +64,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   setIsMobileOpen,
 }) => {
   const { currentRole, roleBadge, currentCompany } = useAuth();
-  const { addAsset, addOffer } = useDatabase();
   const [showAiEdoModal, setShowAiEdoModal] = useState(false);
 
   const pageInfo = PAGE_TITLES[currentTab] || {
@@ -74,28 +72,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   };
 
   const handleApplyEdoData = (data: ExtractedEdoData) => {
-    // If on assets page, automatically add new asset or fill
-    if (currentTab === 'assets' || currentRole === 'ENTERPRISE_A') {
-      const res = addAsset({
-        containerNumber: data.containerNumber,
-        carrierId: `CARR-${data.carrierCode.slice(0, 3)}`,
-        containerType: data.containerType,
-        physicalStatus: 'EMPTY_AT_YARD',
-        declaredCondition: 'GOOD',
-        currentLocationName: data.returnDepot,
-        currentLatitude: 10.78,
-        currentLongitude: 106.78,
-        freeTimeDetentionEnd: data.expiryDate,
-      });
-      if (res.success) {
-        alert(`AI đã trích xuất e-DO thành công! Đã tự động tạo Tài sản Cont ${data.containerNumber} (${data.carrierCode}).`);
-        setCurrentTab('assets');
-      } else {
-        alert(res.message);
-      }
-    } else {
-      alert(`Đã trích xuất e-DO thành công: Cont ${data.containerNumber} (${data.carrierCode}) - Hạn: ${data.expiryDate}`);
-    }
+    alert(`Đã trích xuất e-DO ${data.edoNumber}: Cont ${data.containerNumber} (${data.carrierCode}). Hãy mở Đăng ký vỏ Cont, tải tối thiểu 6 ảnh và hoàn tất đối chiếu AI trước khi lưu.`);
+    if (currentRole === 'ENTERPRISE_A') setCurrentTab('assets');
   };
 
   return (

@@ -259,6 +259,17 @@ export interface EvidenceFile {
   legalHold?: boolean;
 }
 
+export interface OfferAiCheckResult {
+  passed: boolean;
+  score: number;
+  summary: string;
+  hasAnomaly: boolean;
+  anomalyReason?: string;
+  edoChecked?: boolean;
+  photoChecked?: boolean;
+  details?: string[];
+}
+
 export interface Offer {
   id: string;
   assetId: string;
@@ -282,6 +293,11 @@ export interface Offer {
   photoUrls: string[];             // 6+ ảnh theo checklist
   photoChecklistComplete: boolean; // Đã đủ 6 góc ảnh
   edoDocumentIds: string[];        // IDs của e-DO/hồ sơ đính kèm
+  edoFileName?: string;            // Tên file e-DO (chỉ Ops xem, không public cho B)
+  edoNumber?: string;              // Số lệnh e-DO (chỉ Ops xem, không public cho B)
+  conditionNotes?: string;         // Mô tả chi tiết tình trạng vỏ
+  aiCheck?: OfferAiCheckResult;    // Kết quả AI OCR & AI Vision kiểm tra
+  requiresOpsManualReview?: boolean; // Bất thường cần Ops kiểm tra thủ công
   withdrawReason?: string;
   changeReason?: string;           // Lý do sửa đổi
   createdAt: string;
@@ -385,6 +401,8 @@ export interface MatchCandidate {
   scoreC: number;                  // 100/60
   scoreM: number;                  // 0.30D + 0.40T + 0.30C
   quote: Quote;
+  estimatedShippingMinutes?: number; // Thời gian vận chuyển ước tính
+  trustScoreA?: number;              // Điểm uy tín Bên A
   hardConstraintReasons?: string[]; // Lý do loại nếu không pass
 }
 
@@ -805,10 +823,26 @@ export interface CreateAssetForm {
   edoEvidenceName?: string;
   hasEdoDocument?: boolean;
   edoVerificationStatus?: DocumentVerificationStatus;
+  aiInspection?: AssetAiInspection;
 }
 
 export interface CreateOfferForm {
-  assetId: string;
+  assetId?: string;
+  // Container info (1 offer = 1 cont)
+  containerNumber?: string;
+  containerType?: ContainerType;
+  carrierId?: string;
+  declaredCondition?: PhysicalCondition;
+  conditionNotes?: string;
+  photos?: string[];
+
+  // eDO info (1 offer = 1 e-DO, chỉ gửi Ops thẩm định)
+  edoFileName?: string;
+  edoNumber?: string;
+  edoReturnDepot?: string;
+  edoExpiryDate?: string;
+
+  // Vị trí (Maps) & Thời gian bàn giao
   pickupLocationName: string;
   pickupLatitude: number;
   pickupLongitude: number;
@@ -817,6 +851,10 @@ export interface CreateOfferForm {
   expectedDepotId?: string;
   baselineDepotCostVnd: number;
   vehicleRequirements?: string;
+
+  // AI & Ops check
+  aiCheck?: OfferAiCheckResult;
+  requiresOpsManualReview?: boolean;
 }
 
 export interface CreateRequestForm {

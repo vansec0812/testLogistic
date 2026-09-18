@@ -4,6 +4,8 @@
 // ==============================================================================
 
 import React, { useState } from 'react';
+import { FieldErrors, FieldError, FormErrorSummary, RequiredMark, getFieldErrorClass, scrollToFirstFieldError } from '../components/FormValidation';
+import { required, setError } from '../lib/formValidation';
 import { useDatabase } from '../context/DatabaseContext';
 import { onlineDb } from '../services/onlineDbClient';
 import { 
@@ -47,6 +49,7 @@ export const OnlineDatabasePage: React.FC = () => {
   // Cấu hình URL chỉnh sửa
   const [customDashboardUrl, setCustomDashboardUrl] = useState(onlineConfig.adminDashboardUrl);
   const [customSupabaseUrl, setCustomSupabaseUrl] = useState(onlineConfig.supabaseUrl);
+  const [settingsErrors, setSettingsErrors] = useState<FieldErrors>({});
 
   // Bản đồ các bảng dữ liệu
   const tablesMap: Record<string, { label: string; count: number; data: unknown[] }> = {
@@ -78,10 +81,25 @@ export const OnlineDatabasePage: React.FC = () => {
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
+    const errors: FieldErrors = {};
+    setError(errors, 'adminDashboardUrl', required(customDashboardUrl, 'Vui lòng nhập link quản trị database.'));
+    setError(errors, 'supabaseUrl', required(customSupabaseUrl, 'Vui lòng nhập Supabase Project Host / REST Endpoint.'));
+    if (customDashboardUrl.trim()) {
+      try { new URL(customDashboardUrl); } catch { errors.adminDashboardUrl = 'Link quản trị database không hợp lệ.'; }
+    }
+    if (customSupabaseUrl.trim()) {
+      try { new URL(customSupabaseUrl); } catch { errors.supabaseUrl = 'Supabase endpoint không hợp lệ.'; }
+    }
+    setSettingsErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      scrollToFirstFieldError(errors);
+      return;
+    }
     updateOnlineConfig({
       adminDashboardUrl: customDashboardUrl,
       supabaseUrl: customSupabaseUrl
     });
+    setSettingsErrors({});
     alert('Đã cập nhật cấu hình kết nối CSDL Online!');
   };
 
@@ -320,35 +338,42 @@ export const OnlineDatabasePage: React.FC = () => {
           <span>CẤU HÌNH THÔNG SỐ KẾT NỐI DATABASE ONLINE</span>
         </h3>
 
-        <form onSubmit={handleSaveSettings} className="space-y-4 text-xs">
+        <form noValidate onSubmit={handleSaveSettings} className="space-y-4 text-xs">
+          <FormErrorSummary errors={settingsErrors} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="text-slate-300 font-semibold block mb-1">
-                Link Quản trị Trực tiếp (Admin Dashboard URL):
+              <label htmlFor="adminDashboardUrl" className="text-slate-300 font-semibold block mb-1">
+                Link Quản trị Trực tiếp (Admin Dashboard URL) <RequiredMark />:
               </label>
               <input
+                id="adminDashboardUrl"
+                data-field="adminDashboardUrl"
                 type="url"
                 value={customDashboardUrl}
-                onChange={(e) => setCustomDashboardUrl(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white font-mono outline-none"
-                required
+                onChange={(e) => { setCustomDashboardUrl(e.target.value); setSettingsErrors(p => ({ ...p, adminDashboardUrl: '' })); }}
+                aria-invalid={Boolean(settingsErrors.adminDashboardUrl)}
+                className={getFieldErrorClass(Boolean(settingsErrors.adminDashboardUrl), 'w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white font-mono outline-none')}
               />
+              <FieldError message={settingsErrors.adminDashboardUrl} />
               <span className="text-[11px] text-slate-500 mt-1 block">
                 Đường dẫn tới Supabase Table Editor hoặc Cloud Postgres Console
               </span>
             </div>
 
             <div>
-              <label className="text-slate-300 font-semibold block mb-1">
-                Supabase Project Host / REST Endpoint:
+              <label htmlFor="supabaseUrl" className="text-slate-300 font-semibold block mb-1">
+                Supabase Project Host / REST Endpoint <RequiredMark />:
               </label>
               <input
+                id="supabaseUrl"
+                data-field="supabaseUrl"
                 type="text"
                 value={customSupabaseUrl}
-                onChange={(e) => setCustomSupabaseUrl(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white font-mono outline-none"
-                required
+                onChange={(e) => { setCustomSupabaseUrl(e.target.value); setSettingsErrors(p => ({ ...p, supabaseUrl: '' })); }}
+                aria-invalid={Boolean(settingsErrors.supabaseUrl)}
+                className={getFieldErrorClass(Boolean(settingsErrors.supabaseUrl), 'w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white font-mono outline-none')}
               />
+              <FieldError message={settingsErrors.supabaseUrl} />
             </div>
           </div>
 
@@ -365,4 +390,3 @@ export const OnlineDatabasePage: React.FC = () => {
     </div>
   );
 };
-
