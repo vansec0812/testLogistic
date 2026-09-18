@@ -32,14 +32,17 @@ export function formatVndShort(amount: number | undefined | null): string {
 export function formatDateTime(isoStr: string | undefined | null): string {
   if (!isoStr) return '—';
   try {
-    return new Intl.DateTimeFormat('vi-VN', {
+    const parts = new Intl.DateTimeFormat('en-GB', {
       timeZone: 'Asia/Ho_Chi_Minh',
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-    }).format(new Date(isoStr));
+      hourCycle: 'h23',
+    }).formatToParts(new Date(isoStr));
+    const value = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    return `${value.day}/${value.month}/${value.year} ${value.hour}:${value.minute}`;
   } catch {
     return '—';
   }
@@ -51,15 +54,28 @@ export function formatDateTime(isoStr: string | undefined | null): string {
 export function formatDate(isoStr: string | undefined | null): string {
   if (!isoStr) return '—';
   try {
-    return new Intl.DateTimeFormat('vi-VN', {
+    const parts = new Intl.DateTimeFormat('en-GB', {
       timeZone: 'Asia/Ho_Chi_Minh',
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
-    }).format(new Date(isoStr));
+    }).formatToParts(new Date(isoStr));
+    const value = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    return `${value.day}/${value.month}/${value.year}`;
   } catch {
     return '—';
   }
+}
+
+/**
+ * Format giá trị của input datetime-local mà không đổi múi giờ.
+ * Kết quả hiển thị thống nhất theo dd/mm/yyyy HH:mm.
+ */
+export function formatDateTimeLocal(value: string | undefined | null): string {
+  if (!value) return '—';
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!match) return '—';
+  return `${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]}`;
 }
 
 /**

@@ -266,7 +266,12 @@ export interface OfferAiCheckResult {
   hasAnomaly: boolean;
   anomalyReason?: string;
   edoChecked?: boolean;
+  edoValid?: boolean;
+  edoAnomaly?: boolean;
   photoChecked?: boolean;
+  photoCondition?: PhysicalCondition;
+  photoConditionNotes?: string;
+  verificationStatus?: 'VERIFIED' | 'MANUAL_REVIEW' | 'INVALID' | 'ERROR';
   details?: string[];
 }
 
@@ -836,7 +841,7 @@ export interface CreateOfferForm {
   conditionNotes?: string;
   photos?: string[];
 
-  // eDO info (1 offer = 1 e-DO, chỉ gửi Ops thẩm định)
+  // eDO info (1 offer = 1 file eDO, chỉ gửi Ops thẩm định; mã/depot là metadata tùy chọn)
   edoFileName?: string;
   edoNumber?: string;
   edoReturnDepot?: string;

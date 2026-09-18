@@ -1,29 +1,40 @@
 // ==============================================================================
-// ECont AiEdoScannerModal - AI OCR Trích xuất Lệnh giao hàng điện tử e-DO / Booking
-// Hệ thống AI Vision OCR Engine tự động nhận diện và trích xuất dữ liệu chứng từ
+// ECont AiEdoScannerModal - AI xác minh file Lệnh giao hàng điện tử e-DO / Booking
+// Kết quả pháp lý/bất thường được lấy từ API backend; không tự kết luận khi API lỗi.
 // ==============================================================================
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   FileText, Sparkles, UploadCloud, CheckCircle2, AlertCircle,
-  X, Check, RefreshCw, Key, AlertTriangle, ShieldCheck, CheckCircle
+  X, Check, RefreshCw, AlertTriangle, CheckCircle
 } from 'lucide-react';
 import { CarrierCode, ContainerType } from '../types';
 import {
-  extractEdoWithAI,
   ExtractedEdoData,
-  getAiApiKey,
-  setAiApiKey,
+  EdoVerificationResult,
+  verifyEdoWithAI,
   normalizeIsoContainerNumber
 } from '../services/aiService';
 import { validateContainerNumber } from '../services/iso6346';
 
 export type { ExtractedEdoData } from '../services/aiService';
 
+function displayDateDdMmYyyy(value: string): string {
+  const isoMatch = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return isoMatch ? `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}` : value;
+}
+
+function parseDateDdMmYyyy(value: string): string {
+  const match = value.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : value;
+}
+
 interface AiEdoScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
   onApplyData: (data: ExtractedEdoData) => void;
+  onDocumentSelected?: (file: File) => void;
+  onVerificationComplete?: (verification: EdoVerificationResult, file: File) => void;
   title?: string;
   subtitle?: string;
 }
@@ -51,7 +62,7 @@ const SAMPLE_EDO_DOCS: Array<{
       containerType: '40HC',
       sealNumber: 'ML-VN-90821',
       confidenceScore: 99.2,
-      source: 'SMART_OCR',
+      source: 'DEMO_SAMPLE',
     },
   },
   {
@@ -69,7 +80,7 @@ const SAMPLE_EDO_DOCS: Array<{
       containerType: '20GP',
       sealNumber: 'CMA-S-44109',
       confidenceScore: 98.6,
-      source: 'SMART_OCR',
+      source: 'DEMO_SAMPLE',
     },
   },
   {
@@ -87,7 +98,7 @@ const SAMPLE_EDO_DOCS: Array<{
       containerType: '40HC',
       sealNumber: 'ONE-HPH-1120',
       confidenceScore: 97.9,
-      source: 'SMART_OCR',
+      source: 'DEMO_SAMPLE',
     },
   },
   {
@@ -105,7 +116,7 @@ const SAMPLE_EDO_DOCS: Array<{
       containerType: '40HC',
       sealNumber: 'EMC-VN-7718',
       confidenceScore: 98.9,
-      source: 'SMART_OCR',
+      source: 'DEMO_SAMPLE',
     },
   },
 ];
@@ -114,8 +125,10 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
   isOpen,
   onClose,
   onApplyData,
-  title = 'AI Quét & Trích Xuất Chứng Từ e-DO / Booking',
-  subtitle = 'Công nghệ AI Vision OCR tự động nhận diện số container, hãng tàu, hạn lưu bãi và nơi trả vỏ',
+  onDocumentSelected,
+  onVerificationComplete,
+  title = 'AI Xác Minh eDO / Booking từ File Upload',
+  subtitle = 'Tải ảnh hoặc PDF để kiểm tra tính hợp lệ và dấu hiệu bất thường của chứng từ',
 }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
@@ -128,18 +141,10 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
   
   // Dữ liệu trích xuất có thể chỉnh sửa trực tiếp trước khi áp dụng
   const [editableData, setEditableData] = useState<ExtractedEdoData | null>(null);
-
-  // Quản lý API key
-  const [showApiKeyConfig, setShowApiKeyConfig] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [apiKeyStatus, setApiKeyStatus] = useState('');
+  const [verificationResult, setVerificationResult] = useState<EdoVerificationResult | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scanTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    setApiKeyInput(getAiApiKey());
-  }, [isOpen]);
 
   useEffect(() => () => {
     if (scanTimerRef.current !== null) window.clearTimeout(scanTimerRef.current);
@@ -153,12 +158,6 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSaveApiKey = () => {
-    setAiApiKey(apiKeyInput.trim());
-    setApiKeyStatus('✓ Đã lưu cấu hình API Key AI.');
-    setTimeout(() => setApiKeyStatus(''), 3000);
-  };
-
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -169,8 +168,10 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
       return;
     }
     setSelectedFile(file);
+    onDocumentSelected?.(file);
     setActiveSampleId('');
     setEditableData(null);
+    setVerificationResult(null);
     setScanNotice('');
 
     if (isImage) {
@@ -180,6 +181,10 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
     } else {
       setFilePreviewUrl(null);
     }
+
+    // Tệp thật được đưa vào hàng đợi quét ngay sau khi upload; người dùng vẫn
+    // có thể bấm quét lại nếu muốn đối chiếu lại sau khi đổi tệp.
+    window.setTimeout(() => { void runAiScan(file); }, 0);
   };
 
   const handleSelectSample = (sampleId: string) => {
@@ -187,11 +192,13 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
     setSelectedFile(null);
     setFilePreviewUrl(null);
     setEditableData(null);
+    setVerificationResult(null);
     setScanNotice('');
   };
 
-  const runAiScan = async () => {
-    if (!selectedFile && !activeSampleId) {
+  const runAiScan = async (fileOverride?: File) => {
+    const fileToScan = fileOverride || selectedFile;
+    if (!fileToScan && !activeSampleId) {
       setScanNotice('Vui lòng tải lên ảnh chụp hoặc file PDF chứng từ e-DO trước khi bắt đầu quét.');
       return;
     }
@@ -201,27 +208,18 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
     setEditableData(null);
     setScanNotice('');
 
-    if (selectedFile) {
+    if (fileToScan) {
       setScanProgress(45);
-      setScanStepMessage('AI Vision đang nhận diện số container ISO 6346 & Hãng tàu...');
-      
-      const aiRes = await extractEdoWithAI(selectedFile);
-      if (aiRes.success && aiRes.data) {
-        setScanProgress(85);
-        setScanStepMessage('Đang phân tích nơi hạ vỏ chỉ định & hạn Free time...');
-        await new Promise(r => setTimeout(r, 300));
-
-        setScanProgress(100);
-        setScanStepMessage('Hoàn tất trích xuất dữ liệu!');
-        setIsScanning(false);
-        setEditableData({ ...aiRes.data });
-        setScanNotice('✓ Đã trích xuất thành công qua AI Vision OCR. Bạn có thể kiểm tra và hiệu chỉnh lại thông tin bên dưới.');
-        return;
-      } else {
-        setIsScanning(false);
-        setScanNotice(`⚠️ ${aiRes.error || 'AI không trích xuất được dữ liệu từ tệp tải lên.'}`);
-        return;
-      }
+      setScanStepMessage('AI đang kiểm tra trực tiếp tính hợp lệ và dấu hiệu bất thường của file eDO...');
+      const verification = await verifyEdoWithAI(fileToScan);
+      setScanProgress(100);
+      setScanStepMessage('Hoàn tất xác minh eDO.');
+      setIsScanning(false);
+      setVerificationResult(verification);
+      setScanNotice(verification.status === 'VALID'
+        ? '✓ File eDO hợp lệ theo kết quả AI.'
+        : `⚠️ eDO có kết quả ${verification.status === 'MANUAL_REVIEW' ? 'chờ Ops xác minh' : 'bất thường/không hợp lệ'}: ${verification.error || verification.summary}`);
+      return;
     }
 
     // Chứng từ mẫu
@@ -249,6 +247,11 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
   };
 
   const handleApply = () => {
+    if (verificationResult && selectedFile) {
+      onVerificationComplete?.(verificationResult, selectedFile);
+      onClose();
+      return;
+    }
     if (!editableData) return;
     if (!editableData.containerNumber.trim()) {
       setScanNotice('Vui lòng nhập số container trước khi áp dụng.');
@@ -271,7 +274,7 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
               <h3 className="font-bold text-base sm:text-lg text-slate-900 flex items-center gap-2">
                 {title}
                 <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200">
-                  AI Vision OCR Engine
+                  AI kiểm tra chứng từ
                 </span>
               </h3>
               <p className="text-xs sm:text-sm text-slate-500 mt-0.5">{subtitle}</p>
@@ -286,55 +289,6 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
         </div>
 
         <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
-          {/* Status bar & API Key toggle */}
-          <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-              <span className="text-xs font-bold text-slate-800">
-                AI Vision OCR Engine: Sẵn sàng quét nhận diện tự động
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowApiKeyConfig(!showApiKeyConfig)}
-              className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
-            >
-              <Key className="w-3.5 h-3.5" />
-              <span>{showApiKeyConfig ? 'Ẩn cấu hình API Key' : 'Cấu hình API Key (Tùy chọn)'}</span>
-            </button>
-          </div>
-
-          {/* Collapsible API Key Config */}
-          {showApiKeyConfig && (
-            <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/40 space-y-2 animate-in fade-in duration-200">
-              <label className="text-xs font-semibold text-slate-800 block">
-                API Key cho AI Vision OCR (Google Gemini 2.0 Flash Vision):
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={apiKeyInput}
-                  onChange={e => setApiKeyInput(e.target.value)}
-                  placeholder="Nhập API Key nếu muốn gọi trực tiếp Google AI Vision..."
-                  className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono bg-white outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveApiKey}
-                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors"
-                >
-                  Lưu Key
-                </button>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                Nếu để trống, hệ thống sẽ tự động sử dụng Smart OCR Engine tích hợp sẵn phân tích cấu trúc chứng từ.
-              </p>
-              {apiKeyStatus && (
-                <p className="text-xs font-semibold text-emerald-600">{apiKeyStatus}</p>
-              )}
-            </div>
-          )}
-
           {scanNotice && (
             <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-xs font-semibold text-blue-800 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-blue-600" />
@@ -487,7 +441,7 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
             <button
               type="button"
               disabled={isScanning}
-              onClick={runAiScan}
+              onClick={() => { void runAiScan(); }}
               className={`w-full py-3.5 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 shadow-sm transition-all ${
                 isScanning
                   ? 'bg-blue-400 cursor-not-allowed'
@@ -497,12 +451,12 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
               {isScanning ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Đang quét và phân tích OCR ({scanProgress}%)...</span>
+                  <span>Đang quét và phân tích ({scanProgress}%)...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  <span>Bắt đầu quét AI Trích xuất Dữ liệu</span>
+                  <span>Xác minh tính hợp lệ eDO bằng AI</span>
                 </>
               )}
             </button>
@@ -527,7 +481,23 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
             </div>
           )}
 
-          {/* Step 2: Extracted & Editable Results Form */}
+          {verificationResult && (
+            <div className={`rounded-2xl border p-4 space-y-2 animate-in fade-in duration-300 ${verificationResult.status === 'VALID' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : verificationResult.status === 'MANUAL_REVIEW' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-900'}`}>
+              <div className="flex items-center gap-2 font-bold text-sm">
+                {verificationResult.status === 'VALID' ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <AlertTriangle className="w-5 h-5 text-amber-600" />}
+                <span>{verificationResult.status === 'VALID' ? 'eDO hợp lệ theo AI' : verificationResult.status === 'MANUAL_REVIEW' ? 'eDO cần Ops xác minh thủ công' : 'eDO không hợp lệ hoặc có dấu hiệu bất thường'}</span>
+                {verificationResult.score !== undefined && <span className="ml-auto font-mono">{verificationResult.score}/100</span>}
+              </div>
+              <p className="text-xs">{verificationResult.summary}</p>
+              {verificationResult.details.length > 0 && (
+                <ul className="text-xs list-disc pl-5 space-y-0.5">
+                  {verificationResult.details.map((detail, index) => <li key={index}>{detail}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {/* Step 2: Extracted & Editable Results Form dành cho chứng từ mẫu */}
           {editableData && (
             <div className="border border-emerald-200 bg-emerald-50/40 rounded-2xl p-4 space-y-4 animate-in fade-in duration-300">
               <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-emerald-200">
@@ -540,10 +510,22 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
                     Độ tin cậy: {editableData.confidenceScore}%
                   </span>
                   <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200">
-                    {editableData.source === 'AI_API' ? 'AI Vision API' : 'Smart OCR Engine'}
+                    {editableData.source === 'BACKEND_API' ? 'Đã xác nhận qua API' : editableData.source === 'DEMO_SAMPLE' ? 'Dữ liệu mẫu' : 'Chưa xác minh tự động'}
                   </span>
                 </div>
               </div>
+
+              {editableData.verification && (
+                <div className={`rounded-xl border px-3 py-2 text-xs ${editableData.verification.status === 'VALID' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+                  <strong>{editableData.verification.status === 'VALID' ? 'eDO hợp lệ' : editableData.verification.status === 'MANUAL_REVIEW' ? 'eDO chờ Ops xác minh' : 'eDO có dấu hiệu bất thường/không hợp lệ'}</strong>
+                  <span className="ml-1">{editableData.verification.summary}</span>
+                  {editableData.verification.details.length > 0 && (
+                    <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                      {editableData.verification.details.map((detail, index) => <li key={index}>{detail}</li>)}
+                    </ul>
+                  )}
+                </div>
+              )}
 
               {/* Editable Fields Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs sm:text-sm">
@@ -611,33 +593,15 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
                   </select>
                 </div>
 
-                {/* 4. Mã lệnh e-DO */}
-                <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-1">
-                  <label className="text-xs text-slate-500 font-semibold block">Mã lệnh e-DO / Booking</label>
-                  <input
-                    value={editableData.edoNumber}
-                    onChange={e => setEditableData(p => p ? ({ ...p, edoNumber: e.target.value }) : null)}
-                    className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 font-mono text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
-                {/* 5. Nơi hạ vỏ / Depot */}
-                <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-1">
-                  <label className="text-xs text-slate-500 font-semibold block">Nơi hạ vỏ chỉ định (Depot)</label>
-                  <input
-                    value={editableData.returnDepot}
-                    onChange={e => setEditableData(p => p ? ({ ...p, returnDepot: e.target.value }) : null)}
-                    className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
                 {/* 6. Hạn Free time */}
                 <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-1">
                   <label className="text-xs text-slate-500 font-semibold block">Hạn Free time / Trả vỏ</label>
                   <input
-                    type="date"
-                    value={editableData.expiryDate}
-                    onChange={e => setEditableData(p => p ? ({ ...p, expiryDate: e.target.value }) : null)}
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="dd/mm/yyyy"
+                    value={displayDateDdMmYyyy(editableData.expiryDate)}
+                    onChange={e => setEditableData(p => p ? ({ ...p, expiryDate: parseDateDdMmYyyy(e.target.value) }) : null)}
                     className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono font-semibold text-amber-800 outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
@@ -678,16 +642,16 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
           </button>
           <button
             type="button"
-            disabled={!editableData}
+            disabled={!editableData && !verificationResult}
             onClick={handleApply}
             className={`px-5 py-2.5 text-sm font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-sm ${
-              editableData
+              editableData || verificationResult
                 ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20'
                 : 'bg-slate-200 text-slate-400 cursor-not-allowed'
             }`}
           >
             <Check className="w-4 h-4" />
-            <span>Áp dụng vào Form</span>
+            <span>{verificationResult && !editableData ? 'Xác nhận kết quả eDO' : 'Áp dụng vào Form'}</span>
           </button>
         </div>
       </div>
