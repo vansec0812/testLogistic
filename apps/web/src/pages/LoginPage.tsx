@@ -114,6 +114,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       alert('Mật khẩu không khớp!');
       return;
     }
+    const registeredUsers = JSON.parse(localStorage.getItem('econt_registered_users') || '[]');
+    if (registeredUsers.some((user: any) => user.username === regUsername || user.email === regEmail || user.phone === regPhone)) {
+      setRegError('Tên đăng nhập, email hoặc số điện thoại đã được sử dụng. V1 chỉ cấp một tài khoản cho mỗi doanh nghiệp.');
+      return;
+    }
 
     const companyResult = submitCompanyRegistration({
       taxCode: compTaxCode,
@@ -159,9 +164,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       company: companyResult.data,
     };
 
-    const users = JSON.parse(localStorage.getItem('econt_registered_users') || '[]');
-    users.push(newUser);
-    localStorage.setItem('econt_registered_users', JSON.stringify(users));
+    registeredUsers.push(newUser);
+    localStorage.setItem('econt_registered_users', JSON.stringify(registeredUsers));
 
     setRegSuccess(true);
     setTimeout(() => {

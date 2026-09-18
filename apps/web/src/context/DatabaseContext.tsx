@@ -3,12 +3,12 @@
 // State management với đầy đủ actions, guards và audit trail
 // ==============================================================================
 
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import {
   Company, ContainerAsset, Offer, ContainerRequest, Transaction, Agreement,
   CarrierApproval, PaymentOrder, DispatchPermit, Inspection, HandoverRecord,
   CaseIssue, AuditEvent, Notification, ChatThread, ChatMessage, MatchCandidate,
-  Quote, CreateAssetForm, CreateOfferForm, CreateRequestForm, TransactionStatus
+  Quote, CreateAssetForm, CreateOfferForm, CreateRequestForm, TransactionStatus, Match
 } from '../types';
 import {
   INITIAL_COMPANIES, INITIAL_ASSETS, INITIAL_OFFERS, INITIAL_REQUESTS,
@@ -18,8 +18,10 @@ import {
 } from '../data/mockData';
 import { canTransitionTo, getAllowedActions } from '../services/stateMachine';
 import { calculateQuote } from '../services/pricingEngine';
+import { validateContainerNumber } from '../services/iso6346';
 import { onlineDb, OnlineDbConfig } from '../services/onlineDbClient';
 import { useAuth } from './AuthContext';
+import { CARRIER_TIMEOUT_MS, MATCH_EXPIRY_MS, PAYMENT_DEADLINE_MS, QA_RULES, hasRequiredOfferPhotos, isWithinDisputeWindow } from '../services/qaRules';
 
 // ==================== CONTEXT TYPE ====================
 
@@ -40,6 +42,7 @@ interface DatabaseContextType {
   notifications: Notification[];
   chatThreads: ChatThread[];
   chatMessages: ChatMessage[];
+  matches: Match[];
 
   // Asset actions
   addAsset: (form: CreateAssetForm) => ActionResult;
@@ -71,6 +74,8 @@ interface DatabaseContextType {
 
   // Reservation & Transaction
   holdAtomicReservation: (candidate: MatchCandidate, request: ContainerRequest) => ActionResult;
+  acceptMatch: (matchId: string) => ActionResult;
+  rejectMatch: (matchId: string, reason: string) => ActionResult;
   acceptAgreement: (transactionId: string) => ActionResult;
   requestAgreementChange: (transactionId: string, reason: string) => ActionResult;
   
@@ -182,6 +187,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   });
   const [chatThreads, setChatThreads] = useState<ChatThread[]>(INITIAL_CHAT_THREADS);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
+  const [matches, setMatches] = useState<Match[]>(() => {
+    try { return JSON.parse(localStorage.getItem('econt_v2_matches') || '[]') || []; }
+    catch { return []; }
+  });
   const [onlineConfig, setOnlineConfig] = useState<OnlineDbConfig>(() => onlineDb.getConfig());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncMessage, setLastSyncMessage] = useState<string>('Sẵn sàng đồng bộ trực tuyến');
@@ -200,6 +209,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       await onlineDb.syncTable('offers', offers);
       await onlineDb.syncTable('container_requests', requests);
       await onlineDb.syncTable('transactions', transactions);
+      await onlineDb.syncTable('matches', matches);
       await onlineDb.syncTable('cases', cases);
       await onlineDb.syncTable('audit_events', auditLogs);
       setLastSyncMessage('Đồng bộ thành công lên Supabase Cloud');
@@ -209,7 +219,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } finally {
       setIsSyncing(false);
     }
-  }, [companies, assets, offers, requests, transactions, cases, auditLogs]);
+  }, [companies, assets, offers, requests, transactions, matches, cases, auditLogs]);
 
   // Persist key data
   const persistAssets = useCallback((data: ContainerAsset[]) => {
@@ -228,6 +238,49 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setTransactions(data);
     try { localStorage.setItem('econt_v2_transactions', JSON.stringify(data)); } catch { /* ok */ }
   }, []);
+  const persistMatches = useCallback((data: Match[]) => {
+    setMatches(data);
+    try { localStorage.setItem('econt_v2_matches', JSON.stringify(data)); } catch { /* demo storage may be unavailable */ }
+  }, []);
+
+  // Worker demo: các deadline QA phải tự chuyển trạng thái ngay cả khi user
+  // không reload trang. Production sẽ chuyển logic này sang worker/DB job.
+  useEffect(() => {
+    const expire = () => {
+      const now = Date.now();
+      const nextOffers = offers.map(offer =>
+        offer.status === 'AVAILABLE' && now > new Date(offer.availableTo).getTime()
+          ? { ...offer, status: 'EXPIRED' as const, updatedAt: new Date().toISOString() }
+          : offer,
+      );
+      if (nextOffers.some((offer, index) => offer.status !== offers[index].status)) persistOffers(nextOffers);
+
+      const nextRequests = requests.map(request =>
+        request.status === 'OPEN' && now > new Date(request.pickupWindowEnd).getTime()
+          ? { ...request, status: 'EXPIRED' as const, updatedAt: new Date().toISOString() }
+          : request,
+      );
+      if (nextRequests.some((request, index) => request.status !== requests[index].status)) persistRequests(nextRequests);
+
+      const nextMatches = matches.map(match =>
+        ['MATCH_REQUESTED', 'POTENTIAL_MATCH'].includes(match.status) && now > new Date(match.expiresAt).getTime()
+          ? { ...match, status: 'MATCH_EXPIRED' as const }
+          : match,
+      );
+      if (nextMatches.some((match, index) => match.status !== matches[index].status)) persistMatches(nextMatches);
+
+      const nextTransactions = transactions.map(txn => {
+        if (['COMPLETED', 'CANCELLED', 'REJECTED', 'EXPIRED', 'DISPUTED'].includes(txn.status)) return txn;
+        if (now <= new Date(txn.dueAt).getTime()) return txn;
+        const expiredStatus = txn.status === 'AWAITING_PAYMENT' ? 'PAYMENT_EXPIRED' : 'EXPIRED';
+        return { ...txn, status: expiredStatus as TransactionStatus, nextAction: 'Deadline đã hết; giao dịch bị đóng theo rule QA.', updatedAt: new Date().toISOString() };
+      });
+      if (nextTransactions.some((txn, index) => txn.status !== transactions[index].status)) persistTransactions(nextTransactions);
+    };
+    expire();
+    const timer = window.setInterval(expire, 60_000);
+    return () => window.clearInterval(timer);
+  }, [offers, requests, matches, transactions, persistOffers, persistRequests, persistMatches, persistTransactions]);
 
   // Audit log helper
   const addAudit = useCallback((action: string, entityType: string, entityId: string, details: string) => {
@@ -308,6 +361,8 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: false, message: 'Chỉ Bên A mới có thể đăng ký tài sản container.' };
     }
     // Kiểm tra trùng số cont
+    const containerValidation = validateContainerNumber(form.containerNumber);
+    if (!containerValidation.isValid) return { success: false, message: containerValidation.message || 'Sá»‘ container khÃ´ng há»£p lá»‡ ISO 6346.' };
     const exists = assets.find(a => a.containerNumber === form.containerNumber.toUpperCase());
     if (exists) {
       return { success: false, message: `Số container ${form.containerNumber} đã tồn tại trong hệ thống.` };
@@ -341,7 +396,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!notes.trim()) return { success: false, message: 'Cần ghi chú kết luận kiểm tra ảnh.' };
     const asset = assets.find(a => a.id === assetId);
     if (!asset) return { success: false, message: 'Không tìm thấy container.' };
-    if (!asset.aiInspection?.requiresOpsReview) {
+    if (!asset.aiInspection?.requiresOpsReview && !(asset.hasEdoDocument && asset.edoVerificationStatus !== 'VERIFIED')) {
       return { success: false, message: 'Container này không có yêu cầu Ops kiểm tra thủ công.' };
     }
     const now = new Date().toISOString();
@@ -349,12 +404,19 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ...asset,
       aiInspection: {
         ...asset.aiInspection,
+        summary: asset.aiInspection?.summary || 'Ops kiểm tra thủ công hồ sơ e-DO/container.',
+        details: asset.aiInspection?.details || [],
+        requiresOpsReview: true,
+        inspectedAt: asset.aiInspection?.inspectedAt || now,
         status: decision === 'APPROVE' ? 'OPS_VERIFIED' : 'OPS_REJECTED',
         reviewedBy: currentUserEmail,
         reviewedAt: now,
         opsDecisionNotes: notes.trim(),
       },
-      reviewedCondition: decision === 'APPROVE' ? (asset.aiInspection.condition || asset.declaredCondition) : undefined,
+       reviewedCondition: decision === 'APPROVE' ? (asset.aiInspection?.condition || asset.declaredCondition) : undefined,
+       edoVerificationStatus: asset.hasEdoDocument
+         ? (decision === 'APPROVE' ? 'VERIFIED' : 'REJECTED')
+         : asset.edoVerificationStatus,
       updatedAt: now,
     };
     persistAssets(assets.map(a => a.id === assetId ? updatedAsset : a));
@@ -410,6 +472,12 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (asset.physicalStatus !== 'EMPTY_AT_YARD' && asset.physicalStatus !== 'EMPTY_AT_DEPOT') {
       return { success: false, message: 'Chỉ có thể tạo Offer cho container rỗng (EMPTY_AT_YARD/DEPOT).' };
     }
+    if (!asset.hasEdoDocument || asset.edoVerificationStatus !== 'VERIFIED') {
+      return { success: false, message: 'Offer requires an e-DO verified by Ops.' };
+    }
+    if (!hasRequiredOfferPhotos(asset.photos)) {
+      return { success: false, message: `Offer requires at least ${QA_RULES.offer.minPhotoCount} container photos.` };
+    }
     const existingOffer = offers.find(
       o => o.assetId === form.assetId && ['DRAFT', 'UNDER_REVIEW', 'AVAILABLE', 'HELD', 'ALLOCATED'].includes(o.status)
     );
@@ -435,7 +503,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       vehicleRequirements: form.vehicleRequirements,
       photoUrls: asset.photos,
       photoChecklistComplete: asset.photos.length >= 6,
-      edoDocumentIds: [],
+       edoDocumentIds: [asset.edoEvidenceName || `E_DO_${asset.id}`],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -476,6 +544,9 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     if (!offer.photoChecklistComplete) {
       return { success: false, message: 'Cần tối thiểu 6 ảnh (6 góc) trước khi gửi review.' };
+    }
+    if (!offer.asset.hasEdoDocument || offer.asset.edoVerificationStatus !== 'VERIFIED' || offer.edoDocumentIds.length === 0) {
+      return { success: false, message: 'Cáº§n e-DO Ä‘Ã£ Ä‘Æ°á»£c Ops xÃ¡c minh trÆ°á»›c khi gá»­i Offer.' };
     }
     persistOffers(offers.map(o => o.id === offerId ? { ...o, status: 'UNDER_REVIEW', updatedAt: new Date().toISOString() } : o));
     addAudit('OFFER_SUBMITTED_FOR_REVIEW', 'Offer', offerId, 'Gửi Offer để Ops thẩm định');
@@ -518,6 +589,9 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (offer.status !== 'UNDER_REVIEW') {
       return { success: false, message: `Offer không ở trạng thái UNDER_REVIEW (hiện: ${offer.status}).` };
     }
+    if (decision === 'APPROVE' && (!offer.asset.hasEdoDocument || offer.asset.edoVerificationStatus !== 'VERIFIED' || offer.edoDocumentIds.length === 0)) {
+      return { success: false, message: 'KhÃ´ng thá»ƒ publish Offer khi e-DO chÆ°a Ä‘Æ°á»£c Ops xÃ¡c minh.' };
+    }
     const newStatus = decision === 'APPROVE' ? 'AVAILABLE' : decision === 'REQUEST_CHANGES' ? 'CHANGES_REQUIRED' : 'REJECTED';
     persistOffers(offers.map(o =>
       o.id === offerId ? {
@@ -539,6 +613,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const addRequest = useCallback((form: CreateRequestForm): ActionResult => {
     if (currentRole !== 'ENTERPRISE_B' && currentRole !== 'SUPER_ADMIN') {
       return { success: false, message: 'Chỉ Bên B mới có thể tạo nhu cầu.' };
+    }
+    if (!form.bookingNumber.trim()) return { success: false, message: 'Booking Note/Booking Number là bắt buộc.' };
+    if (!form.pickupWindowStart || !form.pickupWindowEnd || new Date(form.pickupWindowEnd).getTime() <= new Date(form.pickupWindowStart).getTime()) {
+      return { success: false, message: 'Request phải có required_from/required_until hợp lệ.' };
     }
     const requesterCompany = companies.find(c => c.id === currentCompany.id) || currentCompany;
     if (requesterCompany.verificationStatus !== 'VERIFIED') {
@@ -634,6 +712,9 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (req.status !== 'UNDER_REVIEW') {
       return { success: false, message: `Nhu cầu không ở trạng thái UNDER_REVIEW (hiện: ${req.status}).` };
     }
+    if (decision === 'APPROVE' && (!req.bookingNumber.trim() || !req.carrierCode || !req.containerType || !req.cutOffTime)) {
+      return { success: false, message: 'Booking thiếu Carrier/Booking Number/size-type/cut-off; chưa thể OPEN.' };
+    }
     const newStatus = decision === 'APPROVE' ? 'OPEN' : decision === 'REQUEST_CHANGES' ? 'CHANGES_REQUIRED' : 'REJECTED';
     persistRequests(requests.map(r =>
       r.id === requestId ? {
@@ -678,57 +759,141 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     // Tạo Agreement v1
-    const agreementId = genId('AGR');
-    const agreement: Agreement = {
-      id: agreementId,
-      transactionId: '',
-      version: 1,
-      contentHash: `sha256-${Math.random().toString(36).substring(2)}`,
-      createdAt: new Date().toISOString(),
-    };
-
-    // Tạo Transaction
-    const txnId = genId('TXN');
-    agreement.transactionId = txnId;
-
-    const newTxn: Transaction = {
-      id: txnId,
+    const activeMatchExists = matches.some(m =>
+      m.offerId === latestOffer.id && m.requestId === latestRequest.id &&
+      ['MATCH_REQUESTED', 'MATCH_ACCEPTED'].includes(m.status)
+    );
+    if (activeMatchExists) {
+      return { success: false, message: 'Match cho Offer/Request này đã tồn tại.' };
+    }
+    const matchNow = new Date().toISOString();
+    const pendingMatch: Match = {
+      id: genId('MATCH'),
       offerId: latestOffer.id,
       requestId: latestRequest.id,
       assetId: latestOffer.assetId,
       companyAId: latestOffer.companyId,
-      companyAName: latestOffer.companyName,
       companyBId: currentCompany.id,
-      companyBName: currentCompany.shortName,
-      asset: latestOffer.asset,
+      scoreM: candidate.scoreM,
+      scoreD: candidate.scoreD,
+      scoreT: candidate.scoreT,
+      scoreC: candidate.scoreC,
+      quote: candidate.quote,
+      status: 'MATCH_REQUESTED',
+      requestedAt: matchNow,
+      expiresAt: new Date(Date.now() + MATCH_EXPIRY_MS).toISOString(),
+    };
+    // B mới chỉ gửi yêu cầu ghép. Chưa reserve cont và chưa tạo Transaction.
+    persistMatches([...matches, pendingMatch]);
+    const chatExists = chatThreads.some(thread =>
+      thread.offerId === latestOffer.id && thread.requestId === latestRequest.id &&
+      thread.companyAId === latestOffer.companyId && thread.companyBId === latestRequest.companyId
+    );
+    if (!chatExists) {
+      const chatNow = new Date().toISOString();
+      setChatThreads(prev => [{
+        id: genId('CHAT'),
+        companyAId: latestOffer.companyId,
+        companyAName: latestOffer.companyName,
+        companyBId: latestRequest.companyId,
+        companyBName: latestRequest.companyName,
+        offerId: latestOffer.id,
+        requestId: latestRequest.id,
+        contextLabel: `Trao đổi trước đặt cont · ${latestOffer.asset.carrierCode} · ${latestOffer.asset.containerType}`,
+        contextType: 'PRE_BOOKING',
+        carrierCode: latestOffer.asset.carrierCode,
+        containerType: latestOffer.asset.containerType,
+        pickupLocationName: latestOffer.pickupLocationName,
+        createdAt: chatNow,
+        updatedAt: chatNow,
+        lastMessageAt: chatNow,
+      }, ...prev]);
+    }
+    addAudit('MATCH_REQUESTED', 'Match', pendingMatch.id, `Bên B chọn Offer ${latestOffer.id}; chờ A xác nhận trong 2 giờ.`);
+    addNotification(latestOffer.companyId, 'TRANSACTION_UPDATE', 'Có yêu cầu ghép mới từ Bên B', `${currentCompany.shortName} đã chọn Offer ${latestOffer.id}. Hãy Accept/Reject Match trước khi hết hạn.`, pendingMatch.id);
+    return { success: true, message: `Đã gửi yêu cầu ghép ${pendingMatch.id} cho Bên A. Chưa tạo Transaction và chưa giữ cont.`, data: { matchId: pendingMatch.id } };
+
+  }, [offers, requests, transactions, matches, chatThreads, currentRole, currentCompany, persistOffers, persistRequests, persistTransactions, persistMatches, addAudit, addNotification]);
+
+  const acceptMatch = useCallback((matchId: string): ActionResult => {
+    const match = matches.find(item => item.id === matchId);
+    if (!match) return { success: false, message: 'Không tìm thấy Match.' };
+    if (currentRole !== 'ENTERPRISE_A' || currentCompany.id !== match.companyAId) {
+      return { success: false, message: 'Chỉ Bên A của Match mới được Accept.' };
+    }
+    if (match.status !== 'MATCH_REQUESTED') return { success: false, message: 'Match không còn chờ A xử lý.' };
+    if (Date.now() > new Date(match.expiresAt).getTime()) {
+      persistMatches(matches.map(item => item.id === matchId ? { ...item, status: 'MATCH_EXPIRED' } : item));
+      return { success: false, message: 'Match đã hết hạn sau 2 giờ.' };
+    }
+    const offer = offers.find(item => item.id === match.offerId);
+    const request = requests.find(item => item.id === match.requestId);
+    if (!offer || offer.status !== 'AVAILABLE' || !request || request.status !== 'OPEN') {
+      return { success: false, message: 'Offer hoặc Request không còn khả dụng; Match bị từ chối.' };
+    }
+    if (transactions.some(t => t.assetId === match.assetId && !['COMPLETED', 'CANCELLED', 'REJECTED', 'EXPIRED'].includes(t.status))) {
+      return { success: false, message: 'Container đã được phân bổ cho giao dịch khác.' };
+    }
+    const now = new Date().toISOString();
+    const transactionId = genId('TXN');
+    const agreement: Agreement = {
+      id: genId('AGR'),
+      transactionId,
+      version: 1,
+      contentHash: `sha256-${Math.random().toString(36).substring(2)}`,
+      createdAt: now,
+      companyAAcceptedAt: now,
+      companyAAcceptedBy: currentUserEmail,
+      companyACompanyId: currentCompany.id,
+    };
+    const newTxn: Transaction = {
+      id: transactionId,
+      offerId: offer.id,
+      requestId: request.id,
+      assetId: offer.assetId,
+      companyAId: offer.companyId,
+      companyAName: offer.companyName,
+      companyBId: request.companyId,
+      companyBName: request.companyName,
+      asset: offer.asset,
       status: 'NEGOTIATING',
       rowVersion: 1,
       isOnHold: false,
-      dueAt: new Date(Date.now() + 30 * 60000).toISOString(), // 30 phút
-      nextAction: 'Hai bên A và B xem xét nội dung Thỏa thuận và bấm Ký chấp thuận.',
+      dueAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      nextAction: 'Bên B cần xác nhận Thỏa thuận. Chỉ khi cả A và B xác nhận, hệ thống mới xin Carrier Approval.',
       allowedActions: [],
       blockingReasons: [],
       currentAgreementVersion: 1,
       agreements: [agreement],
-      quote: candidate.quote,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      quote: match.quote,
+      createdAt: now,
+      updatedAt: now,
     };
-
-    // Cập nhật trạng thái
-    persistOffers(offers.map(o => o.id === latestOffer.id ? { ...o, status: 'HELD', updatedAt: new Date().toISOString() } : o));
-    persistRequests(requests.map(r => r.id === latestRequest.id ? { ...r, status: 'HELD', updatedAt: new Date().toISOString() } : r));
+    persistMatches(matches.map(item => item.id === matchId ? { ...item, status: 'MATCH_ACCEPTED', respondedAt: now, respondedBy: currentUserEmail, transactionId } : item));
+    persistAssets(assets.map(item => item.id === offer.assetId
+      ? { ...item, isLocked: true, activeAllocationId: transactionId, updatedAt: now }
+      : item));
+    persistOffers(offers.map(item => item.id === offer.id ? { ...item, status: 'HELD', updatedAt: now } : item));
+    persistRequests(requests.map(item => item.id === request.id ? { ...item, status: 'HELD', updatedAt: now } : item));
     persistTransactions([...transactions, newTxn]);
+    addAudit('MATCH_ACCEPTED_TRANSACTION_CREATED', 'Match', matchId, `A Accept Match; tạo Transaction ${transactionId} và mới reserve container.`);
+    addNotification(request.companyId, 'TRANSACTION_UPDATE', 'Bên A đã Accept Match', `Giao dịch ${transactionId} đã được tạo. Bên B cần xác nhận Thỏa thuận.`, transactionId);
+    return { success: true, message: `Đã Accept Match. Tạo giao dịch ${transactionId}.`, data: { transactionId } };
+  }, [matches, offers, requests, transactions, assets, currentRole, currentCompany, currentUserEmail, persistMatches, persistAssets, persistOffers, persistRequests, persistTransactions, addAudit, addNotification]);
 
-    addAudit('HOLD_RESERVATION_CREATED', 'Transaction', txnId,
-      `Giữ chỗ Container ${latestOffer.asset.containerNumber} cho Request ${latestRequest.id}. Deadline: 30 phút.`);
-    addNotification(latestOffer.companyId, 'TRANSACTION_UPDATE',
-      `Bên B quan tâm đến ${latestOffer.asset.containerNumber}`,
-      `${currentCompany.shortName} đã giữ chỗ container của bạn. Vui lòng xem xét Thỏa thuận.`,
-      txnId);
-
-    return { success: true, message: `Đã giữ chỗ thành công! Giao dịch ${txnId} được tạo.`, data: { transactionId: txnId } };
-  }, [offers, requests, transactions, currentRole, currentCompany, persistOffers, persistRequests, persistTransactions, addAudit, addNotification]);
+  const rejectMatch = useCallback((matchId: string, reason: string): ActionResult => {
+    const match = matches.find(item => item.id === matchId);
+    if (!match) return { success: false, message: 'Không tìm thấy Match.' };
+    if (currentRole !== 'ENTERPRISE_A' || currentCompany.id !== match.companyAId) {
+      return { success: false, message: 'Chỉ Bên A của Match mới được Reject.' };
+    }
+    if (match.status !== 'MATCH_REQUESTED') return { success: false, message: 'Match không còn chờ xử lý.' };
+    const now = new Date().toISOString();
+    persistMatches(matches.map(item => item.id === matchId ? { ...item, status: 'MATCH_REJECTED', respondedAt: now, respondedBy: currentUserEmail, responseReason: reason.trim() || 'A từ chối Match' } : item));
+    addAudit('MATCH_REJECTED', 'Match', matchId, reason.trim() || 'A từ chối Match');
+    addNotification(match.companyBId, 'TRANSACTION_UPDATE', 'Match bị từ chối', reason.trim() || 'Bên A chưa thể tiếp nhận yêu cầu ghép.', matchId);
+    return { success: true, message: 'Đã Reject Match; Offer vẫn AVAILABLE.' };
+  }, [matches, currentRole, currentCompany, currentUserEmail, persistMatches, addAudit, addNotification]);
 
   // ==================== AGREEMENT ====================
 
@@ -795,7 +960,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       updatedTxn = {
         ...updatedTxn,
         status: 'PENDING_CARRIER',
-        dueAt: new Date(Date.now() + 4 * 3600000).toISOString(), // 4 giờ
+        dueAt: new Date(Date.now() + CARRIER_TIMEOUT_MS).toISOString(),
         nextAction: 'Bộ phận Vận hành (Ops) đang liên hệ hãng tàu xin duyệt RU. Dự kiến 4 giờ.',
       };
       addAudit('TRANSACTION_STATUS_CHANGED', 'Transaction', transactionId,
@@ -872,6 +1037,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: false, message: 'Phải có tên file bằng chứng RU.' };
     }
 
+    const carrierRequest = requests.find(r => r.id === txn.requestId);
+    if (!carrierRequest?.bookingNumber || !carrierRequest.carrierCode || new Date(validUntil).getTime() <= Date.now()) {
+      return { success: false, message: 'Carrier Approval thiáº¿u Booking scope hoáº·c háº¡n hiá»‡u lá»±c khÃ´ng há»£p lá»‡.' };
+    }
     const approval: CarrierApproval = {
       id: genId('CARAPPR'),
       transactionId,
@@ -880,11 +1049,11 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       status: 'APPROVED',
       scope: {
         containerNumber: txn.asset.containerNumber,
-        bookingNumber: '',
+        bookingNumber: requests.find(r => r.id === txn.requestId)?.bookingNumber || '',
         companyAId: txn.companyAId,
         companyBId: txn.companyBId,
         pickupPoint: txn.asset.currentLocationName,
-        deliveryPoint: '',
+        deliveryPoint: requests.find(r => r.id === txn.requestId)?.deliveryLocationName || '',
         validFrom: new Date().toISOString(),
         validUntil,
       },
@@ -904,7 +1073,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       payerRole: 'PARTY_A',
       amountVnd: txn.quote.econtCollectedFromA,
       status: 'OPEN',
-      expiresAt: new Date(Date.now() + 2 * 3600000).toISOString(),
+        expiresAt: new Date(Date.now() + PAYMENT_DEADLINE_MS).toISOString(),
     };
     const paymentOrderB: PaymentOrder = {
       id: genId('PAY'),
@@ -914,7 +1083,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       payerRole: 'PARTY_B',
       amountVnd: txn.quote.econtCollectedFromB,
       status: 'OPEN',
-      expiresAt: new Date(Date.now() + 2 * 3600000).toISOString(),
+        expiresAt: new Date(Date.now() + PAYMENT_DEADLINE_MS).toISOString(),
     };
 
     const updatedTxn: Transaction = {
@@ -924,7 +1093,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       paymentOrderA,
       paymentOrderB,
       rowVersion: txn.rowVersion + 1,
-      dueAt: new Date(Date.now() + 2 * 3600000).toISOString(),
+      dueAt: new Date(Date.now() + PAYMENT_DEADLINE_MS).toISOString(),
       nextAction: 'Bên A và Bên B cần hoàn tất thanh toán trong vòng 2 giờ.',
       updatedAt: new Date().toISOString(),
     };
@@ -934,7 +1103,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     addNotification(txn.companyAId, 'PAYMENT_REQUIRED', `Cần thanh toán ${txn.quote.econtCollectedFromA.toLocaleString('vi-VN')} ₫`, 'Hãng tàu đã duyệt RU. Vui lòng hoàn tất thanh toán trong 2 giờ.', transactionId);
     addNotification(txn.companyBId, 'PAYMENT_REQUIRED', `Cần thanh toán ${txn.quote.econtCollectedFromB.toLocaleString('vi-VN')} ₫`, 'Hãng tàu đã duyệt RU. Vui lòng hoàn tất thanh toán trong 2 giờ.', transactionId);
     return { success: true, message: 'Đã ghi nhận Carrier Approval. Chuyển sang chờ thanh toán.' };
-  }, [transactions, currentRole, currentUserEmail, persistTransactions, addAudit, addNotification]);
+  }, [transactions, requests, currentRole, currentUserEmail, persistTransactions, addAudit, addNotification]);
 
   const opsRejectCarrier = useCallback((transactionId: string, reason: string): ActionResult => {
     if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
@@ -946,16 +1115,17 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: false, message: 'Giao dịch không ở PENDING_CARRIER.' };
     }
     const updatedTxn: Transaction = {
-      ...txn, status: 'REJECTED', rowVersion: txn.rowVersion + 1,
+      ...txn, status: 'CARRIER_REJECTED', rowVersion: txn.rowVersion + 1,
       nextAction: `Hãng tàu từ chối RU: ${reason}. Xử lý giải phóng và hoàn tiền.`,
       updatedAt: new Date().toISOString(),
     };
     persistOffers(offers.map(o => o.id === txn.offerId ? { ...o, status: 'AVAILABLE', updatedAt: new Date().toISOString() } : o));
     persistRequests(requests.map(r => r.id === txn.requestId ? { ...r, status: 'OPEN', updatedAt: new Date().toISOString() } : r));
+    persistAssets(assets.map(a => a.id === txn.assetId ? { ...a, isLocked: false, activeAllocationId: undefined, updatedAt: new Date().toISOString() } : a));
     persistTransactions(transactions.map(t => t.id === transactionId ? updatedTxn : t));
     addAudit('CARRIER_REJECTION_RECORDED', 'Transaction', transactionId, `Carrier từ chối RU: ${reason}`);
     return { success: true, message: 'Đã ghi nhận carrier từ chối. Offer và Request được giải phóng.' };
-  }, [transactions, offers, requests, currentRole, persistOffers, persistRequests, persistTransactions, addAudit]);
+  }, [transactions, offers, requests, assets, currentRole, persistOffers, persistRequests, persistAssets, persistTransactions, addAudit]);
 
   // ==================== PAYMENT ====================
 
@@ -972,6 +1142,15 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const now = new Date().toISOString();
     const orderKey = party === 'A' ? 'paymentOrderA' : 'paymentOrderB';
     const existingOrder = txn[orderKey];
+    if (existingOrder && (!Number.isFinite(amount) || amount !== existingOrder.amountVnd)) {
+      return { success: false, message: `Sá»‘ tiá»n pháº£i khÃ›p chÃ­nh xÃ¡c lá»‡nh thanh toÃ¡n: ${existingOrder?.amountVnd.toLocaleString('vi-VN')} VND.` };
+    }
+    if (!bankRef.trim()) {
+      return { success: false, message: 'Báº¯t buá»™c nháº­p mÃ£ tham chiáº¿u chuyá»ƒn khoáº£n.' };
+    }
+    if (existingOrder && Date.now() > new Date(existingOrder.expiresAt).getTime()) {
+      return { success: false, message: 'Payment deadline Ä‘Ã£ háº¿t; giao dá»‹ch cáº§n auto-cancel theo rule QA.' };
+    }
     if (!existingOrder) return { success: false, message: 'Không tìm thấy lệnh thanh toán.' };
 
     const updatedOrder: PaymentOrder = {
@@ -1272,6 +1451,21 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [transactions, currentRole, currentUserEmail, persistTransactions, addAudit]);
 
   const addCase = useCallback((c: Omit<CaseIssue, 'id' | 'createdAt' | 'updatedAt'>): ActionResult => {
+    const isOpsUser = currentRole === 'OPS' || currentRole === 'SUPER_ADMIN';
+    if (!isOpsUser && currentRole !== 'ENTERPRISE_A' && currentRole !== 'ENTERPRISE_B') {
+      return { success: false, message: 'Chá»‰ BÃªn A, BÃªn B hoáº·c Ops Ä‘Æ°á»£c má»Ÿ Case.' };
+    }
+    if (c.transactionId) {
+      const txn = transactions.find(item => item.id === c.transactionId);
+      if (!txn) return { success: false, message: 'Giao dá»‹ch trong Case khÃ´ng tá»“n táº¡i.' };
+      if (txn.status === 'COMPLETED') return { success: false, message: 'Giao dá»‹ch COMPLETED khÃ´ng Ä‘Æ°á»£c má»Ÿ Dispute má»›i.' };
+      if (!isOpsUser && txn.companyAId !== currentCompany.id && txn.companyBId !== currentCompany.id) {
+        return { success: false, message: 'Báº¡n khÃ´ng pháº£i bÃªn tham gia giao dá»‹ch.' };
+      }
+      if (!isWithinDisputeWindow(txn.createdAt)) {
+        return { success: false, message: 'Case Ä‘Ã£ quÃ¡ thá»i háº¡n 7 ngÃ y.' };
+      }
+    }
     const newCase: CaseIssue = {
       ...c,
       id: genId('CASE'),
@@ -1279,9 +1473,14 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       updatedAt: new Date().toISOString(),
     };
     setCases(prev => [newCase, ...prev]);
+    if (c.transactionId && !isOpsUser) {
+      persistTransactions(transactions.map(txn => txn.id === c.transactionId
+        ? { ...txn, status: 'DISPUTED', isOnHold: true, holdReason: `Case ${newCase.id}: ${newCase.title}`, holdCaseId: newCase.id, rowVersion: txn.rowVersion + 1, updatedAt: newCase.createdAt }
+        : txn));
+    }
     addAudit('CASE_CREATED', 'CaseIssue', newCase.id, `Tạo Case: ${newCase.title}`);
     return { success: true, message: 'Đã tạo Case thành công.', data: newCase };
-  }, [addAudit]);
+  }, [addAudit, currentRole, currentCompany.id, transactions, persistTransactions]);
 
   const updateCase = useCallback((caseId: string, updates: Partial<CaseIssue>): ActionResult => {
     const c = cases.find(item => item.id === caseId);
@@ -1307,6 +1506,11 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
       return { success: false, message: 'Chỉ Ops mới có thể kết luận Case.' };
     }
+    const existingCase = cases.find(c => c.id === caseId);
+    if (!existingCase) return { success: false, message: 'KhÃ´ng tÃ¬m tháº¥y Case.' };
+    if (!['OPEN', 'IN_REVIEW', 'NEEDS_INFO'].includes(existingCase.status)) {
+      return { success: false, message: 'Case khÃ´ng cÃ²n á»Ÿ tráº¡ng thÃ¡i cÃ³ thá»ƒ káº¿t luáº­n.' };
+    }
     setCases(prev => prev.map(c =>
       c.id === caseId ? {
         ...c, status: 'RESOLVED', resolution,
@@ -1315,15 +1519,18 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     ));
     addAudit('CASE_RESOLVED', 'CaseIssue', caseId, `Kết luận Case: ${resolution.summary}`);
     return { success: true, message: 'Đã kết luận Case.' };
-  }, [currentRole, addAudit]);
+  }, [currentRole, cases, addAudit]);
 
   const closeCase = useCallback((caseId: string): ActionResult => {
+    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Chá»‰ Ops má»›i cÃ³ thá»ƒ Ä‘Ã³ng Case.' };
+    }
     setCases(prev => prev.map(c =>
       c.id === caseId ? { ...c, status: 'CLOSED', closedAt: new Date().toISOString(), updatedAt: new Date().toISOString() } : c
     ));
     addAudit('CASE_CLOSED', 'CaseIssue', caseId, 'Đóng Case');
     return { success: true, message: 'Đã đóng Case.' };
-  }, [addAudit]);
+  }, [currentRole, addAudit]);
 
   // ==================== COMPANY ACTIONS ====================
 
@@ -1411,6 +1618,11 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // ==================== CHAT ====================
 
   const startChatThread = useCallback((thread: Omit<ChatThread, 'id' | 'createdAt' | 'updatedAt'>): string | null => {
+    if (thread.companyAId === thread.companyBId || !thread.offerId || !thread.requestId) return null;
+    const offer = offers.find(item => item.id === thread.offerId);
+    const request = requests.find(item => item.id === thread.requestId);
+    if (!offer || !request || offer.companyId !== thread.companyAId || request.companyId !== thread.companyBId) return null;
+    if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN' && currentCompany.id !== thread.companyAId && currentCompany.id !== thread.companyBId) return null;
     const existing = chatThreads.find(t =>
       t.companyAId === thread.companyAId && t.companyBId === thread.companyBId &&
       t.offerId === thread.offerId && t.requestId === thread.requestId
@@ -1424,7 +1636,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setChatThreads(prev => [newThread, ...prev]);
     return newThread.id;
-  }, [chatThreads]);
+  }, [chatThreads, offers, requests, currentRole, currentCompany.id]);
 
   const sendChatMessage = useCallback((threadId: string, body: string): ActionResult => {
     const thread = chatThreads.find(t => t.id === threadId);
@@ -1438,6 +1650,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: false, message: 'Bạn không có quyền gửi tin nhắn vào cuộc hội thoại này.' };
     }
 
+    if (/(\+?\d[\d .-]{7,}\d)|([\w.+-]+@[\w.-]+\.[A-Za-z]{2,})|(https?:\/\/|www\.|zalo|telegram|whatsapp)/i.test(body)) {
+      addAudit('CHAT_MESSAGE_BLOCKED', 'ChatThread', threadId, 'Tin nhắn chứa thông tin liên hệ ngoài nền tảng.');
+      return { success: false, message: 'Tin nhắn bị chặn vì chứa số điện thoại, email hoặc URL liên hệ ngoài nền tảng.' };
+    }
     const newMsg: ChatMessage = {
       id: genId('MSG'),
       clientId: `cli-${Date.now()}`,
@@ -1454,7 +1670,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       t.id === threadId ? { ...t, updatedAt: newMsg.createdAt, lastMessageAt: newMsg.createdAt } : t
     ));
     return { success: true, message: 'Đã gửi tin nhắn.' };
-  }, [chatThreads, currentRole, currentCompany]);
+  }, [chatThreads, currentRole, currentCompany, addAudit]);
 
   // ==================== NOTIFICATIONS ====================
 
@@ -1486,18 +1702,19 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     persistNotifications(INITIAL_NOTIFICATIONS);
     setChatThreads(INITIAL_CHAT_THREADS);
     setChatMessages(INITIAL_CHAT_MESSAGES);
-  }, [persistAssets, persistOffers, persistRequests, persistTransactions, persistNotifications]);
+    persistMatches([]);
+  }, [persistAssets, persistOffers, persistRequests, persistTransactions, persistNotifications, persistMatches]);
 
   // ==================== CONTEXT VALUE ====================
 
   const value: DatabaseContextType = {
     companies, assets, offers, requests, transactions, cases, auditLogs,
-    notifications, myNotifications, chatThreads, chatMessages,
+    notifications, myNotifications, chatThreads, chatMessages, matches,
     addAsset, updateAsset, deleteAsset, opsReviewAsset,
     addOffer, updateOffer, submitOfferForReview, withdrawOffer, deleteOffer, opsReviewOffer,
     addRequest, updateRequest, submitRequestForReview, withdrawRequest, deleteRequest, opsReviewRequest,
     addCompany, submitCompanyRegistration, updateCompany, deleteCompany,
-    holdAtomicReservation, acceptAgreement, requestAgreementChange,
+    holdAtomicReservation, acceptMatch, rejectMatch, acceptAgreement, requestAgreementChange,
     opsApproveCarrier, opsRejectCarrier,
     settlePayment,
     generateDispatchPermit, activateInspection, submitInspection,

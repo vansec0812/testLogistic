@@ -185,14 +185,8 @@ export function canTransitionTo(
       if (!txn.inspection) {
         blocking.push('Chưa có biên bản kiểm tra thực địa.');
       } else {
-        if (txn.inspection.isDiscrepancyFound) {
-          const severity = txn.inspection.discrepancySeverity;
-          if (severity === 'MAJOR') {
-            blocking.push('Phát hiện sai lệch NGHIÊM TRỌNG trong biên bản kiểm tra. Cần lập Case và xử lý trước khi tiếp tục.');
-          } else {
-            blocking.push(`Phát hiện sai lệch ${severity || ''} trong biên bản. Hai bên cần xem xét trước khi bàn giao.`);
-          }
-        }
+        // QA: tại handover hai bên chọn Confirm hoặc Dispute. Không tự chặn
+        // chỉ vì checklist có ghi nhận khác biệt; Dispute do bên nhận mở.
       }
 
       if (blocking.length > 0) {

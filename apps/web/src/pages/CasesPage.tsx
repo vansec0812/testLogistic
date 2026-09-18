@@ -19,6 +19,9 @@ interface CasesPageProps {
 }
 
 const CASE_TYPE_LABELS: Record<CaseIssue['caseType'], string> = {
+  CONDITION_MISMATCH: 'Sai khác tình trạng cont',
+  NO_SHOW: 'No-show',
+  WRONG_CONTAINER: 'Sai số container',
   DAMAGE_DISPUTE: 'Tranh chấp hư hại',
   LATE_HANDOVER: 'Bàn giao trễ hẹn',
   CARRIER_REJECTION: 'Hãng tàu từ chối',
@@ -630,4 +633,3 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
     </div>
   );
 };
-

@@ -115,7 +115,7 @@ function MatchCandidateCard({
           className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
         >
           <Sparkles className="w-3.5 h-3.5" />
-          <span>Giữ chỗ 30 phút</span>
+           <span>Chọn Offer · Gửi Match</span>
         </button>
       </div>
     </div>
@@ -281,16 +281,10 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     const result = holdAtomicReservation(candidate, req);
     setHoldingId(null);
     if (result.success) {
-      const txnData = result.data as { transactionId: string } | undefined;
-      showMsg(`✓ Đã giữ chỗ 30 phút thành công! Giao dịch ${txnData?.transactionId || ''} được khởi tạo.`);
+      const matchData = result.data as { matchId: string } | undefined;
+      showMsg(`✓ Đã gửi yêu cầu ghép ${matchData?.matchId || ''}. Chưa reserve cont; chờ Bên A Accept.`);
       setMatchingForId(null);
       setAutoMatchModalReq(null);
-      if (txnData?.transactionId && setCurrentTab && setSelectedTxnId) {
-        setTimeout(() => {
-          setSelectedTxnId(txnData.transactionId);
-          setCurrentTab('transactions');
-        }, 1200);
-      }
     } else {
       showMsg(result.message, true);
     }
@@ -706,7 +700,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                     className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
                   >
                     <Lock className="w-3.5 h-3.5" />
-                    <span>Giữ chỗ ngay (30 phút)</span>
+                     <span>Chọn Offer · Gửi Match</span>
                   </button>
                 </div>
               )}

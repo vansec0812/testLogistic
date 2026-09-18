@@ -27,7 +27,7 @@ const STEPS: Array<{
   { status: 'COMPLETED', label: 'Hoàn tất', sublabel: 'Custody chuyển B', icon: CheckCircle2, step: 7 },
 ];
 
-const TERMINAL_STATUSES: TransactionStatus[] = ['CANCELLED', 'REJECTED', 'EXPIRED'];
+const TERMINAL_STATUSES: TransactionStatus[] = ['CANCELLED', 'REJECTED', 'EXPIRED', 'DISPUTED', 'PICKUP_REFUSED', 'CARRIER_REJECTED', 'PAYMENT_EXPIRED'];
 const STATUS_TO_STEP: Partial<Record<TransactionStatus, number>> = {
   NEGOTIATING: 1,
   PENDING_CARRIER: 2,
@@ -61,7 +61,9 @@ export const TransactionStepper: React.FC<TransactionStepperProps> = ({ transact
   if (isTerminal) {
     const label =
       status === 'CANCELLED' ? 'Giao dịch đã bị HỦY' :
-      status === 'REJECTED' ? 'Hãng tàu TỪ CHỐI duyệt RU' :
+      status === 'REJECTED' || status === 'CARRIER_REJECTED' ? 'Hãng tàu TỪ CHỐI duyệt RU' :
+      status === 'DISPUTED' || status === 'PICKUP_REFUSED' ? 'Giao dịch đang có Case/Dispute' :
+      status === 'PAYMENT_EXPIRED' ? 'Quá hạn thanh toán' :
       'Giao dịch HẾT HẠN';
     return (
       <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">

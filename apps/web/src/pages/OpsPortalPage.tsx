@@ -112,7 +112,10 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
   const underReviewOffers = offers.filter(o => o.status === 'UNDER_REVIEW');
   const underReviewRequests = requests.filter(r => r.status === 'UNDER_REVIEW');
   const openCases = cases.filter(c => c.status === 'OPEN' || c.status === 'IN_REVIEW');
-  const aiReviewAssets = assets.filter(a => a.aiInspection?.requiresOpsReview && ['ANOMALY', 'ERROR'].includes(a.aiInspection.status));
+  const aiReviewAssets = assets.filter(a =>
+    (a.aiInspection?.requiresOpsReview && ['ANOMALY', 'ERROR'].includes(a.aiInspection.status)) ||
+    (a.hasEdoDocument && a.edoVerificationStatus !== 'VERIFIED')
+  );
 
   const handleCarrierSubmit = (action: 'approve' | 'reject') => {
     if (!carrierModalTxnId) return;

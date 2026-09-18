@@ -23,8 +23,9 @@ interface OffersPageProps {
 }
 
 export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelectedTxnId }) => {
-  const { offers, assets, requests, addOffer, updateOffer, deleteOffer, submitOfferForReview, withdrawOffer, opsReviewOffer } = useDatabase();
+  const { companies, offers, assets, requests, matches, addOffer, updateOffer, deleteOffer, submitOfferForReview, withdrawOffer, opsReviewOffer, acceptMatch, rejectMatch } = useDatabase();
   const { currentRole, currentCompany, canOpsReview } = useAuth();
+  const isCompanyVerified = (companies.find(c => c.id === currentCompany.id)?.verificationStatus || currentCompany.verificationStatus) === 'VERIFIED';
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -41,6 +42,24 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
   const [form, setForm] = useState<Partial<CreateOfferForm>>({
     baselineDepotCostVnd: 3000000,
   });
+
+  const pendingMatches = useMemo(() => matches.filter(m =>
+    m.companyAId === currentCompany.id && m.status === 'MATCH_REQUESTED'
+  ), [matches, currentCompany.id]);
+
+  const handleMatchDecision = (matchId: string, decision: 'accept' | 'reject') => {
+    const result = decision === 'accept'
+      ? acceptMatch(matchId)
+      : rejectMatch(matchId, 'Bên A từ chối yêu cầu ghép sau khi xem xét.');
+    showMsg(result.message, !result.success);
+    if (result.success && decision === 'accept') {
+      const data = result.data as { transactionId?: string } | undefined;
+      if (data?.transactionId && setSelectedTxnId && setCurrentTab) {
+        setSelectedTxnId(data.transactionId);
+        setCurrentTab('transactions');
+      }
+    }
+  };
 
   const handleApplyEdo = (data: ExtractedEdoData) => {
     const matchingAsset = assets.find(a => a.containerNumber === data.containerNumber);
@@ -188,7 +207,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {currentRole === 'ENTERPRISE_A' && (
+          {currentRole === 'ENTERPRISE_A' && isCompanyVerified && (
             <button
               onClick={() => setShowAiEdoModal(true)}
               className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
@@ -197,7 +216,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
               <span>Quét e-DO Tạo Offer</span>
             </button>
           )}
-          {currentRole === 'ENTERPRISE_A' && (
+          {currentRole === 'ENTERPRISE_A' && isCompanyVerified && (
             <button
               onClick={() => setShowAddForm(!showAddForm)}
               className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
@@ -220,14 +239,40 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
           <AlertTriangle className="w-4 h-4 shrink-0" />{errorMsg}
         </div>
       )}
-      {currentRole === 'ENTERPRISE_A' && currentCompany.verificationStatus !== 'VERIFIED' && (
+      {currentRole === 'ENTERPRISE_A' && !isCompanyVerified && (
         <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-800">
           <Shield className="w-4 h-4 shrink-0" /> Hồ sơ doanh nghiệp đang chờ Ops xác minh. Chưa thể tạo hoặc gửi Offer.
         </div>
       )}
 
+      {currentRole === 'ENTERPRISE_A' && pendingMatches.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center gap-2 text-amber-800">
+            <AlertCircle className="w-4 h-4" />
+            <strong className="text-sm">Match chờ Bên A xác nhận ({pendingMatches.length})</strong>
+          </div>
+          {pendingMatches.map(match => {
+            const offer = offers.find(item => item.id === match.offerId);
+            const request = requests.find(item => item.id === match.requestId);
+            return (
+              <div key={match.id} className="bg-white rounded-xl border border-amber-200 p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div>
+                  <div className="font-bold text-slate-900">{match.id} · {offer?.asset.containerNumber || match.assetId}</div>
+                  <div className="text-slate-600 mt-1">Bên B: {request?.companyName || match.companyBId} · Điểm ghép: {match.scoreM}</div>
+                  <div className="text-slate-500 mt-1">Hết hạn: {formatDateTime(match.expiresAt)} · Chưa giữ cont</div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => handleMatchDecision(match.id, 'reject')} className="px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 font-semibold">Reject</button>
+                  <button onClick={() => handleMatchDecision(match.id, 'accept')} className="px-3 py-2 rounded-lg bg-emerald-600 text-white font-bold">Accept & tạo giao dịch</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Add Form */}
-      {showAddForm && currentRole === 'ENTERPRISE_A' && (
+      {showAddForm && currentRole === 'ENTERPRISE_A' && isCompanyVerified && (
         <div className="bg-white border border-emerald-200 rounded-2xl p-6 space-y-4 shadow-md">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
@@ -240,10 +285,16 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
           </div>
 
           {eligibleAssets.length === 0 ? (
-            <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+            <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
               <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
               <div>
-                <strong>Không có container đủ điều kiện tạo Offer:</strong> Container cần ở trạng thái Rỗng (EMPTY_AT_YARD / DEPOT), không bị khóa và chưa có Offer hoạt động.
+                <strong>Chưa có container tự do để tạo Offer.</strong>
+                <p className="mt-1">Container phải ở trạng thái rỗng, không bị khóa và chưa có Offer hoạt động. Nếu A chưa có cont mới, hãy đăng ký tại màn Vỏ container của tôi.</p>
+                {setCurrentTab && (
+                  <button type="button" onClick={() => setCurrentTab('assets')} className="mt-2 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold">
+                    Đăng ký container mới
+                  </button>
+                )}
               </div>
             </div>
           ) : (

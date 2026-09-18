@@ -26,6 +26,7 @@ export type PhysicalCondition = 'GOOD' | 'MINOR_DAMAGE' | 'MAJOR_DAMAGE';
 
 // SRS §4.4 + plan.md §6.2: Trạng thái Offer đầy đủ
 export type OfferStatus =
+  | 'AI_CHECK_PENDING'
   | 'DRAFT'              // Nháp, chưa gửi review
   | 'UNDER_REVIEW'       // Đã gửi, Ops đang xem xét
   | 'CHANGES_REQUIRED'   // Ops yêu cầu bổ sung/sửa đổi
@@ -52,6 +53,8 @@ export type RequestStatus =
 
 // SRS §4.4: Trạng thái giao dịch chính
 export type TransactionStatus =
+  | 'MATCH_REQUESTED'
+  | 'MATCH_ACCEPTED'
   | 'NEGOTIATING'         // Bước 1: Giữ chỗ & thảo luận thỏa thuận
   | 'PENDING_CARRIER'     // Bước 2: Chờ hãng tàu duyệt RU
   | 'AWAITING_PAYMENT'    // Bước 3: Chờ nộp tiền & đối soát
@@ -59,6 +62,10 @@ export type TransactionStatus =
   | 'INSPECTION'          // Bước 5: Kiểm tra cont tại bãi A
   | 'HANDOVER_PENDING'    // Bước 6: Chờ 2 bên xác nhận bàn giao
   | 'COMPLETED'           // Bước 7: Hoàn tất giao nhận, custody A→B
+  | 'DISPUTED'
+  | 'PICKUP_REFUSED'
+  | 'CARRIER_REJECTED'
+  | 'PAYMENT_EXPIRED'
   | 'CANCELLED'           // Hủy giao dịch
   | 'REJECTED'            // Carrier từ chối RU
   | 'EXPIRED';            // Hết deadline tự động
@@ -107,6 +114,7 @@ export type CaseStatus =
 
 // plan.md §6.2: Company verification status
 export type CompanyStatus =
+  | 'BLOCKED'
   | 'PENDING_VERIFICATION'
   | 'NEEDS_INFO'
   | 'VERIFIED'
@@ -225,6 +233,7 @@ export interface ContainerAsset {
   freeTimeDetentionEnd?: string; // ISO UTC timestamp
   freeTimeSource?: string;       // Nguồn thông tin hạn
   photos: string[];              // URLs ảnh (ít nhất 6 góc cho Offer)
+  edoEvidenceName?: string;
   aiInspection?: AssetAiInspection;
   hasEdoDocument: boolean;       // Đã có e-DO/hồ sơ tương đương
   edoVerificationStatus?: DocumentVerificationStatus;
@@ -377,6 +386,29 @@ export interface MatchCandidate {
   scoreM: number;                  // 0.30D + 0.40T + 0.30C
   quote: Quote;
   hardConstraintReasons?: string[]; // Lý do loại nếu không pass
+}
+
+export type MatchStatus = 'POTENTIAL_MATCH' | 'MATCH_REQUESTED' | 'MATCH_ACCEPTED' | 'MATCH_REJECTED' | 'MATCH_EXPIRED';
+
+export interface Match {
+  id: string;
+  offerId: string;
+  requestId: string;
+  assetId: string;
+  companyAId: string;
+  companyBId: string;
+  scoreM: number;
+  scoreD: number;
+  scoreT: number;
+  scoreC: number;
+  quote: Quote;
+  status: MatchStatus;
+  requestedAt: string;
+  expiresAt: string;
+  respondedAt?: string;
+  respondedBy?: string;
+  responseReason?: string;
+  transactionId?: string;
 }
 
 export interface Quote {
@@ -643,7 +675,7 @@ export interface CaseIssue {
   openedByCompanyId: string;
   openedByCompanyName: string;
   assignedToOpsEmail?: string;
-  caseType: 'DAMAGE_DISPUTE' | 'LATE_HANDOVER' | 'CARRIER_REJECTION' | 'PAYMENT_ISSUE' | 'DOCUMENT_FRAUD' | 'RU_SCOPE_MISMATCH' | 'OTHER';
+  caseType: 'CONDITION_MISMATCH' | 'NO_SHOW' | 'WRONG_CONTAINER' | 'LATE_HANDOVER' | 'DAMAGE_DISPUTE' | 'PAYMENT_ISSUE' | 'CARRIER_REJECTION' | 'DOCUMENT_FRAUD' | 'RU_SCOPE_MISMATCH' | 'OTHER';
   title: string;
   description: string;
   status: CaseStatus;
@@ -770,6 +802,7 @@ export interface CreateAssetForm {
   freeTimeDetentionEnd?: string;
   freeTimeSource?: string;
   photos?: string[];
+  edoEvidenceName?: string;
   hasEdoDocument?: boolean;
   edoVerificationStatus?: DocumentVerificationStatus;
 }

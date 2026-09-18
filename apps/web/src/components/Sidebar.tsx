@@ -33,7 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen = false,
   setIsMobileOpen,
 }) => {
-  const { currentRole, setRole, roleBadge, currentCompany, currentUserName } = useAuth();
+  const { currentRole, setRole, logout, roleBadge, currentCompany, currentUserName } = useAuth();
   const { cases, offers, requests, transactions, chatThreads } = useDatabase();
   const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
 
@@ -280,6 +280,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </>
           )}
+
+          <button
+            type="button"
+            onClick={() => {
+              setShowRoleSwitcher(false);
+              logout();
+            }}
+            className="w-full mt-2 flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-red-200 bg-white text-red-600 hover:bg-red-50 text-xs font-bold transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Đăng xuất
+          </button>
         </div>
       </aside>
     </>

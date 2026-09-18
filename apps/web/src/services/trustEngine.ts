@@ -3,12 +3,15 @@
 // Tuân thủ nghiêm ngặt SRS mục 5.3 và plan.md mục 7.3
 // ==============================================================================
 
+import { calculateQaTrustScore } from './qaRules';
+
 export interface TrustMetricsA {
   completedRate: number; // Tỷ lệ hoàn thành giao dịch (0..1)
   accuracyRate: number;  // Tỷ lệ độ chính xác hiện trạng cont (0..1)
   punctualityRate: number; // Tỷ lệ bàn giao đúng giờ (0..1)
   averageRating: number; // Đánh giá trung bình từ đối tác (1..5)
   totalCompletedDeals: number;
+  disputeRate?: number;
 }
 
 export interface TrustMetricsB {
@@ -16,6 +19,8 @@ export interface TrustMetricsB {
   punctualityRate: number; // Tỷ lệ nhận cont & hạ cont đúng hẹn (0..1)
   averageRating: number; // Đánh giá trung bình từ đối tác (1..5)
   totalCompletedDeals: number;
+  disputeRate?: number;
+  accuracyRate?: number;
 }
 
 export function calculateTrustScoreA(metrics: TrustMetricsA): {
@@ -32,19 +37,20 @@ export function calculateTrustScoreA(metrics: TrustMetricsA): {
     };
   }
 
-  // A = 35% hoàn thành + 25% chính xác + 25% đúng giờ + 15% rating
-  const normalizedRating = (metrics.averageRating / 5.0) * 100;
-  const score = Math.round(
-    0.35 * (metrics.completedRate * 100) +
-    0.25 * (metrics.accuracyRate * 100) +
-    0.25 * (metrics.punctualityRate * 100) +
-    0.15 * normalizedRating
-  );
+  const result = calculateQaTrustScore({
+    completedRate: metrics.completedRate,
+    punctualityRate: metrics.punctualityRate,
+    averageRating: metrics.averageRating,
+    disputeRate: metrics.disputeRate ?? 0,
+    accuracyRate: metrics.accuracyRate,
+    completedTransactions: metrics.totalCompletedDeals,
+  });
+  const score = result.score as number;
 
   return {
     score,
     label: score >= 90 ? 'Rất uy tín (Hạng Kim Cương)' : score >= 80 ? 'Uy tín cao' : 'Tiêu chuẩn',
-    isPublished: true
+    isPublished: result.isPublished
   };
 }
 
@@ -61,18 +67,19 @@ export function calculateTrustScoreB(metrics: TrustMetricsB): {
     };
   }
 
-  // B = 35% hoàn thành + 35% đúng giờ + 30% rating
-  const normalizedRating = (metrics.averageRating / 5.0) * 100;
-  const score = Math.round(
-    0.35 * (metrics.completedRate * 100) +
-    0.35 * (metrics.punctualityRate * 100) +
-    0.30 * normalizedRating
-  );
+  const result = calculateQaTrustScore({
+    completedRate: metrics.completedRate,
+    punctualityRate: metrics.punctualityRate,
+    averageRating: metrics.averageRating,
+    disputeRate: metrics.disputeRate ?? 0,
+    accuracyRate: metrics.accuracyRate ?? 1,
+    completedTransactions: metrics.totalCompletedDeals,
+  });
+  const score = result.score as number;
 
   return {
     score,
     label: score >= 90 ? 'Rất uy tín (Hạng Kim Cương)' : score >= 80 ? 'Uy tín cao' : 'Tiêu chuẩn',
-    isPublished: true
+    isPublished: result.isPublished
   };
 }
-

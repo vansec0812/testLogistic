@@ -7,6 +7,7 @@
 
 import { ContainerRequest, Offer, MatchCandidate } from '../types';
 import { calculateQuote } from './pricingEngine';
+import { QA_RULES } from './qaRules';
 
 const MS_PER_HOUR = 3600000;
 const LOCATION_STALE_THRESHOLD_HOURS = 24;
@@ -164,7 +165,7 @@ export function findMatchesForRequest(
     const scoreC = offer.asset.declaredCondition === 'GOOD' ? 100 : 60;
 
     // M = 30%D + 40%T + 30%C (làm tròn 1 chữ số thập phân)
-    const scoreM = Math.round((0.30 * scoreD + 0.40 * scoreT + 0.30 * scoreC) * 10) / 10;
+    const scoreM = Math.round((QA_RULES.matching.scoreDistanceWeight * scoreD + QA_RULES.matching.scoreTimeWeight * scoreT + QA_RULES.matching.scoreCostWeight * scoreC) * 10) / 10;
 
     // === BÁO GIÁ ===
     const truckingEstimate = Math.round(500000 + distanceKm * 15000);
@@ -179,6 +180,15 @@ export function findMatchesForRequest(
       fRuStatus: 'ESTIMATE', // RU chưa được approve chính thức
       truckingStatus: 'ESTIMATE',
     });
+
+    // QA: chỉ đưa lên Match khi cả A và B đều có Net Saving dương.
+    if (quote.sAVnd <= 0 || quote.sBVnd <= 0) {
+      eliminationReasons.push({
+        offerId: offer.id,
+        reasons: ['Net Saving của một bên không dương; không hiển thị lựa chọn Match.'],
+      });
+      continue;
+    }
 
     candidates.push({
       offer,

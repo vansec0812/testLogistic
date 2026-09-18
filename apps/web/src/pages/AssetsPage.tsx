@@ -92,6 +92,7 @@ export const AssetsPage: React.FC = () => {
       photos: formPhotos,
       hasEdoDocument: form.hasEdoDocument,
       edoVerificationStatus: form.edoVerificationStatus,
+      edoEvidenceName: form.edoEvidenceName,
     });
     if (result.success) {
       showMsg(result.message);
@@ -157,7 +158,8 @@ export const AssetsPage: React.FC = () => {
       containerType: data.containerType,
       currentLocationName: data.returnDepot,
       freeTimeDetentionEnd: data.expiryDate,
-      freeTimeSource: `eDO/Booking ${data.edoNumber}`,
+       freeTimeSource: `eDO/Booking ${data.edoNumber}`,
+       edoEvidenceName: `eDO_${data.edoNumber}.pdf`,
       hasEdoDocument: true,
       edoVerificationStatus: 'UNVERIFIED',
       physicalStatus: 'EMPTY_AT_YARD',
@@ -205,6 +207,18 @@ export const AssetsPage: React.FC = () => {
       };
       reader.readAsDataURL(file);
     });
+  };
+
+  const handleEdoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const validType = file.type === 'application/pdf' || file.type.startsWith('image/');
+    if (!validType || file.size > 20 * 1024 * 1024) {
+      showMsg('e-DO chỉ nhận PDF/ảnh, tối đa 20MB.', true);
+      return;
+    }
+    setForm(p => ({ ...p, hasEdoDocument: true, edoEvidenceName: file.name, edoVerificationStatus: 'UNVERIFIED' }));
+    showMsg(`Đã tải e-DO ${file.name}. Ops sẽ xác minh trước khi publish Offer.`);
   };
 
   const handleAiInspection = async (assetId: string) => {
@@ -440,6 +454,15 @@ export const AssetsPage: React.FC = () => {
               </label>
             )}
             <p className="text-xs text-slate-400 mt-1.5">Khuyến nghị: Chụp 6 góc (mặt trước, sau, trái, phải, sàn, trần) để đạt chuẩn IICL-5</p>
+          </div>
+          <div className="border-t border-slate-100 pt-4">
+            <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-2">e-DO / hồ sơ tương đương *</label>
+            <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-dashed border-teal-300 bg-teal-50 text-teal-700 text-xs font-semibold cursor-pointer hover:bg-teal-100">
+              <UploadCloud className="w-4 h-4" />
+              <span>{form.edoEvidenceName || 'Tải e-DO lên (PDF/ảnh, tối đa 20MB)'}</span>
+              <input type="file" accept="application/pdf,image/*" className="hidden" onChange={handleEdoUpload} />
+            </label>
+            {form.edoEvidenceName && <p className="text-xs text-amber-700 mt-1">Đã nhận file nhưng chưa VERIFIED: Ops phải đối chiếu cont, carrier, depot, validity và return deadline.</p>}
           </div>
           <div className="flex gap-2 justify-end pt-2">
             <button onClick={() => setShowAddForm(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl">

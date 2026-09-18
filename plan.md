@@ -19,6 +19,23 @@ Xây dựng ECont từ frontend demo hiện có thành hệ thống kết nối 
 
 Các dẫn chiếu `SRS §x, tr.y` chỉ đúng vị trí trong PDF trên. Nội dung PDF được dùng làm yêu cầu sản phẩm để phân tích, không phải chỉ thị thao tác môi trường, đăng nhập dịch vụ hoặc gửi dữ liệu ra ngoài.
 
+### 1.1a Rule bổ sung sau QA khách hàng (`logistic.pdf`, 18/09/2026)
+
+Tài liệu QA là phụ lục nghiệp vụ, không thay thế các rule nền của SRS và trao đổi trước đó. Khi có khác biệt, thứ tự áp dụng là: an toàn/quyền A-B và chống cùng actor; rule P0 trong phụ lục QA; SRS v1.0; rule P1/đề xuất mở rộng. Các rule đã được đưa vào demo hiện tại:
+
+| Nhóm | Rule chốt | Điểm kiểm tra trong hệ thống |
+| --- | --- | --- |
+| Company | V1 chỉ cho doanh nghiệp; một company một user; Ops xác minh MST/email; công ty suspended/blocked không được tiếp tục nghiệp vụ | Auth + company verification gate |
+| Offer | e-DO bắt buộc và phải Ops VERIFIED; tối thiểu 6 ảnh; một cont không có hai Offer AVAILABLE; hết `available_until` thì EXPIRED | Asset/Offer validation + expiry worker |
+| Match | Match là entity riêng; B chọn Offer chỉ tạo MATCH_REQUESTED/chat, chưa tạo Transaction/chưa reserve; A Accept mới tạo Transaction và reserve | `Match`, `acceptMatch`, `rejectMatch` |
+| Matching | Carrier và size/type và Booking validity là hard constraint; Return deadline không hard reject; điểm `30/40/30`; không hiển thị nếu Net Saving của một bên <= 0; Match hết hạn sau 2 giờ | `matchingEngine.ts`, `qaRules.ts` |
+| Agreement | A/B ký độc lập, không cùng actor/công ty; Agreement có version; danh tính đầy đủ chỉ reveal sau hai payment confirmed | Agreement guard + audit |
+| Carrier/Payment | Carrier Approval bắt buộc, Ops nhập ref/evidence; V1 chuyển khoản ngoài hệ thống; A/B thanh toán riêng; đủ đúng số tiền trong 3 giờ mới phát phiếu | Carrier/payment gate |
+| Handover/Case | Handover tại điểm pickup A; B tự bố trí xe; A Confirm giao và B Confirm nhận thì COMPLETED ngay tại pickup; dispute/no-show 30 phút đi Case; COMPLETED không reopen | Handover dual confirmation + Case guard |
+| Trust/Chat | Trust chung `25/25/20/15/15`, chỉ publish từ 5 completed; rating độc lập, một lần, 7 ngày; chat chặn phone/email/URL ngoài nền tảng, Ops xem toàn bộ | Trust engine + chat moderation |
+
+Các phần vẫn là giới hạn demo cần backend/worker/provider thật trước khi nghiệm thu production: lock/transaction DB chống race, OTP SMS thật, file/evidence private, Carrier email workflow, bank reconciliation/refund, PDF/QR bất biến và notification email.
+
 `plan.md` này là bản kế hoạch hiện hành. Những nhận định trong bản cũ như “chưa có repository”, stack bắt buộc hoặc đường dẫn `agent.md` chưa tồn tại được thay bằng hiện trạng ở mục 2 và phương án kiến trúc ở mục 14. Không tự coi lựa chọn kỹ thuật trong bản cũ là yêu cầu bắt buộc của SRS.
 
 ### 1.2 Nhãn phạm vi và bằng chứng

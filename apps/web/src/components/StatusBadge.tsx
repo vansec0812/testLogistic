@@ -31,6 +31,7 @@ function getBadgeClasses(size: 'xs' | 'sm' | 'md') {
 // ==================== OFFER STATUS ====================
 
 const OFFER_STATUS_MAP: Record<OfferStatus, StatusBadgeInfo> = {
+  AI_CHECK_PENDING: { label: 'Chá» AI/Ops', className: 'bg-violet-50 text-violet-700 border-violet-200' },
   DRAFT: { label: 'Nháp', className: 'bg-slate-100 text-slate-600 border-slate-200' },
   UNDER_REVIEW: { label: 'Đang thẩm định', className: 'bg-amber-50 text-amber-700 border-amber-200' },
   CHANGES_REQUIRED: { label: 'Cần bổ sung', className: 'bg-orange-50 text-orange-700 border-orange-200' },
@@ -71,6 +72,12 @@ export const RequestStatusBadge: React.FC<{ status: RequestStatus } & BadgeProps
 // ==================== TRANSACTION STATUS ====================
 
 const TXN_STATUS_MAP: Record<TransactionStatus, StatusBadgeInfo & { step?: number }> = {
+  MATCH_REQUESTED: { label: 'Match chờ Bên A', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  MATCH_ACCEPTED: { label: 'Match đã được chấp nhận', className: 'bg-blue-50 text-blue-700 border-blue-200' },
+  DISPUTED: { label: 'Đang tranh chấp', className: 'bg-rose-50 text-rose-700 border-rose-200' },
+  PICKUP_REFUSED: { label: 'Bên B từ chối nhận', className: 'bg-rose-50 text-rose-700 border-rose-200' },
+  CARRIER_REJECTED: { label: 'Carrier từ chối', className: 'bg-red-50 text-red-700 border-red-200' },
+  PAYMENT_EXPIRED: { label: 'Quá hạn thanh toán', className: 'bg-red-50 text-red-700 border-red-200' },
   NEGOTIATING: { label: 'Bước 1 · Thương lượng', className: 'bg-blue-50 text-blue-700 border-blue-200', step: 1 },
   PENDING_CARRIER: { label: 'Bước 2 · Chờ hãng tàu', className: 'bg-amber-50 text-amber-700 border-amber-200', step: 2 },
   AWAITING_PAYMENT: { label: 'Bước 3 · Chờ thanh toán', className: 'bg-orange-50 text-orange-700 border-orange-200', step: 3 },
@@ -118,6 +125,7 @@ export const PhysicalStatusBadge: React.FC<{ status: PhysicalStatus } & BadgePro
 // ==================== COMPANY STATUS ====================
 
 const COMPANY_STATUS_MAP: Record<CompanyStatus, StatusBadgeInfo> = {
+  BLOCKED: { label: 'Bị khóa', className: 'bg-red-50 text-red-700 border-red-200' },
   PENDING_VERIFICATION: { label: 'Chờ xác minh', className: 'bg-amber-50 text-amber-700 border-amber-200' },
   NEEDS_INFO: { label: 'Cần bổ sung', className: 'bg-orange-50 text-orange-700 border-orange-200' },
   VERIFIED: { label: 'Đã xác minh', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -191,4 +199,3 @@ export const TrustScoreBadge: React.FC<{ score: number | undefined; label?: stri
     </span>
   );
 };
-
