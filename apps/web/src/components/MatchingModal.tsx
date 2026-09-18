@@ -114,10 +114,8 @@ export const MatchingModal: React.FC<MatchingModalProps> = ({
                     </span>
                     <div>
                       <div className="flex items-center gap-2">
-                        {/* BẢO MẬT: KHÔNG HIỂN THỊ SỐ CONTAINER CHO BÊN B */}
                         <span className="font-mono font-bold text-sm text-slate-800 px-2.5 py-1 bg-slate-100 rounded-lg border border-slate-200 flex items-center gap-1">
-                          <Lock className="w-3.5 h-3.5 text-slate-400" />
-                          Cont #••••••• (Bảo mật)
+                          Cont #•••••••
                         </span>
                         <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
                           {cand.offer.asset.carrierCode} · {cand.offer.asset.containerType}

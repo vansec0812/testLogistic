@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { TransactionStepper } from '../components/TransactionStepper';
 import { PricingBreakdownCard } from '../components/PricingBreakdownCard';
 import { TransactionStatusBadge, ConditionBadge } from '../components/StatusBadge';
-import { formatVnd, formatDateTime, formatRelativeTime } from '../lib/utils';
+import { formatVnd, formatDateTime, formatDateTimeLocal, formatRelativeTime } from '../lib/utils';
 import {
   FileText, 
   Ship, 
@@ -482,6 +482,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       className={getFieldErrorClass(Boolean(carrierErrors.carrierExpiry), 'w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus:ring-2 focus:ring-brand-500')}
                       required
                     />
+                    <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị: {formatDateTimeLocal(carrierExpiry)}</p>
                     <FieldError message={carrierErrors.carrierExpiry} />
                   </div>
                 </div>

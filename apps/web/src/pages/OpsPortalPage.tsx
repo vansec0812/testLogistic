@@ -30,7 +30,7 @@ import {
   Edit2,
   Trash2
 } from 'lucide-react';
-import { formatDateTime, formatVnd, formatRelativeTime } from '../lib/utils';
+import { formatDateTime, formatDateTimeLocal, formatVnd, formatRelativeTime } from '../lib/utils';
 import { 
   OfferStatusBadge, 
   RequestStatusBadge, 
@@ -43,6 +43,14 @@ import { Company, CompanyStatus } from '../types';
 interface OpsPortalPageProps {
   setCurrentTab?: (tab: string) => void;
   setSelectedTxnId?: (id: string) => void;
+}
+
+function getOfferReviewErrorField(offerId: string, message = ''): string {
+  const normalized = message.toLowerCase();
+  if (normalized.includes('ảnh') || normalized.includes('6 ảnh') || normalized.includes('photo')) return `offerPhotos-${offerId}`;
+  if (normalized.includes('edo') || normalized.includes('e-do')) return `offerEdo-${offerId}`;
+  if (normalized.includes('ai')) return `offerAi-${offerId}`;
+  return `offerReviewNote-${offerId}`;
 }
 
 export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
@@ -99,6 +107,10 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
   const [carrierErrors, setCarrierErrors] = useState<FieldErrors>({});
   const [caseErrors, setCaseErrors] = useState<FieldErrors>({});
   const [assetReviewErrors, setAssetReviewErrors] = useState<Record<string, string>>({});
+  const [offerReviewNotes, setOfferReviewNotes] = useState<Record<string, string>>({});
+  const [offerReviewErrors, setOfferReviewErrors] = useState<Record<string, string>>({});
+  const [requestReviewNotes, setRequestReviewNotes] = useState<Record<string, string>>({});
+  const [requestReviewErrors, setRequestReviewErrors] = useState<Record<string, string>>({});
 
   // Role guard
   if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
@@ -249,6 +261,48 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
     } else {
       setAssetReviewErrors(previous => ({ ...previous, [assetId]: result.message }));
       scrollToFirstFieldError({ [`assetReviewNote-${assetId}`]: result.message });
+    }
+  };
+
+  const handleOfferReview = (offerId: string, decision: 'APPROVE' | 'REQUEST_CHANGES' | 'REJECT') => {
+    const field = `offerReviewNote-${offerId}`;
+    const note = (offerReviewNotes[offerId] || '').trim();
+    const errors: FieldErrors = {};
+    setError(errors, field, required(note, 'Vui lòng nhập kết luận thẩm định Offer.'));
+    if (Object.keys(errors).length > 0) {
+      setOfferReviewErrors(previous => ({ ...previous, [offerId]: errors[field] }));
+      scrollToFirstFieldError(errors);
+      return;
+    }
+    const result = opsReviewOffer(offerId, decision, note);
+    alert(result.message);
+    if (result.success) {
+      setOfferReviewErrors(previous => ({ ...previous, [offerId]: '' }));
+      setOfferReviewNotes(previous => ({ ...previous, [offerId]: '' }));
+    } else {
+      setOfferReviewErrors(previous => ({ ...previous, [offerId]: result.message }));
+      scrollToFirstFieldError({ [getOfferReviewErrorField(offerId, result.message)]: result.message });
+    }
+  };
+
+  const handleRequestReview = (requestId: string, decision: 'APPROVE' | 'REJECT') => {
+    const field = `requestReviewNote-${requestId}`;
+    const note = (requestReviewNotes[requestId] || '').trim();
+    const errors: FieldErrors = {};
+    setError(errors, field, required(note, 'Vui lòng nhập kết luận xác minh Booking.'));
+    if (Object.keys(errors).length > 0) {
+      setRequestReviewErrors(previous => ({ ...previous, [requestId]: errors[field] }));
+      scrollToFirstFieldError(errors);
+      return;
+    }
+    const result = opsReviewRequest(requestId, decision, note);
+    alert(result.message);
+    if (result.success) {
+      setRequestReviewErrors(previous => ({ ...previous, [requestId]: '' }));
+      setRequestReviewNotes(previous => ({ ...previous, [requestId]: '' }));
+    } else {
+      setRequestReviewErrors(previous => ({ ...previous, [requestId]: result.message }));
+      scrollToFirstFieldError({ [field]: result.message });
     }
   };
 
@@ -527,20 +581,35 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                       </div>
                     )}
 
+                    {o.aiCheck && (o.aiCheck.edoValid === false || o.aiCheck.edoAnomaly || o.aiCheck.photoConditionNotes) && (
+                      <div className="p-3 bg-orange-50 border border-orange-200 rounded-xl text-xs text-orange-900 space-y-1">
+                        <strong className="block">Kết quả AI cần Ops đối chiếu:</strong>
+                        {o.aiCheck.edoValid === false && <p>• eDO chưa được AI xác minh hợp pháp tự động.</p>}
+                        {o.aiCheck.edoAnomaly && <p>• eDO có dấu hiệu bất thường: {o.aiCheck.anomalyReason || 'xem chi tiết chứng từ gốc.'}</p>}
+                        {o.aiCheck.photoConditionNotes && <p>• Tình trạng thực tế qua ảnh: {o.aiCheck.photoConditionNotes}</p>}
+                      </div>
+                    )}
+
                     {/* Thông tin e-DO & AI Check */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                      <div>
+                      <div
+                        data-field={`offerEdo-${o.id}`}
+                        className={getFieldErrorClass(getOfferReviewErrorField(o.id, offerReviewErrors[o.id]) === `offerEdo-${o.id}`, '')}
+                      >
                         <span className="text-slate-500 block font-medium">Chứng từ e-DO đính kèm</span>
                         <strong className="text-blue-800 font-mono text-xs mt-0.5 block">
-                          📄 {o.edoNumber || 'EDO-CHUA-RO'} ({o.edoFileName || 'eDO_Doc.pdf'})
+                          📄 {o.edoFileName || 'Chưa có tên file eDO'}
                         </strong>
                       </div>
                       <div>
                         <span className="text-slate-500 block font-medium">Vị trí lấy vỏ</span>
                         <strong className="text-slate-800 text-xs mt-0.5 block">📍 {o.pickupLocationName}</strong>
                       </div>
-                      <div>
-                        <span className="text-slate-500 block font-medium">Kết quả AI OCR & Giám định</span>
+                      <div
+                        data-field={`offerAi-${o.id}`}
+                        className={getFieldErrorClass(getOfferReviewErrorField(o.id, offerReviewErrors[o.id]) === `offerAi-${o.id}`, '')}
+                      >
+                        <span className="text-slate-500 block font-medium">Kết quả AI</span>
                         <strong className="text-emerald-700 text-xs mt-0.5 block">
                           ✨ {o.aiCheck?.summary || 'IICL-5 Đạt chuẩn đóng hàng'} ({o.aiCheck?.score || 96}/100)
                         </strong>
@@ -555,9 +624,12 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                     )}
 
                     {/* Bộ ảnh Container phục vụ Ops kiểm tra thủ công */}
-                    <div>
+                    <div
+                      data-field={`offerPhotos-${o.id}`}
+                      className={getFieldErrorClass(getOfferReviewErrorField(o.id, offerReviewErrors[o.id]) === `offerPhotos-${o.id}`, '')}
+                    >
                       <span className="text-xs font-bold text-slate-700 block mb-2">
-                        Ảnh chụp container ({o.photoUrls.length}/6 ảnh - Kiểm tra thủ công):
+                        Ảnh chụp container ({o.photoUrls.length}/6 tối thiểu - Kiểm tra thủ công):
                       </span>
                       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                         {o.photoUrls.map((url, idx) => (
@@ -573,30 +645,46 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                       </div>
                     </div>
 
-                    {/* Nút Phê Duyệt / Yêu Cầu Bổ Sung / Từ Chối */}
-                    <div className="flex items-center justify-between pt-3 border-t border-slate-200">
-                      <p className="text-[11px] text-slate-500">
-                        * Duyệt thành công sẽ chuyển trạng thái sang AVAILABLE để hiển thị cho Bên B ghép đôi.
-                      </p>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => opsReviewOffer(o.id, 'REJECT', 'Không đủ điều kiện tái sử dụng theo tiêu chuẩn IICL-5')}
-                          className="px-3.5 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 text-xs font-semibold"
-                        >
-                          Từ chối
-                        </button>
-                        <button
-                          onClick={() => opsReviewOffer(o.id, 'REQUEST_CHANGES', 'Cần bổ sung ảnh chụp rõ sàn và vách container')}
-                          className="px-3.5 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-semibold"
-                        >
-                          Yêu cầu bổ sung
-                        </button>
-                        <button
-                          onClick={() => opsReviewOffer(o.id, 'APPROVE', 'Đã thẩm định e-DO và ảnh chụp đạt chuẩn IICL-5')}
-                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm"
-                        >
-                          Phê duyệt Offer (AVAILABLE)
-                        </button>
+                    {/* Kết luận bắt buộc trước khi Ops quyết định */}
+                    <div className="pt-3 border-t border-slate-200 space-y-2">
+                      <label htmlFor={`offerReviewNote-${o.id}`} className="text-xs font-bold text-slate-800 block">
+                        Kết luận thẩm định Offer <RequiredMark />
+                      </label>
+                      <textarea
+                        id={`offerReviewNote-${o.id}`}
+                        data-field={`offerReviewNote-${o.id}`}
+                        rows={2}
+                        value={offerReviewNotes[o.id] || ''}
+                        onChange={event => {
+                          setOfferReviewNotes(previous => ({ ...previous, [o.id]: event.target.value }));
+                          setOfferReviewErrors(previous => ({ ...previous, [o.id]: '' }));
+                        }}
+                        placeholder="Nhập căn cứ kiểm tra eDO, kết quả đối chiếu ảnh và kết luận Ops..."
+                        aria-invalid={Boolean(offerReviewErrors[o.id])}
+                        className={getFieldErrorClass(Boolean(offerReviewErrors[o.id]), 'w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
+                      />
+                      <FieldError message={offerReviewErrors[o.id]} />
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleOfferReview(o.id, 'REJECT')}
+                            className="px-3.5 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 text-xs font-semibold"
+                          >
+                            Từ chối
+                          </button>
+                          <button
+                            onClick={() => handleOfferReview(o.id, 'REQUEST_CHANGES')}
+                            className="px-3.5 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-semibold"
+                          >
+                            Yêu cầu bổ sung
+                          </button>
+                          <button
+                            onClick={() => handleOfferReview(o.id, 'APPROVE')}
+                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm"
+                          >
+                            Phê duyệt Offer (AVAILABLE)
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -636,19 +724,38 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                       <div>Cước lấy baseline B: <strong>{formatVnd(r.baselinePickupCostVnd)}</strong></div>
                     </div>
 
-                    <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                    <div className="pt-2 border-t border-slate-200 space-y-2">
+                      <label htmlFor={`requestReviewNote-${r.id}`} className="text-xs font-bold text-slate-800 block">
+                        Kết luận xác minh Booking <RequiredMark />
+                      </label>
+                      <textarea
+                        id={`requestReviewNote-${r.id}`}
+                        data-field={`requestReviewNote-${r.id}`}
+                        rows={2}
+                        value={requestReviewNotes[r.id] || ''}
+                        onChange={event => {
+                          setRequestReviewNotes(previous => ({ ...previous, [r.id]: event.target.value }));
+                          setRequestReviewErrors(previous => ({ ...previous, [r.id]: '' }));
+                        }}
+                        placeholder="Nhập kết quả đối chiếu Booking với hãng tàu..."
+                        aria-invalid={Boolean(requestReviewErrors[r.id])}
+                        className={getFieldErrorClass(Boolean(requestReviewErrors[r.id]), 'w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
+                      />
+                      <FieldError message={requestReviewErrors[r.id]} />
+                    <div className="flex justify-end gap-2">
                       <button
-                        onClick={() => opsReviewRequest(r.id, 'REJECT', 'Số booking không hợp lệ hoặc đã hủy trên hãng')}
+                        onClick={() => handleRequestReview(r.id, 'REJECT')}
                         className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 text-xs font-semibold"
                       >
                         Từ chối
                       </button>
                       <button
-                        onClick={() => opsReviewRequest(r.id, 'APPROVE', 'Đã xác nhận booking hợp lệ từ hãng tàu')}
+                        onClick={() => handleRequestReview(r.id, 'APPROVE')}
                         className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm"
                       >
                         Xác nhận Booking (OPEN)
                       </button>
+                    </div>
                     </div>
                   </div>
                 ))}
@@ -660,9 +767,6 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
         {/* Tab: AI image review queue */}
         {activeTab === 'ai-inspection' && (
           <div className="p-5 space-y-4">
-            <div className="p-4 rounded-xl bg-violet-50 border border-violet-200 text-xs text-violet-900">
-              AI chỉ phát hiện dấu hiệu và đưa ra điểm gợi ý. Ops phải đối chiếu bộ ảnh, ghi kết luận và quyết định trước khi Offer được sử dụng.
-            </div>
             {aiReviewAssets.length === 0 ? (
               <div className="py-12 text-center text-slate-400 text-xs">Không có container nào đang chờ Ops kiểm tra ảnh.</div>
             ) : (
@@ -678,7 +782,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                       <span className="text-xs text-slate-500">Chủ quản lý: {asset.currentCustodianName}</span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-slate-700">
-                      <div>Bộ ảnh: <strong>{asset.photos.length}/6 ảnh</strong></div>
+                      <div>Bộ ảnh: <strong>{asset.photos.length}/6 tối thiểu</strong></div>
                       <div>Điểm AI: <strong>{asset.aiInspection?.score == null ? 'Không có' : `${asset.aiInspection.score}/100`}</strong></div>
                       <div>Thời điểm: <strong>{asset.aiInspection?.inspectedAt ? formatDateTime(asset.aiInspection.inspectedAt) : '—'}</strong></div>
                     </div>
@@ -1060,6 +1164,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                   className={getFieldErrorClass(Boolean(carrierErrors.validUntil), 'w-full p-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500')}
                   aria-invalid={Boolean(carrierErrors.validUntil)}
                 />
+                <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị: {formatDateTimeLocal(validUntil)}</p>
                 <FieldError message={carrierErrors.validUntil} />
               </div>
             </div>

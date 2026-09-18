@@ -478,11 +478,33 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!form.pickupLocationName?.trim()) {
       return { success: false, message: 'Địa điểm lấy cont là bắt buộc.' };
     }
+    if (!form.containerNumber?.trim()) {
+      return { success: false, message: 'Số container là bắt buộc để tạo đúng 1 Offer = 1 Cont.' };
+    }
+    if (!form.containerType || !form.carrierId || !form.declaredCondition) {
+      return { success: false, message: 'Offer phải có loại container, hãng tàu và tình trạng khai báo.' };
+    }
+    if (!form.conditionNotes?.trim()) {
+      return { success: false, message: 'Mô tả chi tiết tình trạng vỏ là bắt buộc.' };
+    }
     if (!form.availableFrom || !form.availableTo || new Date(form.availableTo).getTime() <= new Date(form.availableFrom).getTime()) {
       return { success: false, message: 'Khung thời gian sẵn sàng không hợp lệ.' };
     }
     if (!Number.isFinite(form.baselineDepotCostVnd) || form.baselineDepotCostVnd <= 0) {
       return { success: false, message: 'Chi phí đưa về depot phải lớn hơn 0.' };
+    }
+    const photos = form.photos || [];
+    if (photos.length < 6) {
+      return { success: false, message: 'Offer phải có tối thiểu 6 ảnh container.' };
+    }
+    if (!form.edoFileName?.trim()) {
+      return { success: false, message: 'Mỗi Offer phải gắn đúng một file eDO/Booking để Ops xác minh.' };
+    }
+    if (!form.aiCheck?.edoChecked || !form.aiCheck.photoChecked) {
+      return { success: false, message: 'Offer phải có kết quả kiểm tra AI eDO và đối chiếu ảnh trước khi gửi Ops.' };
+    }
+    if (form.aiCheck.verificationStatus === 'ERROR') {
+      return { success: false, message: 'Kiểm tra AI bị lỗi; chưa thể gửi Offer.' };
     }
 
     let targetAsset = form.assetId ? assets.find(a => a.id === form.assetId) : undefined;
@@ -508,9 +530,9 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           currentLatitude: form.pickupLatitude || 10.78,
           currentLongitude: form.pickupLongitude || 106.78,
           locationObservedAt: new Date().toISOString(),
-          photos: form.photos || [],
+          photos,
           hasEdoDocument: true,
-          edoEvidenceName: form.edoFileName || 'eDO_Doc.pdf',
+          edoEvidenceName: form.edoFileName.trim(),
           edoVerificationStatus: 'UNVERIFIED',
           isLocked: false,
           createdAt: new Date().toISOString(),
@@ -535,14 +557,17 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: false, message: `Container ${targetAsset.containerNumber} đã có Offer (${existingOffer.id}) đang hoạt động.` };
     }
 
-    const photos = (form.photos && form.photos.length > 0) ? form.photos : targetAsset.photos;
+    const offerPhotos = photos.length > 0 ? photos : targetAsset.photos;
+    if (offerPhotos.length < 6) {
+      return { success: false, message: 'Offer phải có tối thiểu 6 ảnh container.' };
+    }
 
     const newOffer: Offer = {
       id: genId('OFR'),
       assetId: targetAsset.id,
       asset: {
         ...targetAsset,
-        photos,
+        photos: offerPhotos,
         declaredCondition: form.declaredCondition || targetAsset.declaredCondition,
       },
       companyId: currentCompany.id,
@@ -558,12 +583,12 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       expectedDepotName: undefined,
       baselineDepotCostVnd: form.baselineDepotCostVnd,
       vehicleRequirements: form.vehicleRequirements,
-      photoUrls: photos,
-      photoChecklistComplete: photos.length >= 1,
-      edoDocumentIds: [form.edoFileName || `eDO_${targetAsset.containerNumber}.pdf`],
-      edoFileName: form.edoFileName || 'eDO_Document.pdf',
-      edoNumber: form.edoNumber || `EDO-${Date.now().toString().slice(-6)}`,
-      conditionNotes: form.conditionNotes || targetAsset.conditionNotes || '',
+      photoUrls: offerPhotos,
+      photoChecklistComplete: offerPhotos.length >= 6,
+      edoDocumentIds: [form.edoFileName.trim()],
+      edoFileName: form.edoFileName.trim(),
+      edoNumber: form.edoNumber?.trim() || undefined,
+      conditionNotes: form.conditionNotes?.trim() || targetAsset.conditionNotes || '',
       aiCheck: form.aiCheck,
       requiresOpsManualReview: Boolean(form.requiresOpsManualReview),
       createdAt: new Date().toISOString(),
@@ -571,7 +596,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     persistOffers([...offers, newOffer]);
-    addAudit('OFFER_CREATED', 'Offer', newOffer.id, `Tạo Offer nguồn vỏ container ${targetAsset.containerNumber} kèm e-DO (${newOffer.edoNumber})`);
+    addAudit('OFFER_CREATED', 'Offer', newOffer.id, `Tạo Offer nguồn vỏ container ${targetAsset.containerNumber} kèm file eDO ${newOffer.edoFileName}`);
     
     // Gửi thông báo đến Ops
     addNotification(
@@ -599,7 +624,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: false, message: `Offer đang ở trạng thái ${offer.status}, không thể chỉnh sửa trực tiếp.` };
     }
     // Sửa trường trọng yếu → UNDER_REVIEW
-    const majorChanges = ['pickupLatitude', 'pickupLongitude', 'baselineDepotCostVnd', 'availableFrom', 'availableTo'];
+    const majorChanges = ['pickupLatitude', 'pickupLongitude', 'baselineDepotCostVnd', 'availableFrom', 'availableTo', 'photoUrls', 'conditionNotes'];
     const finalPickupLocation = String(updates.pickupLocationName ?? offer.pickupLocationName).trim();
     const finalAvailableFrom = updates.availableFrom ?? offer.availableFrom;
     const finalAvailableTo = updates.availableTo ?? offer.availableTo;
@@ -611,10 +636,25 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!Number.isFinite(finalBaseline) || finalBaseline <= 0) {
       return { success: false, message: 'Chi phí đưa về depot phải lớn hơn 0.' };
     }
+    const finalPhotos = updates.photoUrls ?? offer.photoUrls;
+    if (finalPhotos.length < 6) {
+      return { success: false, message: 'Offer phải giữ tối thiểu 6 ảnh container.' };
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'photoUrls') && !updates.aiCheck?.photoChecked) {
+      return { success: false, message: 'Cần chạy AI đối chiếu lại bộ ảnh mới trước khi lưu Offer.' };
+    }
     const hasMajorChange = Object.keys(updates).some(k => majorChanges.includes(k));
     const newStatus = (offer.status === 'AVAILABLE' && hasMajorChange) ? 'UNDER_REVIEW' : offer.status;
     const updated = {
       ...offer, ...updates,
+      asset: {
+        ...offer.asset,
+        photos: finalPhotos,
+        ...(updates.conditionNotes !== undefined ? { conditionNotes: updates.conditionNotes } : {}),
+        ...(updates.asset?.declaredCondition !== undefined ? { declaredCondition: updates.asset.declaredCondition } : {}),
+      },
+      photoUrls: finalPhotos,
+      photoChecklistComplete: finalPhotos.length >= 6,
       status: newStatus,
       version: offer.version + (hasMajorChange ? 1 : 0),
       updatedAt: new Date().toISOString()
@@ -672,6 +712,20 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!notes.trim()) return { success: false, message: 'Ghi chú thẩm định Offer không được để trống.' };
     if (offer.status !== 'UNDER_REVIEW') {
       return { success: false, message: `Offer không ở trạng thái UNDER_REVIEW (hiện: ${offer.status}).` };
+    }
+    if (decision === 'APPROVE') {
+      if (offer.photoUrls.length < 6 || !offer.photoChecklistComplete) {
+        return { success: false, message: 'Chưa thể duyệt: Offer phải có đủ tối thiểu 6 ảnh container.' };
+      }
+      if (offer.edoDocumentIds.length !== 1 || !offer.edoFileName?.trim()) {
+        return { success: false, message: 'Chưa thể duyệt: Offer phải gắn đúng một file eDO/Booking.' };
+      }
+      if (!offer.aiCheck?.edoChecked || !offer.aiCheck.photoChecked) {
+        return { success: false, message: 'Chưa thể duyệt: thiếu kết quả AI xác minh eDO hoặc đối chiếu ảnh.' };
+      }
+      if (offer.aiCheck.verificationStatus === 'INVALID' || offer.aiCheck.verificationStatus === 'ERROR') {
+        return { success: false, message: 'Chưa thể duyệt: eDO không hợp lệ hoặc AI kiểm tra lỗi.' };
+      }
     }
     const newStatus = decision === 'APPROVE' ? 'AVAILABLE' : decision === 'REQUEST_CHANGES' ? 'CHANGES_REQUIRED' : 'REJECTED';
     

@@ -13,7 +13,7 @@ import { formatVnd, formatDistance, formatDateTime, formatRelativeTime } from '.
 import {
   Search, Plus, AlertTriangle, CheckCircle2, X, Clock, MapPin,
   Sparkles, Send, TrendingDown, ChevronDown, ChevronUp, AlertCircle,
-  Ship, Target, BarChart3, Star, Edit2, Trash2, Eye, Lock, ArrowRight, Check, Shield
+  Ship, Target, BarChart3, Star, Edit2, Trash2, Lock, ArrowRight, Check, Shield
 } from 'lucide-react';
 import { findMatchesForRequest } from '../services/matchingEngine';
 import { INITIAL_CARRIERS } from '../data/mockData';
@@ -56,9 +56,8 @@ function MatchCandidateCard({
             <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
               {offer.asset.carrierCode} · {offer.asset.containerType}
             </span>
-            {/* BẢO MẬT: ẨN CONTAINER NUMBER */}
             <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1 font-mono">
-              <span className="text-[10px]">🔒</span> Cont #••••••• (Bảo mật)
+              Cont #•••••••
             </span>
             {requiresLocationRefresh && (
               <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-0.5 flex items-center gap-1">
@@ -199,6 +198,15 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
   // Auto-Match Alert Modal when new request is created
   const [autoMatchModalReq, setAutoMatchModalReq] = useState<ContainerRequest | null>(null);
 
+  useEffect(() => {
+    if (currentRole === 'ENTERPRISE_A') {
+      setShowAddForm(false);
+      setEditingRequest(null);
+      setMatchingForId(null);
+      setAutoMatchModalReq(null);
+    }
+  }, [currentRole]);
+
   const [form, setForm] = useState<Partial<CreateRequestForm>>({
     containerType: '40HC',
     maxDistanceKm: 40,
@@ -217,7 +225,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
   const filtered = useMemo(() => {
     let list = requests;
     if (currentRole === 'ENTERPRISE_B') list = list.filter(r => r.companyId === currentCompany.id);
-    if (currentRole === 'ENTERPRISE_A') list = [];
+    // Bên A được xem nhu cầu đã OPEN để theo dõi nhu cầu thị trường/matching,
+    // nhưng không được xem nháp/chờ duyệt và không có quyền tạo, sửa, giữ chỗ.
+    if (currentRole === 'ENTERPRISE_A') list = list.filter(r => r.status === 'OPEN');
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(r => 
@@ -423,16 +433,6 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     }
   };
 
-  if (currentRole === 'ENTERPRISE_A') {
-    return (
-      <div className="text-center py-16 space-y-3 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
-        <Search className="w-12 h-12 text-slate-300 mx-auto" />
-        <h3 className="text-lg font-bold text-slate-800">Khu vực dành cho Bên B</h3>
-        <p className="text-sm text-slate-500">Bên A không tạo nhu cầu lấy vỏ. Hãy chuyển sang tab "Nguồn cung" để đăng Offer.</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -475,7 +475,6 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
           <Shield className="w-4 h-4 shrink-0" /> Hồ sơ doanh nghiệp đang chờ Ops xác minh. Chưa thể tạo hoặc gửi Request.
         </div>
       )}
-
       {/* Add Form Modal/Section */}
       {showAddForm && canCreateRequests && (
         <div className="bg-white border border-cyan-200 rounded-2xl p-6 space-y-4 shadow-md">
@@ -555,6 +554,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                 aria-invalid={Boolean(formErrors.pickupWindowStart)}
                 className={getFieldErrorClass(Boolean(formErrors.pickupWindowStart), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               />
+              <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị: {formatDateTime(form.pickupWindowStart)}</p>
               <FieldError message={formErrors.pickupWindowStart} />
             </div>
             <div>
@@ -568,6 +568,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                 aria-invalid={Boolean(formErrors.pickupWindowEnd)}
                 className={getFieldErrorClass(Boolean(formErrors.pickupWindowEnd), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               />
+              <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị: {formatDateTime(form.pickupWindowEnd)}</p>
               <FieldError message={formErrors.pickupWindowEnd} />
             </div>
             <div>
@@ -581,6 +582,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                 aria-invalid={Boolean(formErrors.cutOffTime)}
                 className={getFieldErrorClass(Boolean(formErrors.cutOffTime), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               />
+              <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị: {formatDateTime(form.cutOffTime)}</p>
               <FieldError message={formErrors.cutOffTime} />
             </div>
             <div>
@@ -823,7 +825,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
         )}
 
         {filtered.map(req => {
-          const autoMatchResult = autoMatchMap[req.id];
+          const autoMatchResult = currentRole === 'ENTERPRISE_A' ? undefined : autoMatchMap[req.id];
           const bestMatch = autoMatchResult?.candidates[0];
           const isMatching = matchingForId === req.id;
 
@@ -921,7 +923,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                   )}
 
                   {/* Toggle match results view */}
-                  {req.status === 'OPEN' && (
+                  {currentRole !== 'ENTERPRISE_A' && req.status === 'OPEN' && (
                     <button
                       onClick={() => setMatchingForId(isMatching ? null : req.id)}
                       className="px-3.5 py-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
@@ -965,7 +967,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
 
                 {/* Edit, Delete, Withdraw */}
                 <div className="flex items-center gap-1.5">
-                  {!['HELD', 'ALLOCATED', 'FULFILLED'].includes(req.status) && (
+                  {currentRole !== 'ENTERPRISE_A' && !['HELD', 'ALLOCATED', 'FULFILLED'].includes(req.status) && (
                     <button
                       onClick={() => handleStartEdit(req)}
                       className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-xs shadow-sm transition-colors"
@@ -975,7 +977,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                     </button>
                   )}
 
-                  {['DRAFT', 'WITHDRAWN', 'CHANGES_REQUIRED'].includes(req.status) && (
+                  {currentRole !== 'ENTERPRISE_A' && ['DRAFT', 'WITHDRAWN', 'CHANGES_REQUIRED'].includes(req.status) && (
                     <button
                       onClick={() => handleDeleteRequest(req.id)}
                       className="p-2 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 text-xs shadow-sm transition-colors"
