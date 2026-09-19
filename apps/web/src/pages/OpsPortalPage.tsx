@@ -30,7 +30,7 @@ import {
   Edit2,
   Trash2
 } from 'lucide-react';
-import { formatDateTime, formatDateTimeLocal, formatVnd, formatRelativeTime } from '../lib/utils';
+import { formatDate, formatDateTime, formatVnd, formatRelativeTime } from '../lib/utils';
 import { 
   OfferStatusBadge, 
   RequestStatusBadge, 
@@ -38,7 +38,8 @@ import {
   CaseStatusBadge,
   ConditionBadge
 } from '../components/StatusBadge';
-import { Company, CompanyStatus } from '../types';
+import { Company, CompanyStatus, Offer } from '../types';
+import { DateTimeInput } from '../components/DateInput';
 
 interface OpsPortalPageProps {
   setCurrentTab?: (tab: string) => void;
@@ -51,6 +52,20 @@ function getOfferReviewErrorField(offerId: string, message = ''): string {
   if (normalized.includes('edo') || normalized.includes('e-do')) return `offerEdo-${offerId}`;
   if (normalized.includes('ai')) return `offerAi-${offerId}`;
   return `offerReviewNote-${offerId}`;
+}
+
+function getOfferManualReviewReasons(offer: Offer): string[] {
+  const ai = offer.aiCheck;
+  if (!ai) return ['Chưa có kết quả AI xác minh eDO và đối chiếu ảnh.'];
+
+  const reasons: string[] = [];
+  if (!ai.edoChecked) reasons.push('Chưa có kết quả AI xác minh eDO.');
+  if (ai.edoValid === false) reasons.push('eDO chưa được AI xác nhận hợp lệ.');
+  if (ai.edoAnomaly) reasons.push(`eDO có dấu hiệu bất thường: ${ai.anomalyReason || 'cần Ops đối chiếu file gốc.'}`);
+  if (!ai.photoChecked) reasons.push('Chưa có kết quả AI đối chiếu bộ ảnh container.');
+  if (ai.verificationStatus === 'ERROR') reasons.push('AI trả về lỗi khi xử lý hồ sơ.');
+  if (!ai.passed && !reasons.length) reasons.push('AI chưa kết luận hồ sơ đạt điều kiện tự động duyệt.');
+  return reasons;
 }
 
 export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
@@ -113,12 +128,12 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
   const [requestReviewErrors, setRequestReviewErrors] = useState<Record<string, string>>({});
 
   // Role guard
-  if (currentRole !== 'OPS' && currentRole !== 'SUPER_ADMIN') {
+  if (currentRole !== 'OPS') {
     return (
       <div className="text-center py-16 space-y-3 bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
         <ShieldCheck className="w-12 h-12 text-slate-300 mx-auto" />
         <h3 className="text-lg font-bold text-slate-800">Chỉ dành cho Bộ phận Vận hành ECont Ops</h3>
-        <p className="text-sm text-slate-500">Doanh nghiệp Bên A và Bên B không có quyền truy cập Cổng Điều phối Vận hành.</p>
+        <p className="text-sm text-slate-500">Doanh nghiệp đối tác không có quyền truy cập Cổng Điều phối Vận hành.</p>
       </div>
     );
   }
@@ -381,7 +396,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
           <div className="text-2xl sm:text-3xl font-bold font-mono text-slate-900 mt-2">
             {underReviewRequests.length}
           </div>
-          <p className="text-xs text-cyan-700 font-medium mt-1">Kiểm tra booking Bên B</p>
+          <p className="text-xs text-cyan-700 font-medium mt-1">Kiểm tra booking của đơn vị cần vỏ</p>
         </button>
 
         <button
@@ -509,7 +524,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                         <span className="text-slate-500">· Hãng {txn.asset.carrierCode} ({txn.asset.containerType})</span>
                       </div>
                       <div className="text-slate-600">
-                        Chủ vỏ (A): <strong className="text-slate-800">{txn.companyAName}</strong> → Chủ hàng (B): <strong className="text-slate-800">{txn.companyBName}</strong>
+                        Nhà cung cấp: <strong className="text-slate-800">{companies.find(company => company.id === txn.companyAId)?.companyName || txn.companyAName}</strong> → Đơn vị cần vỏ: <strong className="text-slate-800">{companies.find(company => company.id === txn.companyBId)?.companyName || txn.companyBName}</strong>
                       </div>
                       <div className="text-slate-500 text-xs mt-0.5">
                         Hạn xử lý (SLA 4 giờ): Còn {formatRelativeTime(txn.dueAt, true)}
@@ -568,7 +583,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                         </span>
                         <ConditionBadge condition={o.asset.declaredCondition} size="xs" />
                       </div>
-                      <span className="text-xs font-semibold text-slate-600">Bên A: {o.companyName}</span>
+                      <span className="text-xs font-semibold text-slate-600">Nhà cung cấp: {companies.find(company => company.id === o.companyId)?.companyName || o.companyName}</span>
                     </div>
 
                     {/* Cảnh báo AI nếu phát hiện bất thường */}
@@ -576,17 +591,31 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                       <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center gap-2 font-medium">
                         <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                         <span>
+                          <span className="block mb-1 font-semibold">Lý do cần Ops xử lý:</span>
+                          <ul className="list-disc pl-4 space-y-0.5 font-normal">
+                            {getOfferManualReviewReasons(o).map((reason, index) => (
+                              <li key={`${o.id}-review-reason-${index}`}>{reason}</li>
+                            ))}
+                          </ul>
                           <strong>⚠️ CẢNH BÁO AI:</strong> Phát hiện dấu hiệu bất thường trên vỏ container! Ops cần kiểm tra kỹ ảnh chụp thủ công trước khi duyệt.
                         </span>
                       </div>
                     )}
 
-                    {o.aiCheck && (o.aiCheck.edoValid === false || o.aiCheck.edoAnomaly || o.aiCheck.photoConditionNotes) && (
+                    {o.aiCheck && (o.aiCheck.edoValid === false || o.aiCheck.edoAnomaly || o.aiCheck.photoConditionNotes || o.aiCheck.details?.length) && (
                       <div className="p-3 bg-orange-50 border border-orange-200 rounded-xl text-xs text-orange-900 space-y-1">
                         <strong className="block">Kết quả AI cần Ops đối chiếu:</strong>
                         {o.aiCheck.edoValid === false && <p>• eDO chưa được AI xác minh hợp pháp tự động.</p>}
                         {o.aiCheck.edoAnomaly && <p>• eDO có dấu hiệu bất thường: {o.aiCheck.anomalyReason || 'xem chi tiết chứng từ gốc.'}</p>}
                         {o.aiCheck.photoConditionNotes && <p>• Tình trạng thực tế qua ảnh: {o.aiCheck.photoConditionNotes}</p>}
+                        {o.aiCheck.details?.length ? <ul className="list-disc pl-4 space-y-0.5">{o.aiCheck.details.map((detail, index) => <li key={`${o.id}-ai-detail-${index}`}>{detail}</li>)}</ul> : null}
+                      </div>
+                    )}
+
+                    {(!o.aiCheck?.edoChecked || !o.aiCheck?.photoChecked || o.aiCheck?.verificationStatus === 'ERROR') && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
+                        <strong className="block">AI chưa có đủ kết quả</strong>
+                        <p>Ops có thể kiểm tra eDO và bộ ảnh thủ công, sau đó nhập kết luận để duyệt Offer.</p>
                       </div>
                     )}
 
@@ -610,8 +639,12 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                         className={getFieldErrorClass(getOfferReviewErrorField(o.id, offerReviewErrors[o.id]) === `offerAi-${o.id}`, '')}
                       >
                         <span className="text-slate-500 block font-medium">Kết quả AI</span>
-                        <strong className="text-emerald-700 text-xs mt-0.5 block">
-                          ✨ {o.aiCheck?.summary || 'IICL-5 Đạt chuẩn đóng hàng'} ({o.aiCheck?.score || 96}/100)
+                        <strong className={`${o.aiCheck?.edoChecked && o.aiCheck?.photoChecked && o.aiCheck?.verificationStatus === 'VERIFIED' ? 'text-emerald-700' : 'text-amber-700'} text-xs mt-0.5 block`}>
+                          {o.aiCheck?.edoChecked && o.aiCheck?.photoChecked && o.aiCheck?.verificationStatus === 'VERIFIED' && o.aiCheck?.summary
+                            ? `✨ ${o.aiCheck.summary}${o.aiCheck.score !== undefined ? ` (${o.aiCheck.score}/100)` : ''}`
+                            : o.aiCheck?.summary
+                              ? `⚠️ ${o.aiCheck.summary} — Ops quyết định thủ công`
+                              : 'Chưa có kết quả AI — Ops kiểm tra thủ công'}
                         </strong>
                       </div>
                     </div>
@@ -620,6 +653,16 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                     {o.conditionNotes && (
                       <div className="text-xs text-slate-600 bg-slate-50/60 p-2.5 rounded-xl border border-slate-100">
                         <span className="font-semibold text-slate-800">Mô tả chi tiết tình trạng vỏ:</span> {o.conditionNotes}
+                      </div>
+                    )}
+
+                    {(o.aiCheck?.photoCondition || o.aiCheck?.photoConditionNotes) && (
+                      <div className="p-3 rounded-xl border border-violet-200 bg-violet-50/60 text-xs text-violet-950 space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <strong>Tình trạng thực tế do AI nhận diện:</strong>
+                          {o.aiCheck.photoCondition && <ConditionBadge condition={o.aiCheck.photoCondition} size="xs" />}
+                        </div>
+                        {o.aiCheck.photoConditionNotes && <p className="leading-relaxed">{o.aiCheck.photoConditionNotes}</p>}
                       </div>
                     )}
 
@@ -659,7 +702,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                           setOfferReviewNotes(previous => ({ ...previous, [o.id]: event.target.value }));
                           setOfferReviewErrors(previous => ({ ...previous, [o.id]: '' }));
                         }}
-                        placeholder="Nhập căn cứ kiểm tra eDO, kết quả đối chiếu ảnh và kết luận Ops..."
+                        placeholder="Nhập căn cứ kiểm tra eDO, kết quả đối chiếu ảnh và kết luận Ops; có thể ghi rõ đã kiểm tra thủ công khi AI chưa có kết quả..."
                         aria-invalid={Boolean(offerReviewErrors[o.id])}
                         className={getFieldErrorClass(Boolean(offerReviewErrors[o.id]), 'w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
                       />
@@ -715,13 +758,19 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                         <span className="font-mono text-cyan-700 font-semibold">Booking: {r.bookingNumber}</span>
                         <span className="text-slate-500 text-xs">· Hãng {r.carrierCode} ({r.containerType})</span>
                       </div>
-                      <span className="text-xs text-slate-500">{r.companyName}</span>
+                      <span className="text-xs text-slate-500">{companies.find(company => company.id === r.companyId)?.companyName || r.companyName}</span>
                     </div>
 
                     <div className="text-xs text-slate-600 grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <div>Điểm giao hàng: <strong>{r.deliveryLocationName}</strong></div>
-                      <div>Hạn Cut-off: <strong>{formatDateTime(r.cutOffTime)}</strong></div>
-                      <div>Cước lấy baseline B: <strong>{formatVnd(r.baselinePickupCostVnd)}</strong></div>
+                      <div>Hạn Cut-off: <strong>{formatDate(r.cutOffTime)}</strong></div>
+                      <div>Cước lấy baseline của đơn vị cần vỏ: <strong>{formatVnd(r.baselinePickupCostVnd)}</strong></div>
+                    </div>
+
+                    <div className={`rounded-xl border px-3 py-2 text-xs ${r.bookingAiCheck?.status === 'VALID' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+                      <strong>File Booking:</strong> {r.bookingFileName || 'Chưa có file'}
+                      <span className="ml-2">· AI: {r.bookingAiCheck?.status === 'VALID' ? 'hợp lệ' : r.bookingAiCheck?.status === 'INVALID' || r.bookingAiCheck?.status === 'ANOMALY' ? 'có cảnh báo' : 'chờ Ops kiểm tra thủ công'}</span>
+                      {r.bookingAiCheck?.summary && <p className="mt-1">{r.bookingAiCheck.summary}</p>}
                     </div>
 
                     <div className="pt-2 border-t border-slate-200 space-y-2">
@@ -785,6 +834,23 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                       <div>Bộ ảnh: <strong>{asset.photos.length}/6 tối thiểu</strong></div>
                       <div>Điểm AI: <strong>{asset.aiInspection?.score == null ? 'Không có' : `${asset.aiInspection.score}/100`}</strong></div>
                       <div>Thời điểm: <strong>{asset.aiInspection?.inspectedAt ? formatDateTime(asset.aiInspection.inspectedAt) : '—'}</strong></div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700">
+                      <strong>Tình trạng thực tế AI phân loại:</strong>
+                      {asset.aiInspection?.condition
+                        ? <ConditionBadge condition={asset.aiInspection.condition} size="xs" />
+                        : <span className="text-amber-700">Chưa có phân loại</span>}
+                    </div>
+                    <div className="rounded-xl border border-violet-200 bg-white p-3">
+                      <span className="text-xs font-bold text-slate-700 block mb-2">Toàn bộ ảnh container để Ops đối chiếu:</span>
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                        {asset.photos.map((url, index) => (
+                          <div key={`${asset.id}-photo-${index}`} className="h-20 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+                            <img src={url} alt={`Ảnh container ${index + 1}`} className="w-full h-full object-cover" />
+                          </div>
+                        ))}
+                        {asset.photos.length === 0 && <div className="col-span-full text-xs text-slate-400">Chưa có ảnh container.</div>}
+                      </div>
                     </div>
                     <div className="bg-white p-3 rounded-xl border border-slate-200 text-xs text-slate-700">
                       <strong>Nhận định AI:</strong> {asset.aiInspection?.summary}
@@ -1155,16 +1221,14 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
               </div>
               <div>
                 <label htmlFor="validUntil" className="text-slate-700 font-semibold block mb-1">Thời hạn hiệu lực <RequiredMark /></label>
-                <input
+                <DateTimeInput
                   id="validUntil"
                   data-field="validUntil"
-                  type="datetime-local"
                   value={validUntil}
-                  onChange={e => { setValidUntil(e.target.value); setCarrierErrors(p => ({ ...p, validUntil: '' })); }}
+                  onChange={v => { setValidUntil(v); setCarrierErrors(p => ({ ...p, validUntil: '' })); }}
                   className={getFieldErrorClass(Boolean(carrierErrors.validUntil), 'w-full p-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500')}
                   aria-invalid={Boolean(carrierErrors.validUntil)}
                 />
-                <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị: {formatDateTimeLocal(validUntil)}</p>
                 <FieldError message={carrierErrors.validUntil} />
               </div>
             </div>
@@ -1216,8 +1280,8 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                   className="w-full p-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   <option value="NONE">Không có lỗi / Hai bên hòa giải</option>
-                  <option value="PARTY_A">Bên A (Chủ nguồn vỏ)</option>
-                  <option value="PARTY_B">Bên B (Chủ hàng / Đơn vị vận tải)</option>
+                  <option value="PARTY_A">Nhà cung cấp Container</option>
+                  <option value="PARTY_B">Đơn vị Cần vỏ Container</option>
                   <option value="CARRIER">Hãng tàu</option>
                   <option value="PLATFORM">Hệ thống ECont</option>
                 </select>

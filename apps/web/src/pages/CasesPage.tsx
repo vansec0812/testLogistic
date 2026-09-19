@@ -5,15 +5,16 @@
 import React, { useState } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import { useAuth } from '../context/AuthContext';
-import { CaseIssue } from '../types';
+import { CaseAttachment, CaseIssue } from '../types';
 import { CaseStatusBadge, TransactionStatusBadge } from '../components/StatusBadge';
 import { formatDateTime, formatRelativeTime } from '../lib/utils';
 import {
   AlertCircle, AlertTriangle, Plus, MessageCircle, CheckCircle,
-  X, ChevronDown, ChevronUp, Shield, Clock, FileText, Edit3, Trash2
+  X, ChevronDown, ChevronUp, Shield, Clock, FileText, Edit3, Trash2, Upload, Image, Video
 } from 'lucide-react';
 import { FieldErrors, FieldError, FormErrorSummary, RequiredMark, getFieldErrorClass, scrollToFirstFieldError } from '../components/FormValidation';
 import { required, setError } from '../lib/formValidation';
+import { isWithinDisputeWindow } from '../services/qaRules';
 
 interface CasesPageProps {
   setCurrentTab: (tab: string) => void;
@@ -52,6 +53,8 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
   const [createErrors, setCreateErrors] = useState<FieldErrors>({});
   const [editErrors, setEditErrors] = useState<FieldErrors>({});
   const [resolveErrors, setResolveErrors] = useState<FieldErrors>({});
+  const [newAttachments, setNewAttachments] = useState<CaseAttachment[]>([]);
+  const [editAttachments, setEditAttachments] = useState<CaseAttachment[]>([]);
 
   // Edit form state
   const [editingCase, setEditingCase] = useState<CaseIssue | null>(null);
@@ -72,6 +75,7 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
   const handleOpenEdit = (c: CaseIssue) => {
     setEditingCase(c);
     setEditErrors({});
+    setEditAttachments(c.attachments || []);
     setEditForm({
       caseType: c.caseType,
       priority: c.priority,
@@ -79,6 +83,46 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
       description: c.description,
       status: c.status,
     });
+  };
+
+  const readCaseAttachments = (fileList: FileList | null): Promise<CaseAttachment[]> => {
+    const files = Array.from(fileList || []);
+    const invalid = files.find(file => !file.type.startsWith('image/') && !file.type.startsWith('video/'));
+    if (invalid) {
+      return Promise.reject(new Error('Chỉ được tải ảnh hoặc video làm bằng chứng Case.'));
+    }
+    const tooLarge = files.find(file => file.size > 20 * 1024 * 1024);
+    if (tooLarge) {
+      return Promise.reject(new Error('Mỗi ảnh/video không được vượt quá 20 MB.'));
+    }
+    return Promise.all(files.map((file, index) => new Promise<CaseAttachment>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({
+        id: `CASE-FILE-${Date.now()}-${index}`,
+        name: file.name,
+        mimeType: file.type,
+        kind: file.type.startsWith('video/') ? 'VIDEO' : 'IMAGE',
+        size: file.size,
+        dataUrl: reader.result as string,
+        createdAt: new Date().toISOString(),
+      });
+      reader.onerror = () => reject(new Error('Không đọc được file bằng chứng.'));
+      reader.readAsDataURL(file);
+    })));
+  };
+
+  const handleNewAttachmentUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    readCaseAttachments(event.target.files)
+      .then(files => setNewAttachments(previous => [...previous, ...files]))
+      .catch(error => window.alert(error instanceof Error ? error.message : 'Không thể đọc file bằng chứng.'))
+      .finally(() => { event.target.value = ''; });
+  };
+
+  const handleEditAttachmentUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    readCaseAttachments(event.target.files)
+      .then(files => setEditAttachments(previous => [...previous, ...files]))
+      .catch(error => window.alert(error instanceof Error ? error.message : 'Không thể đọc file bằng chứng.'))
+      .finally(() => { event.target.value = ''; });
   };
 
   const handleSaveEdit = () => {
@@ -97,6 +141,7 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
       title: editForm.title.trim(),
       description: editForm.description.trim(),
       status: editForm.status,
+      attachments: editAttachments,
     });
     if (result.success) {
       setEditingCase(null);
@@ -128,27 +173,18 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
     description: '',
   });
 
-  const filtered = cases.filter(c => {
+  const visibleCases = currentRole === 'OPS'
+    ? cases
+    : cases.filter(c => c.openedByCompanyId === currentCompany.id);
+  const filtered = visibleCases.filter(c => {
     if (filterStatus !== 'all' && c.status !== filterStatus) return false;
-    // Enterprises only see their own cases
-    if (currentRole === 'ENTERPRISE_A' && c.openedByCompanyId !== currentCompany.id) {
-      // Also show if they are party to the transaction
-      if (c.transactionId) {
-        const txn = transactions.find(t => t.id === c.transactionId);
-        if (txn && txn.companyAId !== currentCompany.id && txn.companyBId !== currentCompany.id) return false;
-      } else {
-        return false;
-      }
-    }
-    if (currentRole === 'ENTERPRISE_B' && c.openedByCompanyId !== currentCompany.id) {
-      if (c.transactionId) {
-        const txn = transactions.find(t => t.id === c.transactionId);
-        if (txn && txn.companyBId !== currentCompany.id && txn.companyAId !== currentCompany.id) return false;
-      } else {
-        return false;
-      }
-    }
     return true;
+  });
+  const caseTransactions = transactions.filter(transaction => {
+    if (transaction.status === 'COMPLETED') return false;
+    if (currentRole === 'OPS') return true;
+    const isParticipant = transaction.companyAId === currentCompany.id || transaction.companyBId === currentCompany.id;
+    return isParticipant && isWithinDisputeWindow(transaction.createdAt);
   });
 
   const handleCreateCase = () => {
@@ -173,10 +209,12 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
       description: newCase.description.trim(),
       transactionId: newCase.transactionId || undefined,
       status: 'OPEN',
+      attachments: newAttachments,
     });
     if (result.success) {
       setShowCreateForm(false);
       setNewCase({ transactionId: '', caseType: 'OTHER', priority: 'MEDIUM', title: '', description: '' });
+      setNewAttachments([]);
       setCreateErrors({});
     } else {
       window.alert(result.message);
@@ -253,7 +291,7 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
                 className={getFieldErrorClass(Boolean(createErrors.transactionId), 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none')}
               >
                 <option value="">— Không liên kết giao dịch —</option>
-                {transactions.map(t => (
+                {caseTransactions.map(t => (
                   <option key={t.id} value={t.id}>{t.id} · {t.asset.containerNumber}</option>
                 ))}
               </select>
@@ -309,6 +347,29 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
               />
               <FieldError message={createErrors.description} />
             </div>
+            <div className="md:col-span-2 rounded-lg border border-dashed border-red-200 bg-white p-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-semibold text-slate-700">Ảnh/video bằng chứng <span className="font-normal text-slate-500">(tùy chọn)</span></p>
+                  <p className="text-[11px] text-slate-500">Có thể tải nhiều ảnh hoặc video, tối đa 20 MB mỗi file.</p>
+                </div>
+                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">
+                  <Upload className="h-3.5 w-3.5" /> Thêm ảnh/video
+                  <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleNewAttachmentUpload} />
+                </label>
+              </div>
+              {newAttachments.length > 0 && (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {newAttachments.map((attachment, index) => (
+                    <div key={attachment.id} className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                      {attachment.kind === 'IMAGE' ? <img src={attachment.dataUrl} alt={attachment.name} className="h-24 w-full object-cover" /> : <video src={attachment.dataUrl} controls className="h-24 w-full object-cover" />}
+                      <button type="button" onClick={() => setNewAttachments(previous => previous.filter((_, itemIndex) => itemIndex !== index))} className="absolute right-1 top-1 rounded-full bg-red-600 px-1.5 text-xs text-white">×</button>
+                      <p className="truncate px-1.5 py-1 text-[10px] text-slate-500">{attachment.name}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex gap-3 justify-end">
             <button onClick={() => setShowCreateForm(false)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Hủy</button>
@@ -332,11 +393,11 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
               filterStatus === s ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
             }`}
           >
-            {s === 'all' ? `Tất cả (${cases.length})` :
-             s === 'OPEN' ? `Đang mở (${cases.filter(c => c.status === 'OPEN').length})` :
-             s === 'IN_REVIEW' ? `Đang xem (${cases.filter(c => c.status === 'IN_REVIEW').length})` :
-             s === 'RESOLVED' ? `Đã giải quyết (${cases.filter(c => c.status === 'RESOLVED').length})` :
-             s === 'CLOSED' ? `Đã đóng (${cases.filter(c => c.status === 'CLOSED').length})` : s}
+            {s === 'all' ? `Tất cả (${visibleCases.length})` :
+             s === 'OPEN' ? `Đang mở (${visibleCases.filter(c => c.status === 'OPEN').length})` :
+             s === 'IN_REVIEW' ? `Đang xem (${visibleCases.filter(c => c.status === 'IN_REVIEW').length})` :
+             s === 'RESOLVED' ? `Đã giải quyết (${visibleCases.filter(c => c.status === 'RESOLVED').length})` :
+             s === 'CLOSED' ? `Đã đóng (${visibleCases.filter(c => c.status === 'CLOSED').length})` : s}
           </button>
         ))}
       </div>
@@ -354,6 +415,7 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
             const txn = c.transactionId ? transactions.find(t => t.id === c.transactionId) : undefined;
             const priority = PRIORITY_MAP[c.priority];
             const isSelected = selectedCase === c.id;
+            const isReporter = c.openedByCompanyId === currentCompany.id;
 
             return (
               <button
@@ -382,6 +444,11 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
                   </div>
 
                   <p className="text-xs text-slate-600 pl-7 line-clamp-2">{c.description}</p>
+                  {c.attachments && c.attachments.length > 0 && (
+                    <div className="pl-7 flex items-center gap-2 text-[11px] font-semibold text-slate-500">
+                      <Image className="h-3.5 w-3.5" /> {c.attachments.length} file bằng chứng
+                    </div>
+                  )}
 
                   <div className="pl-7 flex items-center gap-3 flex-wrap">
                     <span className="text-xs text-slate-500">
@@ -398,6 +465,20 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
                 {isSelected && (
                   <div className="border-t border-slate-100 p-4 space-y-4 bg-slate-50 rounded-b-xl">
                     {/* Resolution */}
+                    {c.attachments && c.attachments.length > 0 && (
+                      <div className="rounded-lg border border-slate-200 bg-white p-3">
+                        <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-700"><Image className="h-3.5 w-3.5" /> Bằng chứng đính kèm</p>
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                          {c.attachments.map(attachment => (
+                            <div key={attachment.id} className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                              {attachment.kind === 'IMAGE' ? <img src={attachment.dataUrl} alt={attachment.name} className="h-24 w-full object-cover" /> : <video src={attachment.dataUrl} controls className="h-24 w-full object-cover" />}
+                              <p className="truncate px-1.5 py-1 text-[10px] text-slate-500">{attachment.name}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {c.resolution && (
                       <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3">
                         <p className="text-xs font-semibold text-emerald-700 flex items-center gap-1.5 mb-1">
@@ -425,7 +506,7 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
                           Xem Giao dịch
                         </button>
                       )}
-                      {c.status !== 'CLOSED' && (
+                      {isReporter && c.status !== 'CLOSED' && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -437,7 +518,7 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
                           Chỉnh sửa
                         </button>
                       )}
-                      {(c.status === 'OPEN' || currentRole === 'SUPER_ADMIN') && (
+                      {isReporter && c.status === 'OPEN' && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -449,7 +530,7 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
                           Xóa Case
                         </button>
                       )}
-                      {(currentRole === 'OPS' || currentRole === 'SUPER_ADMIN') && c.status !== 'CLOSED' && c.status !== 'RESOLVED' && (
+                      {currentRole === 'OPS' && c.status !== 'CLOSED' && c.status !== 'RESOLVED' && (
                         <button
                           onClick={(e) => { e.stopPropagation(); setResolveModalId(c.id); }}
                           className="px-3 py-1.5 rounded-lg border border-emerald-200 text-emerald-700 text-xs font-semibold hover:bg-emerald-50 flex items-center gap-1.5"
@@ -458,7 +539,7 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
                           Kết luận giải quyết
                         </button>
                       )}
-                      {(currentRole === 'OPS' || currentRole === 'SUPER_ADMIN') && c.status === 'RESOLVED' && (
+                      {currentRole === 'OPS' && c.status === 'RESOLVED' && (
                         <button
                           onClick={(e) => { e.stopPropagation(); closeCase(c.id); }}
                           className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-100 flex items-center gap-1.5"
@@ -481,10 +562,10 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Thống kê Case</h3>
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: 'Đang mở', value: cases.filter(c => c.status === 'OPEN').length, color: 'text-red-600' },
-                { label: 'Đang xem xét', value: cases.filter(c => c.status === 'IN_REVIEW').length, color: 'text-amber-600' },
-                { label: 'Đã giải quyết', value: cases.filter(c => c.status === 'RESOLVED').length, color: 'text-emerald-600' },
-                { label: 'Đã đóng', value: cases.filter(c => c.status === 'CLOSED').length, color: 'text-slate-400' },
+                { label: 'Đang mở', value: visibleCases.filter(c => c.status === 'OPEN').length, color: 'text-red-600' },
+                { label: 'Đang xem xét', value: visibleCases.filter(c => c.status === 'IN_REVIEW').length, color: 'text-amber-600' },
+                { label: 'Đã giải quyết', value: visibleCases.filter(c => c.status === 'RESOLVED').length, color: 'text-emerald-600' },
+                { label: 'Đã đóng', value: visibleCases.filter(c => c.status === 'CLOSED').length, color: 'text-slate-400' },
               ].map(s => (
                 <div key={s.label} className="bg-slate-50 rounded-lg p-3">
                   <p className={`text-2xl font-bold font-mono ${s.color}`}>{s.value}</p>
@@ -499,7 +580,7 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Theo loại sự cố</h3>
             <div className="space-y-2">
               {Object.entries(CASE_TYPE_LABELS).map(([type, label]) => {
-                const count = cases.filter(c => c.caseType === type).length;
+                const count = visibleCases.filter(c => c.caseType === type).length;
                 if (count === 0) return null;
                 return (
                   <div key={type} className="flex items-center justify-between">
@@ -548,8 +629,8 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none"
               >
                 <option value="NONE">Không có lỗi từ bên nào</option>
-                <option value="PARTY_A">Bên A</option>
-                <option value="PARTY_B">Bên B</option>
+                <option value="PARTY_A">Nhà cung cấp Container</option>
+                <option value="PARTY_B">Đơn vị Cần vỏ Container</option>
                 <option value="PLATFORM">Nền tảng ECont</option>
                 <option value="CARRIER">Hãng tàu</option>
               </select>
@@ -664,6 +745,27 @@ export const CasesPage: React.FC<CasesPageProps> = ({ setCurrentTab, setSelected
                   className={getFieldErrorClass(Boolean(editErrors['edit-description']), 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none resize-none focus:border-brand-400')}
                 />
                 <FieldError message={editErrors['edit-description']} />
+              </div>
+
+              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-slate-700">Ảnh/video bằng chứng</p>
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100">
+                    <Upload className="h-3.5 w-3.5" /> Thêm file
+                    <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleEditAttachmentUpload} />
+                  </label>
+                </div>
+                {editAttachments.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {editAttachments.map((attachment, index) => (
+                      <div key={attachment.id} className="relative overflow-hidden rounded-lg border border-slate-200 bg-white">
+                        {attachment.kind === 'IMAGE' ? <img src={attachment.dataUrl} alt={attachment.name} className="h-24 w-full object-cover" /> : <video src={attachment.dataUrl} controls className="h-24 w-full object-cover" />}
+                        <button type="button" onClick={() => setEditAttachments(previous => previous.filter((_, itemIndex) => itemIndex !== index))} className="absolute right-1 top-1 rounded-full bg-red-600 px-1.5 text-xs text-white">×</button>
+                        <p className="truncate px-1.5 py-1 text-[10px] text-slate-500">{attachment.name}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
