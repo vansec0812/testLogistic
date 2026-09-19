@@ -6,31 +6,66 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useDatabase } from '../context/DatabaseContext';
 import { useAuth } from '../context/AuthContext';
-import { ContainerRequest, CreateRequestForm, MatchCandidate } from '../types';
+import { BookingAiCheckResult, ContainerRequest, CreateRequestForm, MatchCandidate } from '../types';
 import { RequestStatusBadge, ConditionBadge } from '../components/StatusBadge';
 import { PricingBreakdownCard } from '../components/PricingBreakdownCard';
-import { formatVnd, formatDistance, formatDateTime, formatRelativeTime } from '../lib/utils';
+import { formatVnd, formatDistance, formatDate, formatRelativeTime } from '../lib/utils';
 import {
   Search, Plus, AlertTriangle, CheckCircle2, X, Clock, MapPin,
   Sparkles, Send, TrendingDown, ChevronDown, ChevronUp, AlertCircle,
-  Ship, Target, BarChart3, Star, Edit2, Trash2, Lock, ArrowRight, Check, Shield
+  Ship, Target, BarChart3, Star, Edit2, Trash2, Lock, ArrowRight, Check, Shield, MessageCircle, UploadCloud, FileText
 } from 'lucide-react';
 import { findMatchesForRequest } from '../services/matchingEngine';
 import { INITIAL_CARRIERS } from '../data/mockData';
+import { verifyBookingWithAI, EdoVerificationResult } from '../services/aiService';
+import { DEFAULT_BASELINE_PICKUP_COST_VND } from '../services/qaRules';
 import { FieldErrors, FieldError, FormErrorSummary, RequiredMark, getFieldErrorClass, scrollToFirstFieldError } from '../components/FormValidation';
-import { required, positiveNumber, validDateRange, validFutureDate, setError } from '../lib/formValidation';
+import { required, validDateRange, validFutureDate, setError } from '../lib/formValidation';
+import { DateInput } from '../components/DateInput';
 
 interface RequestsPageProps {
   setCurrentTab?: (tab: string) => void;
   setSelectedTxnId?: (id: string) => void;
 }
 
+function formatDateInputDdMmYyyy(value?: string): string {
+  if (!value) return '';
+  const isoDate = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDate) return `${isoDate[1]}-${isoDate[2]}-${isoDate[3]}`;
+  const displayDate = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (displayDate) return `${displayDate[3]}-${displayDate[2]}-${displayDate[1]}`;
+  return value;
+}
+
+function parseDateInputDdMmYyyy(value: string, endOfDay = false): string {
+  const normalized = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return `${normalized}T${endOfDay ? '23:59:59' : '00:00:00'}`;
+  const date = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!date) return normalized;
+  return `${date[3]}-${date[2]}-${date[1]}T${endOfDay ? '23:59:59' : '00:00:00'}`;
+}
+
+function mapBookingAiResult(result: EdoVerificationResult): BookingAiCheckResult {
+  return {
+    status: result.status,
+    isValid: result.status === 'VALID' && result.isLegal,
+    hasAnomaly: result.hasAnomaly || result.status === 'ANOMALY',
+    score: result.score,
+    summary: result.summary,
+    details: result.details,
+    requiresOpsReview: result.requiresOpsReview || result.status !== 'VALID',
+    error: result.error,
+  };
+}
+
 function MatchCandidateCard({
   candidate,
   onHold,
+  onChat,
 }: {
   candidate: MatchCandidate;
   onHold: () => void;
+  onChat?: () => void;
 }) {
   const [showPricing, setShowPricing] = useState(false);
   const { 
@@ -81,7 +116,7 @@ function MatchCandidateCard({
         </div>
       </div>
 
-      {/* 7 THÔNG TIN CHUẨN MỰC HIỂN THỊ CHO BÊN B */}
+      {/* 7 thông tin chuẩn mực hiển thị cho đơn vị cần vỏ */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
         {/* 1. Khoảng cách (Distance) */}
         <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
@@ -101,7 +136,7 @@ function MatchCandidateCard({
 
         {/* 5. Điểm uy tín (Trust Score) */}
         <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
-          <span className="text-slate-500 block">Điểm uy tín Bên A</span>
+          <span className="text-slate-500 block">Điểm uy tín nhà cung cấp</span>
           <strong className="text-amber-700 text-xs font-bold mt-0.5 block">
             ⭐ {trustScoreA}/100 (5★)
           </strong>
@@ -119,7 +154,7 @@ function MatchCandidateCard({
         <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100 col-span-2">
           <span className="text-slate-500 block">Thời gian có thể bàn giao</span>
           <strong className="text-slate-800 text-xs mt-0.5 block leading-tight">
-            ⏱️ {formatDateTime(offer.availableFrom)} → {formatDateTime(offer.availableTo)}
+            ⏱️ {formatDate(offer.availableFrom)} → {formatDate(offer.availableTo)}
           </strong>
         </div>
       </div>
@@ -127,7 +162,7 @@ function MatchCandidateCard({
       {/* 7. Mức tiết kiệm ước tính (Estimated saving) & Báo giá */}
       <div className="flex items-center justify-between text-xs pt-1.5 border-t border-slate-100">
         <div>
-          <span className="text-slate-600">Tiết kiệm ước tính cho Bên B: </span>
+          <span className="text-slate-600">Tiết kiệm ước tính cho đơn vị cần vỏ: </span>
           <span className={`font-bold font-mono text-sm ${quote.negativeSavingB ? 'text-red-500' : 'text-emerald-700'}`}>
             💰 +{formatVnd(Math.abs(quote.sBVnd))}
           </span>
@@ -151,14 +186,26 @@ function MatchCandidateCard({
           <MapPin className="w-3.5 h-3.5 text-slate-400" />
           Khu vực: {offer.pickupLocationName}
         </span>
-        <button
-          onClick={onHold}
-          disabled={requiresLocationRefresh}
-          className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Chọn vỏ này · Giữ chỗ</span>
-        </button>
+        <div className="flex items-center gap-1.5">
+          {onChat && (
+            <button
+              type="button"
+              onClick={onChat}
+              className="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              <span>Chat với đối tác</span>
+            </button>
+          )}
+          <button
+            onClick={onHold}
+            disabled={requiresLocationRefresh}
+            className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Chọn vỏ này · Giữ chỗ</span>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -174,9 +221,12 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     submitRequestForReview, 
     withdrawRequest, 
     opsReviewRequest, 
-    holdAtomicReservation 
+    holdAtomicReservation,
+    startChatThread,
   } = useDatabase();
   const { currentRole, currentCompany, canOpsReview, canCreateRequests } = useAuth();
+  const isSupplierRole = currentRole === 'ENTERPRISE_A' || currentRole === 'ENTERPRISE_BOTH';
+  const isRequesterRole = currentRole === 'ENTERPRISE_B' || currentRole === 'ENTERPRISE_BOTH';
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -194,24 +244,25 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
   const [editErrors, setEditErrors] = useState<FieldErrors>({});
   const [withdrawErrors, setWithdrawErrors] = useState<FieldErrors>({});
   const [opsErrors, setOpsErrors] = useState<FieldErrors>({});
-
-  // Auto-Match Alert Modal when new request is created
-  const [autoMatchModalReq, setAutoMatchModalReq] = useState<ContainerRequest | null>(null);
+  const [bookingFile, setBookingFile] = useState<File | null>(null);
+  const [bookingAiResult, setBookingAiResult] = useState<EdoVerificationResult | null>(null);
+  const [isBookingAiChecking, setIsBookingAiChecking] = useState(false);
+  const [editBookingFile, setEditBookingFile] = useState<File | null>(null);
+  const [editBookingAiResult, setEditBookingAiResult] = useState<EdoVerificationResult | null>(null);
+  const [isEditBookingAiChecking, setIsEditBookingAiChecking] = useState(false);
 
   useEffect(() => {
     if (currentRole === 'ENTERPRISE_A') {
       setShowAddForm(false);
       setEditingRequest(null);
       setMatchingForId(null);
-      setAutoMatchModalReq(null);
     }
   }, [currentRole]);
 
   const [form, setForm] = useState<Partial<CreateRequestForm>>({
-    containerType: '40HC',
-    maxDistanceKm: 40,
-    baselinePickupCostVnd: 3400000,
-    carrierId: 'CARR-MSK',
+    containerType: undefined,
+    maxDistanceKm: undefined,
+    carrierId: '',
   });
 
   const showMsg = (msg: string, isError = false) => {
@@ -220,12 +271,91 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     setTimeout(() => { setErrorMsg(''); setSuccessMsg(''); }, 5000);
   };
 
+  const handleBookingFileSelection = async (file: File, target: 'create' | 'edit') => {
+    const isPdfOrImage = file.type === 'application/pdf'
+      || file.type.startsWith('image/')
+      || file.name.toLowerCase().endsWith('.pdf');
+    if (!isPdfOrImage || file.size > 20 * 1024 * 1024) {
+      showMsg('Chỉ chấp nhận file Booking ảnh/PDF hợp lệ, tối đa 20MB.', true);
+      return;
+    }
+
+    const setChecking = target === 'create' ? setIsBookingAiChecking : setIsEditBookingAiChecking;
+    setChecking(true);
+    if (target === 'create') {
+      setBookingFile(file);
+      setBookingAiResult(null);
+      clearRequestError('bookingEvidence');
+      setForm(previous => ({
+        ...previous,
+        bookingFileName: file.name,
+        bookingFileMimeType: file.type || 'application/octet-stream',
+        bookingAiCheck: undefined,
+      }));
+    } else {
+      setEditBookingFile(file);
+      setEditBookingAiResult(null);
+      setEditErrors(previous => {
+        const next = { ...previous };
+        delete next['edit-bookingEvidence'];
+        return next;
+      });
+      setEditForm(previous => ({
+        ...previous,
+        bookingFileName: file.name,
+        bookingFileMimeType: file.type || 'application/octet-stream',
+        bookingAiCheck: undefined,
+      }));
+    }
+
+    try {
+      const result = await verifyBookingWithAI(file);
+      const aiCheck = mapBookingAiResult(result);
+      if (target === 'create') {
+        setBookingAiResult(result);
+        setForm(previous => ({ ...previous, bookingAiCheck: aiCheck }));
+      } else {
+        setEditBookingAiResult(result);
+        setEditForm(previous => ({ ...previous, bookingAiCheck: aiCheck }));
+      }
+      if (result.status === 'VALID') {
+        showMsg('AI xác minh file Booking hợp lệ. Hồ sơ vẫn chờ Ops duyệt.');
+      } else if (result.status === 'MANUAL_REVIEW') {
+        showMsg(`AI chưa thể kết luận Booking: ${result.error || result.summary} Hồ sơ sẽ chuyển Ops kiểm tra.`);
+      } else {
+        showMsg(`Booking có cảnh báo: ${result.anomalyReason || result.summary} Ops sẽ quyết định.`, true);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Không thể quét AI file Booking.';
+      const fallback: BookingAiCheckResult = {
+        status: 'ERROR',
+        isValid: false,
+        hasAnomaly: true,
+        summary: 'AI chưa thể kiểm tra file Booking; cần Ops kiểm tra thủ công.',
+        details: [message],
+        requiresOpsReview: true,
+        error: message,
+      };
+      if (target === 'create') {
+        setBookingAiResult({ ...fallback, success: false, isLegal: false } as EdoVerificationResult);
+        setForm(previous => ({ ...previous, bookingAiCheck: fallback }));
+      } else {
+        setEditBookingAiResult({ ...fallback, success: false, isLegal: false } as EdoVerificationResult);
+        setEditForm(previous => ({ ...previous, bookingAiCheck: fallback }));
+      }
+      showMsg(fallback.summary, true);
+    } finally {
+      setChecking(false);
+    }
+  };
+
   const availableOffers = useMemo(() => offers.filter(o => o.status === 'AVAILABLE'), [offers]);
 
   const filtered = useMemo(() => {
     let list = requests;
     if (currentRole === 'ENTERPRISE_B') list = list.filter(r => r.companyId === currentCompany.id);
-    // Bên A được xem nhu cầu đã OPEN để theo dõi nhu cầu thị trường/matching,
+    if (currentRole === 'ENTERPRISE_BOTH') list = list.filter(r => r.companyId === currentCompany.id || r.status === 'OPEN');
+    // Nhà cung cấp được xem nhu cầu đã OPEN để theo dõi nhu cầu thị trường/matching,
     // nhưng không được xem nháp/chờ duyệt và không có quyền tạo, sửa, giữ chỗ.
     if (currentRole === 'ENTERPRISE_A') list = list.filter(r => r.status === 'OPEN');
     if (search) {
@@ -272,9 +402,11 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
   const validateRequestForm = (): FieldErrors => {
     const errors: FieldErrors = {};
     setError(errors, 'bookingNumber', required(form.bookingNumber, 'Vui lòng nhập số Booking.'));
+    setError(errors, 'bookingEvidence', required(form.bookingFileName, 'Vui lòng tải file Booking ảnh/PDF.'));
     if (form.bookingNumber && !/^[A-Z0-9][A-Z0-9-]{4,}$/.test(form.bookingNumber.trim().toUpperCase())) {
       errors.bookingNumber = 'Số Booking phải có ít nhất 5 ký tự, chỉ gồm chữ, số và dấu gạch ngang.';
     }
+    setError(errors, 'containerType', required(form.containerType, 'Vui lòng chọn loại container.'));
     setError(errors, 'carrierId', required(form.carrierId, 'Vui lòng chọn hãng tàu cấp vỏ.'));
     setError(errors, 'deliveryLocationName', required(form.deliveryLocationName, 'Vui lòng nhập địa điểm nhận cont/đóng hàng.'));
     setError(errors, 'pickupWindowStart', validFutureDate(form.pickupWindowStart, 'thời điểm lấy cont sớm nhất'));
@@ -283,7 +415,6 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     if (!Number.isFinite(Number(form.maxDistanceKm)) || Number(form.maxDistanceKm) < 5 || Number(form.maxDistanceKm) > 100) {
       errors.maxDistanceKm = 'Bán kính Dmax phải từ 5 đến 100 km.';
     }
-    setError(errors, 'baselinePickupCostVnd', positiveNumber(form.baselinePickupCostVnd, 'Chi phí baseline phải lớn hơn 0.'));
     return errors;
   };
 
@@ -297,7 +428,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     }
     const result = addRequest({
       carrierId: form.carrierId!,
-      containerType: form.containerType || '40HC',
+      containerType: form.containerType!,
       bookingNumber: form.bookingNumber!.trim().toUpperCase(),
       deliveryLocationName: form.deliveryLocationName!.trim(),
       deliveryLatitude: form.deliveryLatitude || 10.74,
@@ -308,18 +439,18 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
       maxDistanceKm: Number(form.maxDistanceKm),
       cargoType: form.cargoType?.trim() || 'Hàng tổng hợp',
       cargoRequirements: form.cargoRequirements?.trim(),
-      baselinePickupCostVnd: Number(form.baselinePickupCostVnd),
+      baselinePickupCostVnd: DEFAULT_BASELINE_PICKUP_COST_VND,
+      bookingFileName: form.bookingFileName,
+      bookingFileMimeType: form.bookingFileMimeType,
+      bookingAiCheck: form.bookingAiCheck,
     });
     if (result.success) {
       showMsg(result.message);
       setShowAddForm(false);
-      const createdReq = result.data as ContainerRequest;
-      setForm({ containerType: '40HC', maxDistanceKm: 40, baselinePickupCostVnd: 3400000, carrierId: 'CARR-MSK' });
+      setForm({ containerType: undefined, maxDistanceKm: undefined, carrierId: '' });
+      setBookingFile(null);
+      setBookingAiResult(null);
       setFormErrors({});
-      if (createdReq) {
-        const instantMatches = findMatchesForRequest(createdReq, availableOffers);
-        if (instantMatches.candidates.length > 0) setAutoMatchModalReq(createdReq);
-      }
     } else {
       showMsg(result.message, true);
     }
@@ -334,23 +465,40 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     setEditErrors({});
     setEditForm({
       bookingNumber: req.bookingNumber,
+      carrierId: req.carrierId,
+      containerType: req.containerType,
       deliveryLocationName: req.deliveryLocationName,
+      pickupWindowStart: req.pickupWindowStart,
+      pickupWindowEnd: req.pickupWindowEnd,
+      cutOffTime: req.cutOffTime,
       maxDistanceKm: req.maxDistanceKm,
-      baselinePickupCostVnd: req.baselinePickupCostVnd,
+      bookingFileName: req.bookingFileName,
+      bookingFileMimeType: req.bookingFileMimeType,
+      bookingAiCheck: req.bookingAiCheck,
       cargoType: req.cargoType,
       cargoRequirements: req.cargoRequirements || '',
     });
+    setEditBookingFile(null);
+    setEditBookingAiResult(null);
   };
 
   const handleSaveEdit = () => {
     if (!editingRequest) return;
     const errors: FieldErrors = {};
     setError(errors, 'edit-bookingNumber', required(editForm.bookingNumber, 'Vui lòng nhập số Booking.'));
+    setError(errors, 'edit-bookingEvidence', required(editForm.bookingFileName, 'Vui lòng tải file Booking ảnh/PDF.'));
+    if (editForm.bookingNumber && !/^[A-Z0-9][A-Z0-9-]{4,}$/.test(String(editForm.bookingNumber).trim().toUpperCase())) {
+      errors['edit-bookingNumber'] = 'Số Booking phải có ít nhất 5 ký tự, chỉ gồm chữ, số và dấu gạch ngang.';
+    }
+    setError(errors, 'edit-carrierId', required(editForm.carrierId, 'Vui lòng chọn hãng tàu cấp vỏ.'));
+    setError(errors, 'edit-containerType', required(editForm.containerType, 'Vui lòng chọn loại container.'));
     setError(errors, 'edit-deliveryLocationName', required(editForm.deliveryLocationName, 'Vui lòng nhập địa điểm giao hàng.'));
+    setError(errors, 'edit-pickupWindowStart', validFutureDate(editForm.pickupWindowStart, 'thời điểm lấy cont sớm nhất'));
+    setError(errors, 'edit-pickupWindowEnd', validDateRange(editForm.pickupWindowStart, editForm.pickupWindowEnd, 'khung thời gian lấy cont'));
+    setError(errors, 'edit-cutOffTime', validFutureDate(editForm.cutOffTime, 'thời hạn cut-off booking'));
     if (!Number.isFinite(Number(editForm.maxDistanceKm)) || Number(editForm.maxDistanceKm) < 5 || Number(editForm.maxDistanceKm) > 100) {
       errors['edit-maxDistanceKm'] = 'Bán kính Dmax phải từ 5 đến 100 km.';
     }
-    setError(errors, 'edit-baselinePickupCostVnd', positiveNumber(editForm.baselinePickupCostVnd, 'Chi phí baseline phải lớn hơn 0.'));
     setEditErrors(errors);
     if (Object.keys(errors).length > 0) {
       showMsg(Object.values(errors)[0], true);
@@ -360,9 +508,17 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     const result = updateRequest(editingRequest.id, {
       ...editForm,
       bookingNumber: editForm.bookingNumber!.trim().toUpperCase(),
+      carrierId: editForm.carrierId!,
+      carrierCode: INITIAL_CARRIERS.find(carrier => carrier.id === editForm.carrierId)?.code || String(editForm.carrierId).replace(/^CARR-/, ''),
+      containerType: editForm.containerType as '20GP' | '40HC',
       deliveryLocationName: editForm.deliveryLocationName!.trim(),
+      pickupWindowStart: editForm.pickupWindowStart!,
+      pickupWindowEnd: editForm.pickupWindowEnd!,
+      cutOffTime: editForm.cutOffTime!,
       maxDistanceKm: Number(editForm.maxDistanceKm),
-      baselinePickupCostVnd: Number(editForm.baselinePickupCostVnd),
+      bookingFileName: editForm.bookingFileName,
+      bookingFileMimeType: editForm.bookingFileMimeType,
+      bookingAiCheck: editForm.bookingAiCheck,
       cargoType: editForm.cargoType?.trim(),
     });
     showMsg(result.message, !result.success);
@@ -425,12 +581,36 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     setHoldingId(null);
     if (result.success) {
       const matchData = result.data as { matchId: string } | undefined;
-      showMsg(`✓ Đã gửi yêu cầu ghép ${matchData?.matchId || ''}. Chưa reserve cont; chờ Bên A Accept.`);
+      showMsg(`✓ Đã gửi yêu cầu ghép ${matchData?.matchId || ''}. Chưa reserve cont; chờ nhà cung cấp Accept.`);
       setMatchingForId(null);
-      setAutoMatchModalReq(null);
     } else {
       showMsg(result.message, true);
     }
+  };
+
+  const handleStartChat = (req: ContainerRequest, candidate?: MatchCandidate) => {
+    const offer = candidate?.offer;
+    const threadId = startChatThread({
+      companyAId: offer?.companyId || currentCompany.id,
+      companyAName: offer?.companyName || currentCompany.shortName,
+      companyBId: req.companyId,
+      companyBName: req.companyName,
+      offerId: offer?.id,
+      requestId: req.id,
+      contextLabel: `Booking ${req.bookingNumber}`,
+      contextType: 'PRE_BOOKING',
+      // Không đưa số cont thật vào chat trước khi đặt/giữ chỗ.
+      containerNumber: 'Cont •••••••',
+      carrierCode: offer?.asset.carrierCode || req.carrierCode,
+      containerType: offer?.asset.containerType || req.containerType,
+      pickupLocationName: offer?.pickupLocationName,
+    });
+    if (!threadId) {
+      showMsg('Không thể mở cuộc chat: hai đối tác chưa thuộc đúng nhu cầu/Offer.', true);
+      return;
+    }
+    showMsg('Đã mở cuộc chat với đối tác.');
+    setCurrentTab?.('chat');
   };
 
   return (
@@ -440,10 +620,10 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
         <div>
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
             <Search className="w-6 h-6 text-cyan-600" />
-            <span>{currentRole === 'ENTERPRISE_B' ? 'Quản lý Nhu cầu & Tự động Ghép đôi' : 'Danh sách Nhu cầu tìm vỏ'}</span>
+            <span>{isRequesterRole ? 'Quản lý Nhu cầu & Tự động Ghép đôi' : 'Danh sách Nhu cầu tìm vỏ'}</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            {currentRole === 'ENTERPRISE_B'
+            {isRequesterRole
               ? 'Tự động dò tìm và ghép đôi vỏ container rỗng theo Hãng tàu, Loại cont và Bán kính Dmax'
               : `${filtered.length} nhu cầu đang hiển thị`}
           </p>
@@ -470,7 +650,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
           <AlertTriangle className="w-4 h-4 shrink-0" />{errorMsg}
         </div>
       )}
-      {currentRole === 'ENTERPRISE_B' && currentCompany.verificationStatus !== 'VERIFIED' && (
+      {isRequesterRole && currentCompany.verificationStatus !== 'VERIFIED' && (
         <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-800">
           <Shield className="w-4 h-4 shrink-0" /> Hồ sơ doanh nghiệp đang chờ Ops xác minh. Chưa thể tạo hoặc gửi Request.
         </div>
@@ -503,8 +683,46 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
               />
               <FieldError message={formErrors.bookingNumber} />
             </div>
+            <div
+              data-field="bookingEvidence"
+              className={getFieldErrorClass(Boolean(formErrors.bookingEvidence), 'md:col-span-2 rounded-xl border border-blue-200 bg-blue-50/50 p-3 space-y-2')}
+            >
+              <label className="text-slate-700 font-semibold text-xs sm:text-sm block">File Booking (ảnh hoặc PDF) <RequiredMark /></label>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex min-w-[240px] flex-1 items-center gap-2 border border-slate-200 bg-white rounded-lg px-3 py-2 cursor-pointer hover:bg-slate-50">
+                  <UploadCloud className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span className="truncate text-xs font-medium text-slate-700">{form.bookingFileName || 'Chọn file Booking ảnh/PDF'}</span>
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf,image/png,image/jpeg,image/jpg,image/webp"
+                    className="hidden"
+                    onChange={event => {
+                      const file = event.target.files?.[0];
+                      event.target.value = '';
+                      if (file) void handleBookingFileSelection(file, 'create');
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={!bookingFile || isBookingAiChecking}
+                  onClick={() => bookingFile && void handleBookingFileSelection(bookingFile, 'create')}
+                  className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50"
+                >
+                  {isBookingAiChecking ? 'Đang quét AI...' : 'Quét lại Booking bằng AI'}
+                </button>
+              </div>
+              <FieldError message={formErrors.bookingEvidence} />
+              {bookingAiResult && (
+                <div className={`rounded-lg border px-3 py-2 text-xs ${bookingAiResult.status === 'VALID' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : bookingAiResult.status === 'MANUAL_REVIEW' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
+                  <strong>{bookingAiResult.status === 'VALID' ? 'AI: Booking hợp lệ' : bookingAiResult.status === 'MANUAL_REVIEW' ? 'AI: Booking chờ Ops xác minh' : 'AI: Booking có cảnh báo'}</strong>
+                  <span className="ml-1">{bookingAiResult.summary}</span>
+                  {bookingAiResult.details.length > 0 && <ul className="mt-1 list-disc pl-4">{bookingAiResult.details.map((detail, index) => <li key={index}>{detail}</li>)}</ul>}
+                </div>
+              )}
+            </div>
             <div>
-              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Hãng tàu cấp vỏ <RequiredMark /></label>
+              <label htmlFor="request-carrierId" className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Hãng tàu cấp vỏ <RequiredMark /></label>
               <select 
                 id="request-carrierId"
                 data-field="carrierId"
@@ -513,6 +731,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                 aria-invalid={Boolean(formErrors.carrierId)}
                 className={getFieldErrorClass(Boolean(formErrors.carrierId), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               >
+                <option value="">-- Chọn hãng tàu --</option>
                 {INITIAL_CARRIERS.filter(c => c.isActive).map(c => (
                   <option key={c.id} value={c.id}>{c.code} · {c.name}</option>
                 ))}
@@ -520,15 +739,20 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                 <FieldError message={formErrors.carrierId} />
             </div>
             <div>
-              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Loại container</label>
+              <label htmlFor="request-containerType" className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Loại container <RequiredMark /></label>
               <select 
-                value={form.containerType} 
-                onChange={e => setForm(p => ({ ...p, containerType: e.target.value as '20GP' | '40HC' }))}
-                className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white"
+                id="request-containerType"
+                data-field="containerType"
+                value={form.containerType || ''}
+                onChange={e => { clearRequestError('containerType'); setForm(p => ({ ...p, containerType: e.target.value ? e.target.value as '20GP' | '40HC' : undefined })); }}
+                aria-invalid={Boolean(formErrors.containerType)}
+                className={getFieldErrorClass(Boolean(formErrors.containerType), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               >
+                <option value="">-- Chọn loại container --</option>
                 <option value="40HC">40HC (40 foot cao)</option>
                 <option value="20GP">20GP (20 foot tiêu chuẩn)</option>
               </select>
+              <FieldError message={formErrors.containerType} />
             </div>
             <div>
               <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Địa điểm nhận cont / đóng hàng <RequiredMark /></label>
@@ -545,44 +769,40 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
             </div>
             <div>
               <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Lấy cont sớm nhất <RequiredMark /></label>
-              <input 
+              <DateInput
                 id="request-pickupWindowStart"
                 data-field="pickupWindowStart"
-                type="datetime-local"
-                value={form.pickupWindowStart ? form.pickupWindowStart.slice(0, 16) : ''}
-                onChange={e => { clearRequestError('pickupWindowStart'); clearRequestError('pickupWindowEnd'); setForm(p => ({ ...p, pickupWindowStart: e.target.value ? new Date(e.target.value).toISOString() : undefined })); }}
+                value={form.pickupWindowStart}
+                onChange={v => { clearRequestError('pickupWindowStart'); clearRequestError('pickupWindowEnd'); setForm(p => ({ ...p, pickupWindowStart: v || undefined })); }}
                 aria-invalid={Boolean(formErrors.pickupWindowStart)}
                 className={getFieldErrorClass(Boolean(formErrors.pickupWindowStart), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               />
-              <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị: {formatDateTime(form.pickupWindowStart)}</p>
               <FieldError message={formErrors.pickupWindowStart} />
             </div>
             <div>
               <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Lấy cont muộn nhất <RequiredMark /></label>
-              <input 
+              <DateInput
                 id="request-pickupWindowEnd"
                 data-field="pickupWindowEnd"
-                type="datetime-local"
-                value={form.pickupWindowEnd ? form.pickupWindowEnd.slice(0, 16) : ''}
-                onChange={e => { clearRequestError('pickupWindowStart'); clearRequestError('pickupWindowEnd'); setForm(p => ({ ...p, pickupWindowEnd: e.target.value ? new Date(e.target.value).toISOString() : undefined })); }}
+                value={form.pickupWindowEnd}
+                endOfDay
+                onChange={v => { clearRequestError('pickupWindowStart'); clearRequestError('pickupWindowEnd'); setForm(p => ({ ...p, pickupWindowEnd: v || undefined })); }}
                 aria-invalid={Boolean(formErrors.pickupWindowEnd)}
                 className={getFieldErrorClass(Boolean(formErrors.pickupWindowEnd), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               />
-              <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị: {formatDateTime(form.pickupWindowEnd)}</p>
               <FieldError message={formErrors.pickupWindowEnd} />
             </div>
             <div>
               <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Thời hạn Cut-off booking <RequiredMark /></label>
-              <input 
+              <DateInput
                 id="request-cutOffTime"
                 data-field="cutOffTime"
-                type="datetime-local"
-                value={form.cutOffTime ? form.cutOffTime.slice(0, 16) : ''}
-                onChange={e => { clearRequestError('cutOffTime'); setForm(p => ({ ...p, cutOffTime: e.target.value ? new Date(e.target.value).toISOString() : undefined })); }}
+                value={form.cutOffTime}
+                endOfDay
+                onChange={v => { clearRequestError('cutOffTime'); setForm(p => ({ ...p, cutOffTime: v || undefined })); }}
                 aria-invalid={Boolean(formErrors.cutOffTime)}
                 className={getFieldErrorClass(Boolean(formErrors.cutOffTime), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               />
-              <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị: {formatDateTime(form.cutOffTime)}</p>
               <FieldError message={formErrors.cutOffTime} />
             </div>
             <div>
@@ -595,24 +815,11 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                 data-field="maxDistanceKm"
                 value={form.maxDistanceKm ?? ''}
                 onChange={e => { clearRequestError('maxDistanceKm'); setForm(p => ({ ...p, maxDistanceKm: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })); }}
+                placeholder="VD: 40"
                 aria-invalid={Boolean(formErrors.maxDistanceKm)}
                 className={getFieldErrorClass(Boolean(formErrors.maxDistanceKm), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
               />
               <FieldError message={formErrors.maxDistanceKm} />
-            </div>
-            <div>
-              <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Chi phí lấy baseline T_B (VND) <RequiredMark /></label>
-              <input 
-                type="number" 
-                id="request-baselinePickupCostVnd"
-                data-field="baselinePickupCostVnd"
-                value={form.baselinePickupCostVnd ?? ''}
-                onChange={e => { clearRequestError('baselinePickupCostVnd'); setForm(p => ({ ...p, baselinePickupCostVnd: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })); }}
-                aria-invalid={Boolean(formErrors.baselinePickupCostVnd)}
-                className={getFieldErrorClass(Boolean(formErrors.baselinePickupCostVnd), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
-              />
-              <FieldError message={formErrors.baselinePickupCostVnd} />
-              <p className="text-xs text-slate-500 mt-1">Cước nếu xe phải chạy lên depot lấy cont thông thường</p>
             </div>
             <div>
               <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">Loại hàng xuất khẩu</label>
@@ -659,10 +866,46 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                   data-field="edit-bookingNumber"
                   value={editForm.bookingNumber || ''}
                   onChange={e => { setEditErrors(previous => { const next = { ...previous }; delete next['edit-bookingNumber']; return next; }); setEditForm(p => ({ ...p, bookingNumber: e.target.value.toUpperCase() })); }}
+                  placeholder="MSKBKG2026-981..."
                   aria-invalid={Boolean(editErrors['edit-bookingNumber'])}
                   className={getFieldErrorClass(Boolean(editErrors['edit-bookingNumber']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500')}
                 />
                 <FieldError message={editErrors['edit-bookingNumber']} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="edit-carrierId" className="text-slate-700 font-semibold block mb-1">Hãng tàu cấp vỏ <RequiredMark /></label>
+                  <select
+                    id="edit-carrierId"
+                    data-field="edit-carrierId"
+                    value={editForm.carrierId || ''}
+                    onChange={e => { setEditErrors(previous => { const next = { ...previous }; delete next['edit-carrierId']; return next; }); setEditForm(p => ({ ...p, carrierId: e.target.value })); }}
+                    aria-invalid={Boolean(editErrors['edit-carrierId'])}
+                    className={getFieldErrorClass(Boolean(editErrors['edit-carrierId']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
+                  >
+                    <option value="">-- Chọn hãng tàu --</option>
+                    {INITIAL_CARRIERS.filter(carrier => carrier.isActive).map(carrier => (
+                      <option key={carrier.id} value={carrier.id}>{carrier.code} · {carrier.name}</option>
+                    ))}
+                  </select>
+                  <FieldError message={editErrors['edit-carrierId']} />
+                </div>
+                <div>
+                  <label htmlFor="edit-containerType" className="text-slate-700 font-semibold block mb-1">Loại container <RequiredMark /></label>
+                  <select
+                    id="edit-containerType"
+                    data-field="edit-containerType"
+                    value={editForm.containerType || ''}
+                    onChange={e => { setEditErrors(previous => { const next = { ...previous }; delete next['edit-containerType']; return next; }); setEditForm(p => ({ ...p, containerType: e.target.value as '20GP' | '40HC' })); }}
+                    aria-invalid={Boolean(editErrors['edit-containerType'])}
+                    className={getFieldErrorClass(Boolean(editErrors['edit-containerType']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500 bg-white')}
+                  >
+                    <option value="">-- Chọn loại container --</option>
+                    <option value="40HC">40HC (40 foot cao)</option>
+                    <option value="20GP">20GP (20 foot tiêu chuẩn)</option>
+                  </select>
+                  <FieldError message={editErrors['edit-containerType']} />
+                </div>
               </div>
               <div>
                 <label className="text-slate-700 font-semibold block mb-1">Địa điểm giao hàng <RequiredMark /></label>
@@ -672,10 +915,90 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                   data-field="edit-deliveryLocationName"
                   value={editForm.deliveryLocationName || ''}
                   onChange={e => { setEditErrors(previous => { const next = { ...previous }; delete next['edit-deliveryLocationName']; return next; }); setEditForm(p => ({ ...p, deliveryLocationName: e.target.value })); }}
+                  placeholder="Kho, cảng hoặc địa điểm đóng hàng..."
                   aria-invalid={Boolean(editErrors['edit-deliveryLocationName'])}
                   className={getFieldErrorClass(Boolean(editErrors['edit-deliveryLocationName']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500')}
                 />
                 <FieldError message={editErrors['edit-deliveryLocationName']} />
+              </div>
+
+              <div
+                data-field="edit-bookingEvidence"
+                className={getFieldErrorClass(Boolean(editErrors['edit-bookingEvidence']), 'rounded-xl border border-blue-200 bg-blue-50/50 p-3 space-y-2')}
+              >
+                <label className="text-slate-700 font-semibold block mb-1">File Booking (ảnh hoặc PDF) <RequiredMark /></label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="flex min-w-[220px] flex-1 items-center gap-2 border border-slate-200 bg-white rounded-lg px-3 py-2 cursor-pointer hover:bg-slate-50">
+                    <UploadCloud className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span className="truncate text-xs font-medium text-slate-700">{editForm.bookingFileName || 'Chọn file Booking ảnh/PDF'}</span>
+                    <input
+                      type="file"
+                      accept=".pdf,application/pdf,image/png,image/jpeg,image/jpg,image/webp"
+                      className="hidden"
+                      onChange={event => {
+                        const file = event.target.files?.[0];
+                        event.target.value = '';
+                        if (file) void handleBookingFileSelection(file, 'edit');
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={!editBookingFile || isEditBookingAiChecking}
+                    onClick={() => editBookingFile && void handleBookingFileSelection(editBookingFile, 'edit')}
+                    className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50"
+                  >
+                    {isEditBookingAiChecking ? 'Đang quét AI...' : 'Quét lại Booking bằng AI'}
+                  </button>
+                </div>
+                <FieldError message={editErrors['edit-bookingEvidence']} />
+                {editBookingAiResult && (
+                  <div className={`rounded-lg border px-3 py-2 text-xs ${editBookingAiResult.status === 'VALID' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : editBookingAiResult.status === 'MANUAL_REVIEW' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
+                    <strong>{editBookingAiResult.status === 'VALID' ? 'AI: Booking hợp lệ' : editBookingAiResult.status === 'MANUAL_REVIEW' ? 'AI: Booking chờ Ops xác minh' : 'AI: Booking có cảnh báo'}</strong>
+                    <span className="ml-1">{editBookingAiResult.summary}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="edit-pickupWindowStart" className="text-slate-700 font-semibold block mb-1">Lấy cont sớm nhất <RequiredMark /></label>
+                  <DateInput
+                    id="edit-pickupWindowStart"
+                    data-field="edit-pickupWindowStart"
+                    value={editForm.pickupWindowStart}
+                    onChange={v => { setEditErrors(previous => { const next = { ...previous }; delete next['edit-pickupWindowStart']; delete next['edit-pickupWindowEnd']; return next; }); setEditForm(p => ({ ...p, pickupWindowStart: v || undefined })); }}
+                    aria-invalid={Boolean(editErrors['edit-pickupWindowStart'])}
+                    className={getFieldErrorClass(Boolean(editErrors['edit-pickupWindowStart']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500')}
+                  />
+                  <FieldError message={editErrors['edit-pickupWindowStart']} />
+                </div>
+                <div>
+                  <label htmlFor="edit-pickupWindowEnd" className="text-slate-700 font-semibold block mb-1">Lấy cont muộn nhất <RequiredMark /></label>
+                  <DateInput
+                    id="edit-pickupWindowEnd"
+                    data-field="edit-pickupWindowEnd"
+                    value={editForm.pickupWindowEnd}
+                    endOfDay
+                    onChange={v => { setEditErrors(previous => { const next = { ...previous }; delete next['edit-pickupWindowStart']; delete next['edit-pickupWindowEnd']; return next; }); setEditForm(p => ({ ...p, pickupWindowEnd: v || undefined })); }}
+                    aria-invalid={Boolean(editErrors['edit-pickupWindowEnd'])}
+                    className={getFieldErrorClass(Boolean(editErrors['edit-pickupWindowEnd']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500')}
+                  />
+                  <FieldError message={editErrors['edit-pickupWindowEnd']} />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="edit-cutOffTime" className="text-slate-700 font-semibold block mb-1">Thời hạn Cut-off booking <RequiredMark /></label>
+                <DateInput
+                  id="edit-cutOffTime"
+                  data-field="edit-cutOffTime"
+                  value={editForm.cutOffTime}
+                  endOfDay
+                  onChange={v => { setEditErrors(previous => { const next = { ...previous }; delete next['edit-cutOffTime']; return next; }); setEditForm(p => ({ ...p, cutOffTime: v || undefined })); }}
+                  aria-invalid={Boolean(editErrors['edit-cutOffTime'])}
+                  className={getFieldErrorClass(Boolean(editErrors['edit-cutOffTime']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500')}
+                />
+                <FieldError message={editErrors['edit-cutOffTime']} />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -687,25 +1010,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                     data-field="edit-maxDistanceKm"
                     value={editForm.maxDistanceKm ?? ''}
                     onChange={e => { setEditErrors(previous => { const next = { ...previous }; delete next['edit-maxDistanceKm']; return next; }); setEditForm(p => ({ ...p, maxDistanceKm: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })); }}
+                    placeholder="VD: 40"
                     aria-invalid={Boolean(editErrors['edit-maxDistanceKm'])}
                     className={getFieldErrorClass(Boolean(editErrors['edit-maxDistanceKm']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500')}
                   />
                   <FieldError message={editErrors['edit-maxDistanceKm']} />
                 </div>
 
-                <div>
-                  <label className="text-slate-700 font-semibold block mb-1">Chi phí baseline T_B (VND) <RequiredMark /></label>
-                  <input
-                    type="number"
-                    id="edit-baselinePickupCostVnd"
-                    data-field="edit-baselinePickupCostVnd"
-                    value={editForm.baselinePickupCostVnd ?? ''}
-                    onChange={e => { setEditErrors(previous => { const next = { ...previous }; delete next['edit-baselinePickupCostVnd']; return next; }); setEditForm(p => ({ ...p, baselinePickupCostVnd: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })); }}
-                    aria-invalid={Boolean(editErrors['edit-baselinePickupCostVnd'])}
-                    className={getFieldErrorClass(Boolean(editErrors['edit-baselinePickupCostVnd']), 'w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500')}
-                  />
-                  <FieldError message={editErrors['edit-baselinePickupCostVnd']} />
-                </div>
               </div>
 
               <div>
@@ -714,6 +1025,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                   type="text"
                   value={editForm.cargoType || ''}
                   onChange={e => setEditForm(p => ({ ...p, cargoType: e.target.value }))}
+                  placeholder="Hàng dệt may, nông sản, linh kiện điện tử..."
                   className="w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500"
                 />
               </div>
@@ -731,52 +1043,6 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                 className="px-4 py-2 text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl shadow-sm"
               >
                 Lưu Thay Đổi
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Auto-Match Instant Result Pop-up (when a new request is created) */}
-      {autoMatchModalReq && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                  <Sparkles className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-900 text-sm">TỰ ĐỘNG TÌM THẤY CONTAINER GHÉP ĐÔI!</h3>
-                  <p className="text-xs text-slate-600 font-medium">Booking: {autoMatchModalReq.bookingNumber} ({autoMatchModalReq.carrierCode})</p>
-                </div>
-              </div>
-              <button onClick={() => setAutoMatchModalReq(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-xs text-slate-600">
-                Hệ thống tự động phát hiện các nguồn vỏ cont của Bên A khớp hoàn toàn với booking của bạn:
-              </p>
-              <div className="max-h-[360px] overflow-y-auto space-y-3">
-                {findMatchesForRequest(autoMatchModalReq, availableOffers).candidates.map(cand => (
-                  <MatchCandidateCard
-                    key={cand.offer.id}
-                    candidate={cand}
-                    onHold={() => handleHoldReservation(cand, autoMatchModalReq)}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2 border-t border-slate-100">
-              <button
-                onClick={() => setAutoMatchModalReq(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
-              >
-                Để sau
               </button>
             </div>
           </div>
@@ -825,9 +1091,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
         )}
 
         {filtered.map(req => {
-          const autoMatchResult = currentRole === 'ENTERPRISE_A' ? undefined : autoMatchMap[req.id];
+          const requestMatchResult = autoMatchMap[req.id];
+          const isOwnRequest = req.companyId === currentCompany.id;
+          const canManageMatching = isRequesterRole && isOwnRequest;
+          const autoMatchResult = canManageMatching ? requestMatchResult : undefined;
           const bestMatch = autoMatchResult?.candidates[0];
           const isMatching = matchingForId === req.id;
+          const canStartRequestChat = (isSupplierRole && req.status === 'OPEN') || canManageMatching;
 
           return (
             <div 
@@ -848,9 +1118,8 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                     <span>{req.deliveryLocationName}</span>
                   </div>
                   <div className="text-xs text-slate-500 mt-1.5 flex items-center gap-3 flex-wrap">
-                    <span>Lấy: {formatDateTime(req.pickupWindowStart)} → {formatDateTime(req.pickupWindowEnd)}</span>
-                    <span>Cut-off: {formatDateTime(req.cutOffTime)}</span>
-                    <span className="font-mono font-semibold text-slate-700">T_B: {formatVnd(req.baselinePickupCostVnd)}</span>
+                    <span>Lấy: {formatDate(req.pickupWindowStart)} → {formatDate(req.pickupWindowEnd)}</span>
+                    <span>Cut-off: {formatDate(req.cutOffTime)}</span>
                     <span>Dmax: {req.maxDistanceKm}km</span>
                   </div>
                 </div>
@@ -865,12 +1134,25 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                       </span>
                     ) : (
                       <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-slate-50 text-slate-500 border border-slate-200">
-                        Đang quét nguồn cont...
+                        Chưa có Offer phù hợp
                       </span>
                     )}
                   </div>
                 )}
+                {isRequesterRole && req.companyId === currentCompany.id && req.status !== 'OPEN' && ['DRAFT', 'UNDER_REVIEW', 'CHANGES_REQUIRED'].includes(req.status) && (
+                  <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                    {req.status === 'DRAFT' ? 'Gửi Ops xác minh để bật auto-match' : 'Đang chờ Ops duyệt để bật auto-match'}
+                  </span>
+                )}
               </div>
+
+              {req.bookingFileName && (!isSupplierRole || (isRequesterRole && req.companyId === currentCompany.id)) && (
+                <div className={`flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-xs ${req.bookingAiCheck?.status === 'VALID' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+                  <FileText className="w-3.5 h-3.5 shrink-0" />
+                  <span className="font-semibold">Booking: {req.bookingFileName}</span>
+                  <span>· AI: {req.bookingAiCheck?.status === 'VALID' ? 'hợp lệ' : req.bookingAiCheck?.status === 'INVALID' || req.bookingAiCheck?.status === 'ANOMALY' ? 'có cảnh báo' : 'chờ Ops kiểm tra'}</span>
+                </div>
+              )}
 
               {/* Real-time Top Auto-Match Highlight Card */}
               {req.status === 'OPEN' && bestMatch && !isMatching && (
@@ -890,14 +1172,24 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => handleHoldReservation(bestMatch, req)}
-                    disabled={bestMatch.requiresLocationRefresh}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
-                  >
-                    <Lock className="w-3.5 h-3.5" />
-                     <span>Chọn Offer · Gửi Match</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleStartChat(req, bestMatch)}
+                      className="px-3.5 py-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1.5 shadow-sm"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      Chat với đối tác
+                    </button>
+                    <button
+                      onClick={() => handleHoldReservation(bestMatch, req)}
+                      disabled={bestMatch.requiresLocationRefresh}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>Chọn Offer · Gửi Match</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -912,9 +1204,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
               <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
                 <div className="flex items-center gap-2">
                   {/* Send review */}
-                  {(req.status === 'DRAFT' || req.status === 'CHANGES_REQUIRED') && currentRole === 'ENTERPRISE_B' && (
+                  {(req.status === 'DRAFT' || req.status === 'CHANGES_REQUIRED') && isRequesterRole && req.companyId === currentCompany.id && (
                     <button
-                      onClick={() => { submitRequestForReview(req.id); showMsg('Đã gửi xác minh Booking tới Ops.'); }}
+                      onClick={() => { const result = submitRequestForReview(req.id); showMsg(result.message, !result.success); }}
                       className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm"
                     >
                       <Send className="w-3.5 h-3.5" />
@@ -923,13 +1215,24 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                   )}
 
                   {/* Toggle match results view */}
-                  {currentRole !== 'ENTERPRISE_A' && req.status === 'OPEN' && (
+                  {canManageMatching && req.status === 'OPEN' && (
                     <button
                       onClick={() => setMatchingForId(isMatching ? null : req.id)}
                       className="px-3.5 py-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
                     >
                       <Sparkles className="w-3.5 h-3.5" />
-                      <span>{isMatching ? 'Ẩn danh sách ứng viên' : `Xem tất cả ${autoMatchResult?.candidates.length || 0} ứng viên`}</span>
+                      <span>{isMatching ? 'Ẩn kết quả auto-match' : autoMatchResult?.candidates.length ? `Xem tất cả ${autoMatchResult.candidates.length} ứng viên` : 'Xem lý do chưa khớp'}</span>
+                    </button>
+                  )}
+
+                  {canStartRequestChat && req.status === 'OPEN' && (
+                    <button
+                      type="button"
+                      onClick={() => handleStartChat(req)}
+                      className="px-3.5 py-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1.5 shadow-sm"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>Chat với đối tác</span>
                     </button>
                   )}
 
@@ -967,7 +1270,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
 
                 {/* Edit, Delete, Withdraw */}
                 <div className="flex items-center gap-1.5">
-                  {currentRole !== 'ENTERPRISE_A' && !['HELD', 'ALLOCATED', 'FULFILLED'].includes(req.status) && (
+                  {isRequesterRole && req.companyId === currentCompany.id && !['HELD', 'ALLOCATED', 'FULFILLED'].includes(req.status) && (
                     <button
                       onClick={() => handleStartEdit(req)}
                       className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-xs shadow-sm transition-colors"
@@ -977,7 +1280,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                     </button>
                   )}
 
-                  {currentRole !== 'ENTERPRISE_A' && ['DRAFT', 'WITHDRAWN', 'CHANGES_REQUIRED'].includes(req.status) && (
+                  {isRequesterRole && req.companyId === currentCompany.id && ['DRAFT', 'WITHDRAWN', 'CHANGES_REQUIRED'].includes(req.status) && (
                     <button
                       onClick={() => handleDeleteRequest(req.id)}
                       className="p-2 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 text-xs shadow-sm transition-colors"
@@ -987,7 +1290,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                     </button>
                   )}
 
-                  {!['HELD', 'ALLOCATED', 'FULFILLED', 'WITHDRAWN', 'EXPIRED'].includes(req.status) && currentRole === 'ENTERPRISE_B' && (
+                  {!['HELD', 'ALLOCATED', 'FULFILLED', 'WITHDRAWN', 'EXPIRED'].includes(req.status) && isRequesterRole && req.companyId === currentCompany.id && (
                     <button
                       onClick={() => setWithdrawId(req.id)}
                       className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold shadow-sm transition-colors"
@@ -1012,12 +1315,23 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                     )}
                   </div>
 
+                  {activeMatchResults.candidates.length === 0 && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
+                      <strong>Chưa có Offer của nhà cung cấp đủ điều kiện để ghép.</strong>
+                      <p>Hệ thống đã kiểm tra trạng thái Offer, hãng tàu, loại cont, khoảng cách, thời gian và mức tiết kiệm.</p>
+                      {activeMatchResults.eliminationReasons.slice(0, 3).map((item, index) => (
+                        <p key={`${item.offerId}-${index}`}>• {item.reasons.join('; ')}</p>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {activeMatchResults.candidates.map(cand => (
                       <MatchCandidateCard
                         key={cand.offer.id}
                         candidate={cand}
                         onHold={() => handleHoldReservation(cand, req)}
+                        onChat={() => handleStartChat(req, cand)}
                       />
                     ))}
                   </div>

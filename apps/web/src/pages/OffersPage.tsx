@@ -1,5 +1,5 @@
 // ==============================================================================
-// ECont OffersPage - Version 2.0 (Chuẩn hóa quy trình tạo Offer & Bảo mật Bên B)
+// ECont OffersPage - Version 2.0 (Chuẩn hóa quy trình tạo Offer & Bảo mật đối tác)
 // ==============================================================================
 
 import React, { useState, useMemo } from 'react';
@@ -7,6 +7,7 @@ import { useDatabase } from '../context/DatabaseContext';
 import { useAuth } from '../context/AuthContext';
 import { Offer, CreateOfferForm, PhysicalCondition, OfferAiCheckResult } from '../types';
 import { OfferStatusBadge, ConditionBadge } from '../components/StatusBadge';
+import { DateInput } from '../components/DateInput';
 import { formatVnd, formatRelativeTime } from '../lib/utils';
 import {
   PackageOpen, Plus, Search, AlertTriangle, CheckCircle2, X,
@@ -18,6 +19,7 @@ import { INITIAL_CARRIERS, INITIAL_DEPOTS } from '../data/mockData';
 import {
   verifyContainerPhotosWithAI,
   verifyEdoWithAI,
+  imageFileToDataUrl,
   ContainerPhotoVerificationResult,
   EdoVerificationResult,
 } from '../services/aiService';
@@ -26,9 +28,10 @@ import {
   getFieldErrorClass, scrollToFirstFieldError
 } from '../components/FormValidation';
 import {
-  required, positiveNumber, validDateRange, validFutureDate,
+  required, validDateRange, validFutureDate,
   setError, validateIsoContainer
 } from '../lib/formValidation';
+import { DEFAULT_BASELINE_DEPOT_COST_VND, OFFER_PHOTO_ANGLE_LABELS } from '../services/qaRules';
 
 interface OffersPageProps {
   setCurrentTab?: (tab: string) => void;
@@ -43,32 +46,37 @@ const POPULAR_LOCATIONS = [
   { name: 'KCN Tân Tạo (Bình Tân, TP.HCM)', lat: 10.7421, lon: 106.5812 },
   { name: 'Cảng Đình Vũ (Hải Phòng)', lat: 20.8521, lon: 106.7412 },
 ];
-const MAX_OFFER_PHOTOS = 12;
+
+const REQUIRED_OFFER_PHOTO_COUNT = OFFER_PHOTO_ANGLE_LABELS.length;
+const MAX_OFFER_PHOTO_COUNT = 12;
 
 function formatDateTimeDdMmYyyy(value: string): string {
-  if (!value) return 'Chưa chọn thời gian';
+  if (!value) return '—';
   const isoDate = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
   if (isoDate) {
     const dateLabel = `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`;
-    return isoDate[4] ? `${dateLabel} ${isoDate[4]}:${isoDate[5]}` : dateLabel;
+    return dateLabel;
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Thời gian không hợp lệ';
   const pad = (number: number) => String(number).padStart(2, '0');
-  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
 }
 
 function formatDateInput(value?: string): string {
   if (!value) return '';
   const isoDate = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (isoDate) return `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`;
+  if (isoDate) return `${isoDate[1]}-${isoDate[2]}-${isoDate[3]}`;
+  const displayDate = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (displayDate) return `${displayDate[3]}-${displayDate[2]}-${displayDate[1]}`;
   return value;
 }
 
-function parseDateInput(value: string): string {
+function parseDateInput(value: string, endOfDay = false): string {
   const normalized = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return `${normalized}T${endOfDay ? '23:59:59' : '00:00:00'}`;
   const date = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  return date ? `${date[3]}-${date[2]}-${date[1]}` : normalized;
+  return date ? `${date[3]}-${date[2]}-${date[1]}T${endOfDay ? '23:59:59' : '00:00:00'}` : normalized;
 }
 
 function toDateTimeLocal(value?: string): string {
@@ -89,6 +97,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
     withdrawOffer, opsReviewOffer, acceptMatch, rejectMatch 
   } = useDatabase();
   const { currentRole, currentCompany, canOpsReview } = useAuth();
+  const isSupplierRole = currentRole === 'ENTERPRISE_A' || currentRole === 'ENTERPRISE_BOTH';
   const isCompanyVerified = (companies.find(c => c.id === currentCompany.id)?.verificationStatus || currentCompany.verificationStatus) === 'VERIFIED';
   
   const [search, setSearch] = useState('');
@@ -143,7 +152,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
   } | null>(null);
   const [photoAiResult, setPhotoAiResult] = useState<ContainerPhotoVerificationResult | null>(null);
 
-  // Form đăng Offer của Bên A
+  // Form đăng Offer của nhà cung cấp Container
   const [form, setForm] = useState<{
     assetId?: string;
     containerNumber: string;
@@ -193,7 +202,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
   // Lọc danh sách Offer
   const filtered = useMemo(() => {
     let list = offers;
-    if (currentRole === 'ENTERPRISE_A') {
+    if (currentRole === 'ENTERPRISE_A' || currentRole === 'ENTERPRISE_BOTH') {
       list = list.filter(o => o.companyId === currentCompany.id);
     }
     if (currentRole === 'ENTERPRISE_B') {
@@ -203,7 +212,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
       const q = search.toLowerCase();
       list = list.filter(o =>
         o.id.toLowerCase().includes(q) ||
-        (currentRole === 'ENTERPRISE_A' && o.asset.containerNumber.toLowerCase().includes(q)) ||
+        ((currentRole === 'ENTERPRISE_A' || currentRole === 'ENTERPRISE_BOTH') && o.asset.containerNumber.toLowerCase().includes(q)) ||
         o.asset.carrierCode.toLowerCase().includes(q) ||
         o.pickupLocationName.toLowerCase().includes(q)
       );
@@ -215,6 +224,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
   }, [offers, currentRole, currentCompany.id, search, filterStatus]);
 
   const handleEdoFileSelection = async (file: File) => {
+    setAiCheckResult(null);
     setEdoFile(file);
     setEdoVerification(null);
     setForm(previous => ({ ...previous, edoFileName: file.name }));
@@ -226,7 +236,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
     if (verification.status === 'VALID') {
       showMsg('✓ AI xác minh file eDO hợp lệ.');
     } else if (verification.status === 'MANUAL_REVIEW') {
-      showMsg(`AI chưa thể kết luận eDO: ${verification.error || verification.summary}. Hồ sơ đã chuyển Ops kiểm tra thủ công.`);
+      showMsg(`AI chưa thể kết luận eDO: ${verification.error || verification.summary}`);
     } else {
       showMsg(`⚠️ eDO có kết quả ${verification.status === 'INVALID' ? 'không hợp lệ' : 'bất thường'}: ${verification.anomalyReason || verification.summary}`, true);
     }
@@ -270,25 +280,35 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+    if (form.photos.length >= MAX_OFFER_PHOTO_COUNT) {
+      e.target.value = '';
+      showMsg(`Có thể tải tối đa ${MAX_OFFER_PHOTO_COUNT} ảnh cho một Offer.`, true);
+      return;
+    }
+    if (form.photos.length < REQUIRED_OFFER_PHOTO_COUNT && files.length > 1) {
+      e.target.value = '';
+      showMsg('Mỗi bước chỉ được tải 1 ảnh. Hãy hoàn tất ảnh theo đúng thứ tự trước khi sang bước tiếp theo.', true);
+      return;
+    }
     clearFormError('photos');
     invalidateAiCheck();
 
-    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+    const imageFiles = Array.from(files).filter(file =>
+      (file.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name))
+      && file.size <= 10 * 1024 * 1024,
+    );
     if (imageFiles.length === 0) {
-      showMsg('Chỉ chấp nhận tệp hình ảnh (PNG, JPG, WebP) cho ảnh container.', true);
+      showMsg('Chỉ chấp nhận ảnh PNG, JPG hoặc WebP, tối đa 10MB mỗi ảnh.', true);
       return;
     }
     if (imageFiles.length < files.length) {
-      showMsg('Một số tệp không phải hình ảnh hợp lệ đã bị bỏ qua.', true);
+      showMsg('Một số tệp không hợp lệ hoặc vượt quá 10MB đã bị bỏ qua.', true);
     }
-    const filesToRead = imageFiles.slice(0, Math.max(0, MAX_OFFER_PHOTOS - form.photos.length));
-    Promise.all(filesToRead.map(file => new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(new Error('Không đọc được ảnh container.'));
-      reader.readAsDataURL(file);
-    }))).then(async urls => {
-      const nextPhotos = [...form.photos, ...urls].slice(0, MAX_OFFER_PHOTOS);
+    e.target.value = '';
+    const filesToRead = imageFiles.slice(0, MAX_OFFER_PHOTO_COUNT - form.photos.length);
+    if (filesToRead.length < imageFiles.length) showMsg(`Chỉ nhận tối đa ${MAX_OFFER_PHOTO_COUNT} ảnh cho một Offer.`, true);
+    Promise.all(filesToRead.map(file => imageFileToDataUrl(file))).then(async urls => {
+      const nextPhotos = [...form.photos, ...urls];
       const nextForm = { ...form, photos: nextPhotos };
       setForm(nextForm);
       if (nextPhotos.length >= 6) await runOfferPhotoAiCheck(nextPhotos, nextForm);
@@ -296,22 +316,13 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
     }).catch(() => showMsg('Không đọc được một hoặc nhiều ảnh container.', true));
   };
 
-  // Nạp 6 ảnh mẫu đạt chuẩn IICL-5
-  const handleLoadSamplePhotos = () => {
-    clearFormError('photos');
+  const handleRemoveOfferPhoto = (index: number) => {
+    if (index !== form.photos.length - 1) {
+      showMsg('Để giữ đúng thứ tự ảnh, chỉ được xóa ảnh vừa tải gần nhất.', true);
+      return;
+    }
     invalidateAiCheck();
-    const samplePhotos = [
-      'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800',
-      'https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=800',
-      'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=800',
-      'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800',
-      'https://images.unsplash.com/photo-1494412574643-ff11b0a5c1c3?w=800',
-      'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800'
-    ];
-    const nextForm = { ...form, photos: samplePhotos };
-    setForm(nextForm);
-    showMsg('Đã tải 6 ảnh mẫu 6 góc container. AI sẽ tự quét bộ ảnh.');
-    void runOfferPhotoAiCheck(samplePhotos, nextForm);
+    setForm(previous => ({ ...previous, photos: previous.photos.filter((_, photoIndex) => photoIndex !== index) }));
   };
 
   // AI kiểm tra eDO hợp pháp/bất thường và đối chiếu tình trạng thực tế của 6 ảnh
@@ -339,7 +350,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
 
     try {
       const [edoResult, photoResult] = await Promise.all([
-        edoVerification || verifyEdoWithAI(edoFile!),
+        edoVerification && !edoVerification.error ? edoVerification : verifyEdoWithAI(edoFile!),
         verifyContainerPhotosWithAI(form.photos, {
           containerNumber: form.containerNumber.trim().toUpperCase(),
           containerType: form.containerType as '20GP' | '40HC',
@@ -408,13 +419,12 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
     setError(errors, 'availableFrom', validFutureDate(form.availableFrom, 'thời gian bắt đầu bàn giao'));
     setError(errors, 'availableTo', validDateRange(form.availableFrom, form.availableTo, 'thời gian bàn giao'));
     setError(errors, 'declaredCondition', required(form.declaredCondition, 'Vui lòng chọn tình trạng vỏ container.'));
-    setError(errors, 'baselineDepotCostVnd', positiveNumber(form.baselineDepotCostVnd, 'Chi phí đưa về depot phải lớn hơn 0.'));
     setError(errors, 'conditionNotes', required(form.conditionNotes, 'Vui lòng nhập mô tả chi tiết tình trạng vỏ cont.'));
     if (form.photos.length < 6) errors.photos = 'Vui lòng tải đủ tối thiểu 6 ảnh container (6 góc IICL-5).';
     setError(errors, 'edoEvidence', required(edoFile, 'Vui lòng tải file eDO gốc để Ops và AI xác minh.'));
-    if (!aiCheckResult) errors.aiCheck = 'Vui lòng chạy kiểm tra AI eDO và ảnh container trước khi gửi thẩm định.';
-    if (aiCheckResult?.photoStatus === 'MISMATCH') errors.photos = 'Ảnh container không khớp thông tin đăng ký; vui lòng kiểm tra lại.';
-    if (aiCheckResult?.photoStatus === 'ERROR') errors.photos = 'AI chưa kiểm tra được ảnh container; vui lòng chạy lại.';
+    // AI là lớp hỗ trợ cho Ops, không phải điều kiện chặn việc gửi hồ sơ.
+    // Khi AI chưa có kết quả, lỗi hoặc phát hiện bất thường, Offer vẫn được
+    // chuyển sang Ops để kiểm tra thủ công và quyết định.
     return errors;
   };
 
@@ -427,6 +437,29 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
       scrollToFirstFieldError(errors);
       return;
     }
+
+    // Lưu cả kết quả AI chạy tự động sau khi đủ 6 ảnh, kể cả khi người dùng
+    // chưa bấm lại nút kiểm tra tổng hợp eDO + ảnh.
+    const persistedAiResult = aiCheckResult || ((edoVerification || photoAiResult) ? {
+      score: Math.round(edoVerification?.score || photoAiResult?.score || 0),
+      summary: [
+        edoVerification ? `eDO: ${edoVerification.summary}` : '',
+        photoAiResult ? `Ảnh: ${photoAiResult.summary}` : '',
+      ].filter(Boolean).join(' '),
+      hasAnomaly: Boolean(edoVerification?.hasAnomaly || (photoAiResult && photoAiResult.status !== 'MATCHED')),
+      details: [
+        ...(edoVerification?.details || []),
+        ...(photoAiResult?.mismatchDetails || []),
+        ...(photoAiResult?.actualConditionNotes ? [photoAiResult.actualConditionNotes] : []),
+      ],
+      edoValid: Boolean(edoVerification?.status === 'VALID' && edoVerification.isLegal),
+      edoAnomaly: Boolean(edoVerification?.hasAnomaly),
+      photoChecked: Boolean(photoAiResult && photoAiResult.status !== 'ERROR'),
+      photoStatus: photoAiResult?.status || 'MANUAL_REVIEW' as const,
+      photoCondition: photoAiResult?.actualCondition,
+      photoConditionNotes: photoAiResult?.actualConditionNotes,
+      verificationStatus: edoVerification?.status || 'MANUAL_REVIEW' as const,
+    } : null);
 
     const result = addOffer({
       containerNumber: form.containerNumber.trim().toUpperCase(),
@@ -445,28 +478,31 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
       availableFrom: new Date(form.availableFrom).toISOString(),
       availableTo: new Date(form.availableTo).toISOString(),
       expectedDepotId: form.expectedDepotId,
-      baselineDepotCostVnd: Number(form.baselineDepotCostVnd),
+      baselineDepotCostVnd: DEFAULT_BASELINE_DEPOT_COST_VND,
       vehicleRequirements: form.vehicleRequirements?.trim(),
-      aiCheck: aiCheckResult ? {
-        passed: !aiCheckResult.hasAnomaly && aiCheckResult.edoValid && aiCheckResult.photoStatus === 'MATCHED',
-        score: aiCheckResult.score,
-        summary: aiCheckResult.summary,
-        hasAnomaly: aiCheckResult.hasAnomaly,
-        anomalyReason: aiCheckResult.verificationStatus === 'ANOMALY' ? aiCheckResult.summary : undefined,
-        edoChecked: true,
-        edoValid: aiCheckResult.edoValid,
-        edoAnomaly: aiCheckResult.edoAnomaly,
-        photoChecked: aiCheckResult.photoChecked,
-        photoCondition: aiCheckResult.photoCondition,
-        photoConditionNotes: aiCheckResult.photoConditionNotes,
-        verificationStatus: aiCheckResult.verificationStatus === 'VALID' && aiCheckResult.photoStatus === 'MATCHED' ? 'VERIFIED' : aiCheckResult.verificationStatus === 'INVALID' ? 'INVALID' : 'MANUAL_REVIEW',
-        details: aiCheckResult.details,
+      aiCheck: persistedAiResult ? {
+        passed: !persistedAiResult.hasAnomaly && persistedAiResult.edoValid && persistedAiResult.photoStatus === 'MATCHED',
+        score: persistedAiResult.score,
+        summary: persistedAiResult.summary,
+        hasAnomaly: persistedAiResult.hasAnomaly,
+        anomalyReason: persistedAiResult.verificationStatus === 'ANOMALY' ? persistedAiResult.summary : undefined,
+        edoChecked: Boolean(edoVerification),
+        edoValid: persistedAiResult.edoValid,
+        edoAnomaly: persistedAiResult.edoAnomaly,
+        photoChecked: persistedAiResult.photoChecked,
+        photoCondition: persistedAiResult.photoCondition,
+        photoConditionNotes: persistedAiResult.photoConditionNotes,
+        verificationStatus: persistedAiResult.verificationStatus === 'VALID' && persistedAiResult.photoStatus === 'MATCHED' ? 'VERIFIED' : persistedAiResult.verificationStatus === 'INVALID' ? 'INVALID' : 'MANUAL_REVIEW',
+        details: persistedAiResult.details,
       } : undefined,
-      requiresOpsManualReview: aiCheckResult?.hasAnomaly || aiCheckResult?.photoStatus === 'MANUAL_REVIEW' || aiCheckResult?.verificationStatus === 'MANUAL_REVIEW',
+      requiresOpsManualReview: !persistedAiResult
+        || persistedAiResult.hasAnomaly
+        || persistedAiResult.photoStatus !== 'MATCHED'
+        || persistedAiResult.verificationStatus !== 'VALID',
     });
 
     if (result.success) {
-      showMsg('✓ Đã đăng nguồn cung thành công.');
+      showMsg(result.message);
       setShowAddForm(false);
       setAiCheckResult(null);
       setFormErrors({});
@@ -499,7 +535,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
   };
 
   const handleStartEditOffer = (offer: Offer) => {
-    if (currentRole !== 'ENTERPRISE_A') return;
+    if (!isSupplierRole) return;
     if (['HELD', 'ALLOCATED', 'FULFILLED'].includes(offer.status)) {
       showMsg(`Offer đang ở trạng thái ${offer.status}, không thể chỉnh sửa.`, true);
       return;
@@ -584,32 +620,37 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
     const files = event.target.files;
     if (!files || files.length === 0) return;
     const currentPhotos = editForm.photoUrls || [];
-    const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+    if (currentPhotos.length >= MAX_OFFER_PHOTO_COUNT) {
+      event.target.value = '';
+      showMsg(`Có thể tải tối đa ${MAX_OFFER_PHOTO_COUNT} ảnh cho một Offer.`, true);
+      return;
+    }
+    if (currentPhotos.length < REQUIRED_OFFER_PHOTO_COUNT && files.length > 1) {
+      event.target.value = '';
+      showMsg('Mỗi bước chỉ được tải 1 ảnh. Hãy bổ sung ảnh theo đúng thứ tự.', true);
+      return;
+    }
+    const imageFiles = Array.from(files).filter(file =>
+      (file.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name))
+      && file.size <= 10 * 1024 * 1024,
+    );
     event.target.value = '';
     if (imageFiles.length === 0) {
-      showMsg('Chỉ chấp nhận tệp hình ảnh cho ảnh container.', true);
+      showMsg('Chỉ chấp nhận ảnh PNG, JPG hoặc WebP, tối đa 10MB mỗi ảnh.', true);
       return;
     }
     if (imageFiles.length < files.length) {
-      showMsg('Một số tệp không phải hình ảnh hợp lệ đã bị bỏ qua.', true);
+      showMsg('Một số tệp không hợp lệ hoặc vượt quá 10MB đã bị bỏ qua.', true);
     }
-    const filesToRead = imageFiles.slice(0, Math.max(0, MAX_OFFER_PHOTOS - currentPhotos.length));
-    if (filesToRead.length === 0) {
-      showMsg(`Offer chỉ cho phép tối đa ${MAX_OFFER_PHOTOS} ảnh.`, true);
-      return;
-    }
+    const filesToRead = imageFiles.slice(0, MAX_OFFER_PHOTO_COUNT - currentPhotos.length);
+    if (filesToRead.length < imageFiles.length) showMsg(`Chỉ nhận tối đa ${MAX_OFFER_PHOTO_COUNT} ảnh cho một Offer.`, true);
     setEditOfferErrors(previous => {
       const next = { ...previous };
       delete next.editPhotoUrls;
       return next;
     });
-    Promise.all(filesToRead.map(file => new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(new Error('Không đọc được ảnh container.'));
-      reader.readAsDataURL(file);
-    }))).then(async urls => {
-      const nextPhotos = [...currentPhotos, ...urls].slice(0, MAX_OFFER_PHOTOS);
+    Promise.all(filesToRead.map(file => imageFileToDataUrl(file))).then(async urls => {
+      const nextPhotos = [...currentPhotos, ...urls];
       const nextForm = { ...editForm, photoUrls: nextPhotos };
       setEditForm(nextForm);
       if (nextPhotos.length >= 6) {
@@ -622,6 +663,10 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
 
   const handleRemoveEditPhoto = (index: number) => {
     const nextPhotos = (editForm.photoUrls || []).filter((_, photoIndex) => photoIndex !== index);
+    if (index !== (editForm.photoUrls || []).length - 1) {
+      showMsg('Để giữ đúng thứ tự ảnh, chỉ được xóa ảnh vừa tải gần nhất.', true);
+      return;
+    }
     setEditForm(previous => ({ ...previous, photoUrls: nextPhotos }));
     setEditPhotoAiResult(null);
     if (nextPhotos.length < 6) {
@@ -636,21 +681,14 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
     if (!editingOffer) return;
     const photos = editForm.photoUrls || [];
     const errors: FieldErrors = {};
-    if (photos.length < 6) errors.editPhotoUrls = 'Offer phải giữ tối thiểu 6 ảnh: trước, sau, trái, phải, sàn và trần/nóc.';
+    if (photos.length < 6) errors.editPhotoUrls = 'Offer phải giữ tối thiểu 6 ảnh: mặt trước, mặt sau, mặt trái, mặt phải, trên nóc và dưới gầm.';
     setError(errors, 'editConditionNotes', required(editForm.conditionNotes, 'Vui lòng nhập mô tả chi tiết tình trạng vỏ cont.'));
     setError(errors, 'editPickupLocationName', required(editForm.pickupLocationName, 'Vui lòng nhập vị trí lấy vỏ container.'));
     setError(errors, 'editAvailableFrom', required(editForm.availableFrom, 'Vui lòng chọn thời gian bắt đầu bàn giao.'));
     setError(errors, 'editAvailableTo', validDateRange(editForm.availableFrom, editForm.availableTo, 'thời gian bàn giao'));
-    setError(errors, 'editBaselineDepotCostVnd', positiveNumber(editForm.baselineDepotCostVnd, 'Chi phí đưa về depot phải lớn hơn 0.'));
 
     const photosChanged = photos.length !== editingOffer.photoUrls.length
       || photos.some((photo, index) => photo !== editingOffer.photoUrls[index]);
-    if (photosChanged && (!editPhotoAiResult || ['MISMATCH', 'ERROR'].includes(editPhotoAiResult.status))) {
-      errors.editPhotoAi = editPhotoAiResult?.status === 'MISMATCH'
-        ? 'Bộ ảnh mới chưa khớp thông tin đăng ký; vui lòng thay ảnh hoặc quét lại AI.'
-        : 'Vui lòng tải đủ bộ ảnh mới và chạy AI đối chiếu trước khi lưu.';
-    }
-
     setEditOfferErrors(errors);
     if (Object.keys(errors).length > 0) {
       showMsg(Object.values(errors)[0], true);
@@ -665,9 +703,13 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
       pickupLongitude: Number(editForm.pickupLongitude ?? editingOffer.pickupLongitude),
       availableFrom: new Date(String(editForm.availableFrom)).toISOString(),
       availableTo: new Date(String(editForm.availableTo)).toISOString(),
-      baselineDepotCostVnd: Number(editForm.baselineDepotCostVnd),
+      baselineDepotCostVnd: editingOffer.baselineDepotCostVnd,
       vehicleRequirements: String(editForm.vehicleRequirements || '').trim() || undefined,
     };
+
+    if (photosChanged) {
+      updates.photoUrls = photos;
+    }
 
     if (photosChanged && editPhotoAiResult) {
       const previousAi = editingOffer.aiCheck;
@@ -677,7 +719,6 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
         ...editPhotoAiResult.mismatchDetails,
         ...(editPhotoAiResult.actualConditionNotes ? [editPhotoAiResult.actualConditionNotes] : []),
       ]));
-      updates.photoUrls = photos;
       updates.aiCheck = {
         passed: Boolean(previousAi?.passed && aiStatus === 'MATCHED'),
         score: editPhotoAiResult.score ?? previousAi?.score ?? 0,
@@ -696,6 +737,28 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
         details: mergedDetails,
       };
       updates.requiresOpsManualReview = Boolean(editingOffer.requiresOpsManualReview || aiStatus !== 'MATCHED');
+    } else if (photosChanged) {
+      const previousAi = editingOffer.aiCheck;
+      updates.aiCheck = previousAi
+        ? {
+            ...previousAi,
+            passed: false,
+            hasAnomaly: true,
+            photoChecked: false,
+            verificationStatus: 'MANUAL_REVIEW',
+            summary: `${previousAi.summary} Ảnh đã cập nhật nhưng chưa có kết quả AI đối chiếu.`,
+            details: [...(previousAi.details || []), 'Ảnh mới chờ Ops kiểm tra thủ công.'],
+          }
+        : {
+            passed: false,
+            score: 0,
+            summary: 'Ảnh đã cập nhật nhưng chưa có kết quả AI đối chiếu.',
+            hasAnomaly: true,
+            photoChecked: false,
+            verificationStatus: 'MANUAL_REVIEW',
+            details: ['Ảnh mới chờ Ops kiểm tra thủ công.'],
+          };
+      updates.requiresOpsManualReview = true;
     }
 
     const result = updateOffer(editingOffer.id, updates);
@@ -755,6 +818,10 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
     }
   };
 
+  const pendingMatchesForSupplier = matches.filter(match =>
+    isSupplierRole && match.companyAId === currentCompany.id && match.status === 'MATCH_REQUESTED'
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -775,8 +842,8 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
           </p>
         </div>
         
-        {/* Nút hành động cho Bên A */}
-        {currentRole === 'ENTERPRISE_A' && (
+        {/* Nút hành động cho nhà cung cấp Container */}
+              {isSupplierRole && (
           <div className="flex items-center gap-2.5">
             <button
               onClick={() => setShowAddForm(!showAddForm)}
@@ -803,8 +870,60 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
         </div>
       )}
 
-      {/* Form Tạo Offer Đầy Đủ Cho Bên A */}
-      {showAddForm && currentRole === 'ENTERPRISE_A' && (
+      {pendingMatchesForSupplier.length > 0 && (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-5 shadow-sm space-y-3">
+          <div>
+            <h3 className="text-sm font-bold text-blue-900">Đề xuất matching đang chờ xử lý</h3>
+            <p className="mt-1 text-xs text-blue-800">Bên Cần vỏ đã chọn Offer của bạn. Hãy Accept để tạo giao dịch hoặc Reject để giải phóng đề xuất.</p>
+          </div>
+          <div className="space-y-2">
+            {pendingMatchesForSupplier.map(match => {
+              const matchedOffer = offers.find(offer => offer.id === match.offerId);
+              const matchedRequest = requests.find(request => request.id === match.requestId);
+              return (
+                <div key={match.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-white p-3">
+                  <div className="text-xs text-slate-700">
+                    <p className="font-bold text-slate-900">{match.id} · {matchedOffer?.asset.carrierCode || '—'} {matchedOffer?.asset.containerType || ''}</p>
+                    <p className="mt-1">Request {matchedRequest?.id || match.requestId} · Điểm matching <strong className="font-mono text-emerald-700">{match.scoreM}/100</strong></p>
+                    <p className="mt-1 text-slate-500">Đề xuất từ đơn vị Cần vỏ Container · hết hạn {formatRelativeTime(match.expiresAt)}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const reason = window.prompt('Lý do từ chối đề xuất (không bắt buộc):') || '';
+                        const result = rejectMatch(match.id, reason);
+                        showMsg(result.message, !result.success);
+                      }}
+                      className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-100"
+                    >
+                      Từ chối
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const result = acceptMatch(match.id);
+                        showMsg(result.message, !result.success);
+                        if (result.success) {
+                          const transactionId = (result.data as { transactionId?: string } | undefined)?.transactionId;
+                          if (transactionId) setSelectedTxnId?.(transactionId);
+                          setCurrentTab?.('transactions');
+                        }
+                      }}
+                      className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+                    >
+                      Accept & tạo giao dịch
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Form Tạo Offer Đầy Đủ Cho nhà cung cấp Container */}
+      {showAddForm && isSupplierRole && (
         <div className="bg-white border border-emerald-200 rounded-2xl p-6 space-y-5 shadow-lg animate-in fade-in duration-200">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
@@ -895,19 +1014,19 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-bold text-blue-900 flex items-center gap-1.5 text-xs sm:text-sm">
                   <FileText className="w-4 h-4 text-blue-600" />
-                  Hồ sơ Lệnh giao hàng điện tử (e-DO) / Booking
+                  Hồ sơ e-DO / Booking
                 </span>
               </div>
 
                <div className="space-y-2 text-xs">
                  <div className="flex flex-wrap items-center gap-2">
-                   <label className="text-slate-700 font-medium">Tệp eDO/Booking (ảnh hoặc PDF) <RequiredMark /></label>
+                   <label className="text-slate-700 font-medium">Tệp e-DO / Booking (ảnh hoặc PDF) <RequiredMark /></label>
                  </div>
                  <div className="flex flex-wrap items-center gap-2">
                    <label className="flex min-w-[260px] flex-1 items-center gap-2 border border-slate-200 bg-white rounded-lg px-3 py-2 cursor-pointer hover:bg-slate-50 transition-colors">
                      <UploadCloud className="w-4 h-4 text-blue-600 shrink-0" />
                      <span className="truncate text-xs font-medium text-slate-700">
-                       {form.edoFileName || 'Chọn tệp PDF hoặc ảnh eDO'}
+                       {form.edoFileName || 'Chọn tệp e-DO / Booking PDF hoặc ảnh'}
                      </span>
                      <input
                        type="file"
@@ -947,13 +1066,10 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                </div>
             </div>
 
-            {/* 5. Vị trí & Tọa độ Maps */}
+            {/* 5. Vị trí lấy vỏ */}
             <div className="md:col-span-2 lg:col-span-3 space-y-2">
-              <label htmlFor="offer-pickupLocationName" className="text-slate-700 font-semibold block flex items-center justify-between">
-                <span>Vị trí lấy vỏ container (Tích hợp Maps & Tọa độ) <RequiredMark /></span>
-                  <span className="text-[11px] text-slate-400 font-normal">
-                  {form.pickupLocationName ? `Tọa độ: ${form.pickupLatitude.toFixed(4)}, ${form.pickupLongitude.toFixed(4)}` : 'Chưa chọn vị trí trên Maps'}
-                </span>
+              <label htmlFor="offer-pickupLocationName" className="text-slate-700 font-semibold block">
+                <span>Vị trí lấy vỏ container <RequiredMark /></span>
               </label>
 
               <div className="flex gap-2">
@@ -1015,42 +1131,35 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
 
             {/* 6. Thời gian có thể bàn giao */}
             <div className="space-y-1">
-              <label htmlFor="offer-availableFrom" className="text-slate-700 font-semibold block">Sẵn sàng bàn giao từ (dd/mm/yyyy) <RequiredMark /></label>
-              <input
+              <label htmlFor="offer-availableFrom" className="text-slate-700 font-semibold block">Sẵn sàng bàn giao từ <RequiredMark /></label>
+              <DateInput
                 id="offer-availableFrom"
                 data-field="availableFrom"
-                type="text"
-                inputMode="numeric"
-                placeholder="dd/mm/yyyy"
-                value={formatDateInput(form.availableFrom)}
-                onChange={e => {
+                value={form.availableFrom}
+                onChange={v => {
                   clearFormError('availableFrom');
-                  setForm(p => ({ ...p, availableFrom: parseDateInput(e.target.value) }));
+                  setForm(p => ({ ...p, availableFrom: v }));
                 }}
                 aria-invalid={Boolean(formErrors.availableFrom)}
                 className={getFieldErrorClass(Boolean(formErrors.availableFrom), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
               />
-              <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị realtime: {formatDateTimeDdMmYyyy(form.availableFrom)}</p>
               <FieldError message={formErrors.availableFrom} />
             </div>
 
             <div className="space-y-1">
-              <label htmlFor="offer-availableTo" className="text-slate-700 font-semibold block">Hạn chót bàn giao đến (dd/mm/yyyy) <RequiredMark /></label>
-              <input
+              <label htmlFor="offer-availableTo" className="text-slate-700 font-semibold block">Hạn chót bàn giao đến <RequiredMark /></label>
+              <DateInput
                 id="offer-availableTo"
                 data-field="availableTo"
-                type="text"
-                inputMode="numeric"
-                placeholder="dd/mm/yyyy"
-                value={formatDateInput(form.availableTo)}
-                onChange={e => {
+                value={form.availableTo}
+                endOfDay
+                onChange={v => {
                   clearFormError('availableTo');
-                  setForm(p => ({ ...p, availableTo: parseDateInput(e.target.value) }));
+                  setForm(p => ({ ...p, availableTo: v }));
                 }}
                 aria-invalid={Boolean(formErrors.availableTo)}
                 className={getFieldErrorClass(Boolean(formErrors.availableTo), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
               />
-              <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị realtime: {formatDateTimeDdMmYyyy(form.availableTo)}</p>
               <FieldError message={formErrors.availableTo} />
             </div>
 
@@ -1077,27 +1186,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
               <FieldError message={formErrors.declaredCondition} />
             </div>
 
-            {/* 8. Chi phí trả rỗng dự kiến */}
-            <div className="space-y-1">
-              <label htmlFor="offer-baselineDepotCostVnd" className="text-slate-700 font-semibold block">Chi phí đưa về depot dự kiến (VND) <RequiredMark /></label>
-              <input
-                id="offer-baselineDepotCostVnd"
-                data-field="baselineDepotCostVnd"
-                type="number"
-                value={form.baselineDepotCostVnd ?? ''}
-                onChange={e => {
-                  clearFormError('baselineDepotCostVnd');
-                  setForm(p => ({ ...p, baselineDepotCostVnd: e.target.value === '' ? undefined : Number(e.target.value) }));
-                }}
-                placeholder="VD: 3000000"
-                aria-invalid={Boolean(formErrors.baselineDepotCostVnd)}
-                className={getFieldErrorClass(Boolean(formErrors.baselineDepotCostVnd), 'w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
-              />
-              <FieldError message={formErrors.baselineDepotCostVnd} />
-              <p className="text-[11px] text-slate-400">Cước xe kéo + chi phí nâng hạ thông thường nếu phải trả vỏ về depot</p>
-            </div>
-
-            {/* 9. Mô tả chi tiết tình trạng container */}
+            {/* 8. Mô tả chi tiết tình trạng container */}
             <div className="md:col-span-2 space-y-1">
               <label htmlFor="offer-conditionNotes" className="text-slate-700 font-semibold block">Mô tả thông tin chi tiết tình trạng vỏ <RequiredMark /></label>
               <textarea
@@ -1129,35 +1218,33 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                     Bộ ảnh container ({form.photos.length}/6 tối thiểu) <RequiredMark />
                   </span>
                    <p className="text-[11px] text-slate-500 mt-0.5">
-                     Bắt buộc tối thiểu 6 ảnh: mặt trước, mặt sau, bên trái, bên phải, sàn và trần/nóc. Có thể thêm ảnh chi tiết để Ops đối chiếu.
+                     Bắt buộc tối thiểu 6 ảnh theo thứ tự: {OFFER_PHOTO_ANGLE_LABELS.join(', ')}. Có thể thêm ảnh chi tiết để Ops đối chiếu.
                   </p>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleLoadSamplePhotos}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-xs font-semibold text-slate-700 transition-colors"
-                  >
-                    Dùng ảnh mẫu 6 góc
-                  </button>
-                   {form.photos.length < MAX_OFFER_PHOTOS && (
-                     <label className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm">
-                       <UploadCloud className="w-3.5 h-3.5" />
-                       <span>{form.photos.length < 6 ? 'Tải ảnh để đủ 6 góc' : 'Thêm ảnh chi tiết'}</span>
-                       <input
-                         type="file"
-                         accept="image/*"
-                         multiple
-                         className="hidden"
-                         onChange={handlePhotoUpload}
-                       />
-                     </label>
-                   )}
+                   <label className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm">
+                     <UploadCloud className="w-3.5 h-3.5" />
+                     <span>{form.photos.length < 6 ? 'Tải ảnh để đủ 6 góc' : 'Thêm ảnh chi tiết'}</span>
+                     <input
+                       type="file"
+                       accept="image/*"
+                       className="hidden"
+                       capture="environment"
+                       onChange={handlePhotoUpload}
+                     />
+                   </label>
                 </div>
               </div>
 
               <FieldError message={formErrors.photos} />
+
+              {form.photos.length < REQUIRED_OFFER_PHOTO_COUNT && (
+                <div className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50/60 p-3 text-xs text-slate-700">
+                  <p className="text-sm font-bold text-emerald-800">Ảnh tiếp theo: {OFFER_PHOTO_ANGLE_LABELS[form.photos.length]}</p>
+                  <p className="mt-1">Tải đúng thứ tự từng mặt; hoàn tất ảnh hiện tại mới chuyển sang mặt tiếp theo.</p>
+                </div>
+              )}
 
               {/* Thumbnails */}
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
@@ -1168,20 +1255,20 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                       type="button"
                       onClick={() => {
                         invalidateAiCheck();
-                        setForm(p => ({ ...p, photos: p.photos.filter((_, i) => i !== idx) }));
+                        handleRemoveOfferPhoto(idx);
                       }}
                       className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center text-xs opacity-80 hover:opacity-100"
                     >
                       ×
                     </button>
                     <span className="absolute bottom-1 left-1 text-[10px] bg-slate-900/70 text-white px-1.5 py-0.2 rounded">
-                      Góc {idx + 1}
+                      {OFFER_PHOTO_ANGLE_LABELS[idx] || `Ảnh bổ sung ${idx - 5}`}
                     </span>
                   </div>
                 ))}
                 {form.photos.length === 0 && (
                   <div className="col-span-full py-6 text-center text-slate-400 border border-dashed border-slate-200 rounded-xl text-xs">
-                    Chưa tải ảnh container. Vui lòng bấm nút "Tải ảnh từ máy" hoặc "Dùng ảnh mẫu 6 góc".
+                    Chưa tải ảnh container.
                   </div>
                 )}
               </div>
@@ -1230,7 +1317,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                       {aiCheckResult.hasAnomaly ? '⚠️ Có điểm nghi vấn' : `✓ Đạt chuẩn ${aiCheckResult.score}/100`}
                     </span>
                   ) : (
-                    <span className="text-xs text-slate-500">Chưa chạy kiểm tra</span>
+                    <span className="text-xs text-amber-700">Chưa có kết quả — Offer sẽ được Ops kiểm tra thủ công</span>
                   )}
                 </div>
 
@@ -1297,7 +1384,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
             className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white"
           />
         </div>
-        {currentRole === 'ENTERPRISE_A' && (
+        {isSupplierRole && (
           <div className="flex gap-2 flex-wrap">
             {['all', 'UNDER_REVIEW', 'AVAILABLE', 'HELD', 'ALLOCATED'].map(st => (
               <button
@@ -1331,14 +1418,14 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
       ) : (
         <div className="space-y-4">
           {filtered.map((offer, idx) => {
-            // Giả lập khoảng cách & thời gian ước tính cho Bên B
+            // Giả lập khoảng cách & thời gian ước tính cho đơn vị cần vỏ
             const distanceKm = 12.5 + (idx * 3.7);
             const shippingMinutes = Math.round(distanceKm * 2 + 25);
             const trustScoreA = 94;
             const estimatedSaving = 1450000;
 
             // ==========================================
-            // GIAO DIỆN HIỂN THỊ DÀNH CHO BÊN B (BẢO MẬT TUYỆT ĐỐI)
+            // GIAO DIỆN HIỂN THỊ DÀNH CHO ĐƠN VỊ CẦN VỎ (BẢO MẬT TUYỆT ĐỐI)
             // ==========================================
             if (currentRole === 'ENTERPRISE_B') {
               return (
@@ -1362,7 +1449,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                     </span>
                   </div>
 
-                  {/* 7 THÔNG TIN CHUẨN MỰC BÊN B ĐƯỢC PHÉP XEM */}
+                  {/* 7 THÔNG TIN CHUẨN MỰC ĐƠN VỊ CẦN VỎ ĐƯỢC PHÉP XEM */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 text-xs">
                     {/* 1. Khoảng cách */}
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
@@ -1396,9 +1483,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                       </strong>
                     </div>
 
-                    {/* 5. Điểm uy tín Bên A */}
+                    {/* 5. Điểm uy tín nhà cung cấp */}
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <span className="text-slate-500 font-medium block">Điểm uy tín Bên A</span>
+                      <span className="text-slate-500 font-medium block">Điểm uy tín nhà cung cấp</span>
                       <strong className="text-amber-700 text-xs font-bold mt-0.5 block">
                         ⭐ {trustScoreA}/100 (5★)
                       </strong>
@@ -1425,7 +1512,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                     <div className="flex items-center gap-3">
                       {/* 7. Mức tiết kiệm ước tính */}
                       <div className="text-right">
-                        <span className="text-[11px] text-slate-500 block">Tiết kiệm ước tính cho Bên B</span>
+                        <span className="text-[11px] text-slate-500 block">Tiết kiệm ước tính cho đơn vị cần vỏ</span>
                         <span className="font-mono font-bold text-sm text-emerald-700">
                           💰 +{formatVnd(estimatedSaving)}
                         </span>
@@ -1447,7 +1534,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
             }
 
             // ==========================================
-            // GIAO DIỆN HIỂN THỊ DÀNH CHO BÊN A & OPS
+            // GIAO DIỆN HIỂN THỊ DÀNH CHO NHÀ CUNG CẤP & OPS
             // ==========================================
             return (
               <div
@@ -1483,11 +1570,10 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
 
                       <div className="text-xs text-slate-500 mt-1.5 flex items-center gap-3 flex-wrap">
                         <span>Thời gian: {formatDateTimeDdMmYyyy(offer.availableFrom)} → {formatDateTimeDdMmYyyy(offer.availableTo)}</span>
-                        <span className="text-emerald-700 font-bold font-mono text-sm">T_A: {formatVnd(offer.baselineDepotCostVnd)}</span>
                         <span className="font-medium bg-slate-100 px-2 py-0.5 rounded-md text-slate-700">{offer.photoUrls.length}/6 tối thiểu</span>
                         {offer.edoNumber && (
                           <span className="text-blue-700 font-mono bg-blue-50 px-2 py-0.5 rounded-md font-semibold">
-                            {offer.edoNumber}
+                            e-DO / Booking: {offer.edoNumber}
                           </span>
                         )}
                       </div>
@@ -1505,13 +1591,36 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                     {offer.status === 'UNDER_REVIEW' && !offer.requiresOpsManualReview && (
                       <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
                         <Clock className="w-3.5 h-3.5" />
-                        Đang chờ AI & Ops duyệt
+                        Đang chờ Ops duyệt
                       </span>
                     )}
                   </div>
                 </div>
 
                 {/* Ghi chú thẩm định nếu có */}
+                {currentRole === 'OPS' && (
+                  <div className="space-y-3 rounded-xl border border-violet-200 bg-violet-50/50 p-3">
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <strong className="text-violet-950">Kết quả tình trạng thực tế do AI báo về:</strong>
+                      {offer.aiCheck?.photoCondition && <ConditionBadge condition={offer.aiCheck.photoCondition} size="xs" />}
+                      {!offer.aiCheck?.photoCondition && <span className="text-amber-800">Chưa có phân loại tự động</span>}
+                    </div>
+                    {offer.aiCheck?.photoConditionNotes && <p className="text-xs leading-relaxed text-violet-950">{offer.aiCheck.photoConditionNotes}</p>}
+                    {offer.conditionNotes && <p className="text-xs leading-relaxed text-slate-700"><strong>Mô tả đang lưu:</strong> {offer.conditionNotes}</p>}
+                    <div>
+                      <span className="text-xs font-bold text-slate-700 block mb-2">Toàn bộ ảnh nhà cung cấp đã đăng ký ({offer.photoUrls.length} ảnh):</span>
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                        {offer.photoUrls.map((url, photoIndex) => (
+                          <div key={`${offer.id}-ops-photo-${photoIndex}`} className="h-20 rounded-lg overflow-hidden border border-slate-200 bg-white">
+                            <img src={url} alt={`Ảnh container ${photoIndex + 1}`} className="w-full h-full object-cover" />
+                          </div>
+                        ))}
+                        {offer.photoUrls.length === 0 && <div className="col-span-full text-xs text-slate-400">Chưa có ảnh container.</div>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {offer.reviewerNotes && (
                   <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-600 border border-slate-100 flex items-center gap-2">
                     <Shield className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -1523,9 +1632,12 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
                   <div className="flex items-center gap-2">
                     {/* Nút gửi thẩm định nếu đang DRAFT */}
-                    {offer.status === 'DRAFT' && currentRole === 'ENTERPRISE_A' && (
+                    {offer.status === 'DRAFT' && isSupplierRole && (
                       <button
-                        onClick={() => submitOfferForReview(offer.id)}
+                        onClick={() => {
+                          const result = submitOfferForReview(offer.id);
+                          showMsg(result.message, !result.success);
+                        }}
                         className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-sm"
                       >
                         <Send className="w-4 h-4" />
@@ -1567,7 +1679,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
 
                   {/* Nút Sửa, Xóa, Rút tin */}
                   <div className="flex items-center gap-2">
-                    {currentRole === 'ENTERPRISE_A' && !['HELD', 'ALLOCATED', 'FULFILLED', 'WITHDRAWN', 'EXPIRED'].includes(offer.status) && (
+                    {isSupplierRole && !['HELD', 'ALLOCATED', 'FULFILLED', 'WITHDRAWN', 'EXPIRED'].includes(offer.status) && (
                       <button
                         onClick={() => handleStartEditOffer(offer)}
                         className="p-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 shadow-sm"
@@ -1587,7 +1699,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                       </button>
                     )}
 
-                    {offer.status === 'AVAILABLE' && currentRole === 'ENTERPRISE_A' && (
+                    {offer.status === 'AVAILABLE' && isSupplierRole && (
                       <button
                         onClick={() => setWithdrawId(offer.id)}
                         className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold shadow-sm"
@@ -1604,7 +1716,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
       )}
 
       {/* Modal chỉnh sửa Offer: cho phép thay, xóa và thêm ảnh nhưng vẫn giữ checklist tối thiểu 6 góc */}
-      {editingOffer && currentRole === 'ENTERPRISE_A' && (
+      {editingOffer && isSupplierRole && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] overflow-y-auto p-6 space-y-5 shadow-2xl">
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
@@ -1645,23 +1757,27 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                     <RequiredMark />
                   </p>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Bắt buộc tối thiểu 6 ảnh: mặt trước, mặt sau, bên trái, bên phải, sàn và trần/nóc. Có thể thêm ảnh chi tiết, tối đa {MAX_OFFER_PHOTOS} ảnh.
+                    Bắt buộc tối thiểu 6 ảnh theo thứ tự: {OFFER_PHOTO_ANGLE_LABELS.join(', ')}. Có thể thêm ảnh chi tiết.
                   </p>
                 </div>
-                {(editForm.photoUrls || []).length < MAX_OFFER_PHOTOS && (
-                  <label className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer shadow-sm">
-                    <UploadCloud className="w-3.5 h-3.5" />
-                    {(editForm.photoUrls || []).length < 6 ? 'Thêm ảnh để đủ 6 góc' : 'Thêm ảnh mới'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                      onChange={handleEditPhotoUpload}
-                    />
-                  </label>
-                )}
+                <label className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer shadow-sm">
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  {(editForm.photoUrls || []).length < 6 ? 'Thêm ảnh để đủ 6 góc' : 'Thêm ảnh mới'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleEditPhotoUpload}
+                  />
+                </label>
               </div>
+
+              {(editForm.photoUrls || []).length < REQUIRED_OFFER_PHOTO_COUNT && (
+                <div className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50/60 p-3 text-xs text-slate-700">
+                  <p className="font-bold text-emerald-800">Ảnh tiếp theo: {OFFER_PHOTO_ANGLE_LABELS[(editForm.photoUrls || []).length]}</p>
+                  <p className="mt-1">Tải đúng thứ tự từng mặt; hoàn tất ảnh hiện tại mới chuyển sang mặt tiếp theo.</p>
+                </div>
+              )}
 
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                 {(editForm.photoUrls || []).map((url, index) => (
@@ -1676,7 +1792,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                       ×
                     </button>
                     <span className="absolute bottom-1 left-1 text-[10px] bg-slate-900/70 text-white px-1.5 py-0.5 rounded">
-                      Góc {index + 1}
+                      {OFFER_PHOTO_ANGLE_LABELS[index] || `Ảnh bổ sung ${index - 5}`}
                     </span>
                   </div>
                 ))}
@@ -1781,53 +1897,32 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
               </div>
 
               <div className="space-y-1">
-                <label htmlFor="edit-offer-availableFrom" className="text-slate-700 font-semibold block">Sẵn sàng bàn giao từ (dd/mm/yyyy) <RequiredMark /></label>
-                <input
+                <label htmlFor="edit-offer-availableFrom" className="text-slate-700 font-semibold block">Sẵn sàng bàn giao từ <RequiredMark /></label>
+                <DateInput
                   id="edit-offer-availableFrom"
                   data-field="editAvailableFrom"
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="dd/mm/yyyy"
-                  value={formatDateInput(String(editForm.availableFrom || ''))}
-                  onChange={event => setEditForm(previous => ({ ...previous, availableFrom: parseDateInput(event.target.value) }))}
+                  value={String(editForm.availableFrom || '')}
+                  onChange={v => setEditForm(previous => ({ ...previous, availableFrom: v }))}
                   aria-invalid={Boolean(editOfferErrors.editAvailableFrom)}
                   className={getFieldErrorClass(Boolean(editOfferErrors.editAvailableFrom), 'w-full border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
                 />
-                <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị: {formatDateTimeDdMmYyyy(String(editForm.availableFrom || ''))}</p>
                 <FieldError message={editOfferErrors.editAvailableFrom} />
               </div>
 
               <div className="space-y-1">
-                <label htmlFor="edit-offer-availableTo" className="text-slate-700 font-semibold block">Hạn chót bàn giao đến (dd/mm/yyyy) <RequiredMark /></label>
-                <input
+                <label htmlFor="edit-offer-availableTo" className="text-slate-700 font-semibold block">Hạn chót bàn giao đến <RequiredMark /></label>
+                <DateInput
                   id="edit-offer-availableTo"
                   data-field="editAvailableTo"
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="dd/mm/yyyy"
-                  value={formatDateInput(String(editForm.availableTo || ''))}
-                  onChange={event => setEditForm(previous => ({ ...previous, availableTo: parseDateInput(event.target.value) }))}
+                  value={String(editForm.availableTo || '')}
+                  endOfDay
+                  onChange={v => setEditForm(previous => ({ ...previous, availableTo: v }))}
                   aria-invalid={Boolean(editOfferErrors.editAvailableTo)}
                   className={getFieldErrorClass(Boolean(editOfferErrors.editAvailableTo), 'w-full border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
                 />
-                <p className="text-[11px] text-slate-500" aria-live="polite">Hiển thị: {formatDateTimeDdMmYyyy(String(editForm.availableTo || ''))}</p>
                 <FieldError message={editOfferErrors.editAvailableTo} />
               </div>
 
-              <div className="space-y-1">
-                <label htmlFor="edit-offer-baseline" className="text-slate-700 font-semibold block">Chi phí đưa về depot dự kiến (VND) <RequiredMark /></label>
-                <input
-                  id="edit-offer-baseline"
-                  data-field="editBaselineDepotCostVnd"
-                  type="number"
-                  value={editForm.baselineDepotCostVnd ?? ''}
-                  onChange={event => setEditForm(previous => ({ ...previous, baselineDepotCostVnd: event.target.value === '' ? undefined : Number(event.target.value) }))}
-                  placeholder="VD: 3000000"
-                  aria-invalid={Boolean(editOfferErrors.editBaselineDepotCostVnd)}
-                  className={getFieldErrorClass(Boolean(editOfferErrors.editBaselineDepotCostVnd), 'w-full border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
-                />
-                <FieldError message={editOfferErrors.editBaselineDepotCostVnd} />
-              </div>
             </div>
 
             <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
