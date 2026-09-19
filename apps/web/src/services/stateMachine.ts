@@ -61,10 +61,10 @@ export function canTransitionTo(
         blocking.push('Không tìm thấy phiên bản Thỏa thuận hiện tại.');
       } else {
         if (!currentAgreement.companyAAcceptedAt) {
-          blocking.push('Bên A chưa ký chấp thuận Thỏa thuận v' + txn.currentAgreementVersion);
+          blocking.push('Nhà cung cấp Container chưa ký chấp thuận Thỏa thuận v' + txn.currentAgreementVersion);
         }
         if (!currentAgreement.companyBAcceptedAt) {
-          blocking.push('Bên B chưa ký chấp thuận Thỏa thuận v' + txn.currentAgreementVersion);
+          blocking.push('Đơn vị Cần vỏ Container chưa ký chấp thuận Thỏa thuận v' + txn.currentAgreementVersion);
         }
         // BR01: Kiểm tra không phải cùng actor ký cả hai bên
         if (
@@ -72,7 +72,7 @@ export function canTransitionTo(
           currentAgreement.companyBAcceptedBy &&
           currentAgreement.companyAAcceptedBy === currentAgreement.companyBAcceptedBy
         ) {
-          blocking.push('SAME_ACTOR_BOTH_PARTIES: Cùng một người không được ký cả Bên A và Bên B.');
+          blocking.push('SAME_ACTOR_BOTH_PARTIES: Một người không được ký thay cho cả hai đối tác.');
         }
         // BR01: Kiểm tra không cùng company
         if (
@@ -80,7 +80,7 @@ export function canTransitionTo(
           currentAgreement.companyBCompanyId &&
           currentAgreement.companyACompanyId === currentAgreement.companyBCompanyId
         ) {
-          blocking.push('Bên A và Bên B không thể là cùng một công ty.');
+          blocking.push('Nhà cung cấp và đơn vị cần vỏ không thể là cùng một công ty.');
         }
       }
 
@@ -119,7 +119,7 @@ export function canTransitionTo(
       return {
         allowed: true,
         nextStatus: 'AWAITING_PAYMENT',
-        nextAction: 'Bên A và Bên B tiến hành thanh toán nghĩa vụ tài chính qua hệ thống ECont.',
+        nextAction: 'Hai đối tác tiến hành thanh toán nghĩa vụ qua hệ thống ECont.',
       };
     }
 
@@ -134,10 +134,13 @@ export function canTransitionTo(
       const paidA = txn.paymentOrderA?.status === 'PAID';
       const paidB = txn.paymentOrderB?.status === 'PAID';
       if (!paidA) {
-        blocking.push('Bên A chưa hoàn tất thanh toán (cần PAID, hiện: ' + (txn.paymentOrderA?.status ?? 'chưa có lệnh') + ')');
+        blocking.push('Nhà cung cấp Container chưa hoàn tất thanh toán (cần PAID, hiện: ' + (txn.paymentOrderA?.status ?? 'chưa có lệnh') + ')');
       }
       if (!paidB) {
-        blocking.push('Bên B chưa hoàn tất thanh toán (cần PAID, hiện: ' + (txn.paymentOrderB?.status ?? 'chưa có lệnh') + ')');
+        blocking.push('Đơn vị Cần vỏ Container chưa hoàn tất thanh toán (cần PAID, hiện: ' + (txn.paymentOrderB?.status ?? 'chưa có lệnh') + ')');
+      }
+      if (!txn.paymentConfirmedAt) {
+        blocking.push('Ops chưa xác nhận đủ tiền hai bên. Chưa được phát phiếu điều phối.');
       }
       // Carrier approval vẫn phải còn hiệu lực
       if (txn.carrierApproval?.status !== 'APPROVED') {
@@ -150,7 +153,7 @@ export function canTransitionTo(
       return {
         allowed: true,
         nextStatus: 'READY_FOR_PICKUP',
-        nextAction: 'Đã phát hành Phiếu điều phối (Dispatch Permit). Tài xế chuẩn bị phương tiện đến kho A nhận cont.',
+        nextAction: 'Đã phát hành Phiếu điều phối (Dispatch Permit). Tài xế chuẩn bị phương tiện đến kho nhà cung cấp nhận cont.',
       };
     }
 
@@ -174,7 +177,7 @@ export function canTransitionTo(
       return {
         allowed: true,
         nextStatus: 'INSPECTION',
-        nextAction: 'Đại diện Bên B kiểm tra thực tế 6 mặt cont tại kho A và ghi nhận biên bản.',
+        nextAction: 'Đại diện đơn vị Cần vỏ Container kiểm tra thực tế 6 mặt cont tại điểm giao và ghi nhận biên bản.',
       };
     }
 
@@ -195,7 +198,7 @@ export function canTransitionTo(
       return {
         allowed: true,
         nextStatus: 'HANDOVER_PENDING',
-        nextAction: 'Chờ đại diện Bên A xác nhận đã giao và Bên B xác nhận đã nhận cùng biên bản (cùng version/hash).',
+        nextAction: 'Chờ nhà cung cấp xác nhận đã giao và đơn vị cần vỏ xác nhận đã nhận cùng biên bản (cùng version/hash).',
       };
     }
 
@@ -208,10 +211,10 @@ export function canTransitionTo(
         blocking.push('Chưa có Biên bản bàn giao (HandoverRecord).');
       } else {
         if (!record.confirmationA) {
-          blocking.push('Bên A chưa xác nhận đã giao. (Người có quyền xác nhận giao của Bên A)');
+          blocking.push('Nhà cung cấp Container chưa xác nhận đã giao.');
         }
         if (!record.confirmationB) {
-          blocking.push('Bên B chưa xác nhận đã nhận. (Người có quyền xác nhận nhận của Bên B)');
+          blocking.push('Đơn vị Cần vỏ Container chưa xác nhận đã nhận.');
         }
         // Kiểm tra cùng version/hash
         if (record.confirmationA && record.confirmationB) {
@@ -223,7 +226,7 @@ export function canTransitionTo(
           }
           // BR18: Không cùng actor/company
           if (record.confirmationA.confirmedBy === record.confirmationB.confirmedBy) {
-            blocking.push('SAME_ACTOR_BOTH_PARTIES: Cùng một người không được xác nhận cả Bên A và Bên B.');
+            blocking.push('SAME_ACTOR_BOTH_PARTIES: Một người không được xác nhận thay cho cả hai đối tác.');
           }
           if (record.confirmationA.companyId === record.confirmationB.companyId) {
             blocking.push('Hai xác nhận phải đến từ hai công ty khác nhau.');
@@ -237,7 +240,7 @@ export function canTransitionTo(
       return {
         allowed: true,
         nextStatus: 'COMPLETED',
-        nextAction: 'Giao dịch hoàn tất thành công. Quyền quản lý vận hành cont (Custody) đã chuyển giao sang Bên B.',
+        nextAction: 'Giao dịch hoàn tất thành công. Quyền quản lý vận hành cont (Custody) đã chuyển giao cho đơn vị Cần vỏ Container.',
       };
     }
 
@@ -288,14 +291,13 @@ export function canTransitionTo(
  */
 export function getAllowedActions(
   txn: Transaction,
-  role: 'ENTERPRISE_A' | 'ENTERPRISE_B' | 'OPS' | 'FINANCE' | 'SUPER_ADMIN',
+  role: 'ENTERPRISE_A' | 'ENTERPRISE_B' | 'ENTERPRISE_BOTH' | 'OPS',
   companyId: string
 ): string[] {
   const actions: string[] = [];
-  const isPartyA = txn.companyAId === companyId && (role === 'ENTERPRISE_A');
-  const isPartyB = txn.companyBId === companyId && (role === 'ENTERPRISE_B');
-  const isOps = role === 'OPS' || role === 'SUPER_ADMIN';
-  const isFinance = role === 'FINANCE' || role === 'SUPER_ADMIN';
+  const isPartyA = txn.companyAId === companyId && (role === 'ENTERPRISE_A' || role === 'ENTERPRISE_BOTH');
+  const isPartyB = txn.companyBId === companyId && (role === 'ENTERPRISE_B' || role === 'ENTERPRISE_BOTH');
+  const isOps = role === 'OPS';
 
   if (txn.isOnHold) {
     if (isOps) actions.push('RELEASE_HOLD');
@@ -334,11 +336,14 @@ export function getAllowedActions(
       break;
 
     case 'AWAITING_PAYMENT':
-      if (isFinance) {
+      if (isOps) {
         if (txn.paymentOrderA?.status !== 'PAID') actions.push('SETTLE_PAYMENT_A');
         if (txn.paymentOrderB?.status !== 'PAID') actions.push('SETTLE_PAYMENT_B');
       }
       if (isOps) {
+        if (txn.paymentOrderA?.status === 'PAID' && txn.paymentOrderB?.status === 'PAID' && !txn.paymentConfirmedAt) {
+          actions.push('CONFIRM_PAYMENT_SETTLEMENT');
+        }
         actions.push('PUT_ON_HOLD');
         actions.push('CANCEL_TRANSACTION');
       }
@@ -377,7 +382,7 @@ export function getAllowedActions(
       if (isPartyA || isPartyB) {
         actions.push('SUBMIT_RATING');
       }
-      if (isFinance) {
+      if (isOps) {
         actions.push('PROCESS_REFUND');
       }
       break;

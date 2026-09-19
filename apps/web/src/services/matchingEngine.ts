@@ -59,6 +59,8 @@ export function findMatchesForRequest(
   const reqEnd = new Date(request.pickupWindowEnd).getTime();
   const dMax = request.maxDistanceKm || 40.0;
   const nowMs = Date.now();
+  const requestCarrierCode = request.carrierCode.trim().toUpperCase();
+  const requestContainerType = request.containerType.trim().toUpperCase();
 
   for (const offer of offers) {
     const eliminatedReasons: string[] = [];
@@ -70,12 +72,12 @@ export function findMatchesForRequest(
     }
 
     // Khớp hãng tàu
-    if (offer.asset.carrierCode !== request.carrierCode) {
+    if (offer.asset.carrierCode.trim().toUpperCase() !== requestCarrierCode) {
       eliminatedReasons.push(`Hãng tàu không khớp: Offer=${offer.asset.carrierCode}, Req=${request.carrierCode}`);
     }
 
     // Khớp loại container
-    if (offer.asset.containerType !== request.containerType) {
+    if (offer.asset.containerType.trim().toUpperCase() !== requestContainerType) {
       eliminatedReasons.push(`Loại cont không khớp: Offer=${offer.asset.containerType}, Req=${request.containerType}`);
     }
 
@@ -120,7 +122,7 @@ export function findMatchesForRequest(
     const requiresLocationRefresh = locationAgeHours > LOCATION_STALE_THRESHOLD_HOURS;
 
     if (requiresLocationRefresh) {
-      dataWarnings.push(`Offer ${offer.id}: Vị trí container đã ${Math.round(locationAgeHours)}h — cần A xác nhận lại trước khi giữ chỗ (plan.md §6.3)`);
+      dataWarnings.push(`Offer ${offer.id}: Vị trí container đã ${Math.round(locationAgeHours)}h — cần nhà cung cấp xác nhận lại trước khi giữ chỗ (plan.md §6.3)`);
     }
 
     // === KHẢ THI THỜI GIAN ===

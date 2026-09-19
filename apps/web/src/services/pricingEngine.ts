@@ -9,7 +9,7 @@ export interface PricingInput {
   tAVnd: number;           // Chi phí baseline A về depot (VD: 3,000,000 VND)
   tBVnd: number;           // Chi phí baseline B lấy cont từ depot (VD: 3,400,000 VND)
   fRuVnd: number;          // Phí RU của hãng tàu (VD: 1,200,000 VND)
-  shareAlpha?: number;     // Tỷ lệ phí RU của Bên A (0..1, mặc định 0.5)
+  shareAlpha?: number;     // Tỷ lệ phí RU của nhà cung cấp (0..1, mặc định 0.5)
   truckingAbVnd?: number;  // Cước xe A→B (B tự bố trí, KHÔNG phải ECont thu)
   extrasAVnd?: number;     // Chi phí phát sinh phía A
   extrasBVnd?: number;     // Chi phí phát sinh phía B

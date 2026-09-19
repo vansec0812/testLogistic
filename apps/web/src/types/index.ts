@@ -4,11 +4,11 @@
 // ==============================================================================
 
 export type UserRole =
-  | 'ENTERPRISE_A'   // Đơn vị quản lý nguồn vỏ (Bên A)
-  | 'ENTERPRISE_B'   // Đơn vị có nhu cầu (Bên B)
+  | 'ENTERPRISE_A'   // Nhà cung cấp Container
+  | 'ENTERPRISE_B'   // Đơn vị Cần vỏ Container
   | 'OPS'            // Vận hành nền tảng ECont
-  | 'FINANCE'        // Tài chính & đối soát
-  | 'SUPER_ADMIN';   // Quản trị hệ thống
+  | 'ENTERPRISE_BOTH' // Có cả quyền cung cấp và cần vỏ
+  | 'OPS';            // Vận hành nền tảng ECont
 
 // ISO 6346: chỉ 20GP và 40HC; alias 20DC->20GP, 40HQ->40HC qua mapping
 export type ContainerType = '20GP' | '40HC';
@@ -34,7 +34,7 @@ export type OfferStatus =
   | 'AVAILABLE'          // Đã duyệt, đang hiển thị
   | 'HELD'               // Đang bị giữ chỗ (NEGOTIATING)
   | 'ALLOCATED'          // Đã phân bổ vào giao dịch chính thức
-  | 'FULFILLED'          // Giao nhận hoàn tất, cont đã sang Bên B
+  | 'FULFILLED'          // Giao nhận hoàn tất, cont đã sang đơn vị Cần vỏ Container
   | 'WITHDRAWN'          // A chủ động rút tin
   | 'EXPIRED';           // Hết available_until hoặc hạn chứng từ
 
@@ -184,8 +184,8 @@ export interface Company {
   verificationStatus: CompanyStatus;
   verificationNotes?: string;
   verifiedAt?: string;
-  trustScoreA?: number;  // 0..100 (Trust với vai Bên A)
-  trustScoreB?: number;  // 0..100 (Trust với vai Bên B)
+  trustScoreA?: number;  // 0..100 (Trust của nhà cung cấp)
+  trustScoreB?: number;  // 0..100 (Trust của đơn vị cần vỏ)
   totalCompletedAsA: number;
   totalCompletedAsB: number;
   isOnHold?: boolean;    // Tài khoản tạm dừng
@@ -275,6 +275,17 @@ export interface OfferAiCheckResult {
   details?: string[];
 }
 
+export interface BookingAiCheckResult {
+  status: 'VALID' | 'INVALID' | 'ANOMALY' | 'MANUAL_REVIEW' | 'ERROR';
+  isValid: boolean;
+  hasAnomaly: boolean;
+  score?: number;
+  summary: string;
+  details: string[];
+  requiresOpsReview: boolean;
+  error?: string;
+}
+
 export interface Offer {
   id: string;
   assetId: string;
@@ -351,6 +362,9 @@ export interface ContainerRequest {
   cargoType: string;               // Mô tả loại hàng
   cargoRequirements?: string;      // Sạch/khô/không mùi/tiêu chuẩn đặc biệt
   baselinePickupCostVnd: number;   // T_B (chi phí baseline lấy cont từ depot)
+  bookingFileName?: string;        // File Booking ảnh/PDF; chỉ Ops xem
+  bookingFileMimeType?: string;
+  bookingAiCheck?: BookingAiCheckResult;
   withdrawReason?: string;
   createdAt: string;
   updatedAt: string;
@@ -407,7 +421,7 @@ export interface MatchCandidate {
   scoreM: number;                  // 0.30D + 0.40T + 0.30C
   quote: Quote;
   estimatedShippingMinutes?: number; // Thời gian vận chuyển ước tính
-  trustScoreA?: number;              // Điểm uy tín Bên A
+  trustScoreA?: number;              // Điểm uy tín nhà cung cấp
   hardConstraintReasons?: string[]; // Lý do loại nếu không pass
 }
 
@@ -512,6 +526,10 @@ export interface Transaction {
   quote: Quote;
   paymentOrderA?: PaymentOrder;
   paymentOrderB?: PaymentOrder;
+  // Both payment orders must be reconciled before Ops can release the pickup step.
+  paymentConfirmedAt?: string;
+  paymentConfirmedBy?: string;
+  paymentConfirmationNote?: string;
   externalObligations?: ExternalObligation[];
   // Carrier
   carrierSubmission?: CarrierSubmission;
@@ -577,6 +595,11 @@ export interface PaymentOrder {
   bankReference?: string;
   settledAt?: string;
   settledBy?: string;
+  // Evidence that the payer initiated the transfer; Ops reconciliation is separate.
+  payerSubmittedAmountVnd?: number;
+  payerBankReference?: string;
+  payerSubmittedAt?: string;
+  payerSubmittedBy?: string;
   // Suspense
   suspenseAmountVnd?: number;
   suspenseReason?: string;
@@ -670,7 +693,7 @@ export interface HandoverRecord {
   version: number;
   contentHash: string;             // Hash biên bản để 2 bên xác nhận cùng version
   status: HandoverRecordStatus;
-  // Xác nhận Bên A (giao)
+  // Xác nhận nhà cung cấp (giao)
   confirmationA?: {
     confirmedAt: string;
     confirmedBy: string;           // Email/actor
@@ -678,7 +701,7 @@ export interface HandoverRecord {
     recordVersion: number;
     recordHash: string;
   };
-  // Xác nhận Bên B (nhận)
+  // Xác nhận đơn vị cần vỏ (nhận)
   confirmationB?: {
     confirmedAt: string;
     confirmedBy: string;
@@ -704,6 +727,7 @@ export interface CaseIssue {
   status: CaseStatus;
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   evidenceFileIds?: string[];
+  attachments?: CaseAttachment[];
   holdTransactionId?: string;     // Giao dịch bị ON_HOLD vì Case này
   resolution?: {
     summary: string;
@@ -717,6 +741,16 @@ export interface CaseIssue {
   closedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CaseAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  kind: 'IMAGE' | 'VIDEO';
+  size?: number;
+  dataUrl: string;
+  createdAt: string;
 }
 
 export interface Rating {
@@ -854,7 +888,7 @@ export interface CreateOfferForm {
   availableFrom: string;
   availableTo: string;
   expectedDepotId?: string;
-  baselineDepotCostVnd: number;
+  baselineDepotCostVnd?: number;
   vehicleRequirements?: string;
 
   // AI & Ops check
@@ -875,5 +909,8 @@ export interface CreateRequestForm {
   maxDistanceKm: number;
   cargoType?: string;
   cargoRequirements?: string;
-  baselinePickupCostVnd: number;
+  baselinePickupCostVnd?: number;
+  bookingFileName?: string;
+  bookingFileMimeType?: string;
+  bookingAiCheck?: BookingAiCheckResult;
 }

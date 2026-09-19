@@ -4,6 +4,11 @@
  * lap lai tung noi trong component.
  */
 export const QA_RULES = {
+  pricing: {
+    // Chi phí nội bộ dùng cho quote/matching; không yêu cầu người dùng nhập.
+    defaultBaselineDepotCostVnd: 3000000,
+    defaultBaselinePickupCostVnd: 3400000,
+  },
   offer: {
     minPhotoCount: 6,
     availableWindowRequired: true,
@@ -54,11 +59,23 @@ export const OFFER_PHOTO_ANGLES = [
   'DOOR_BACK',
   'LEFT',
   'RIGHT',
-  'INSIDE',
-  'CONTAINER_NUMBER',
+  'ROOF',
+  'UNDERCARRIAGE',
 ] as const;
 
 export type OfferPhotoAngle = typeof OFFER_PHOTO_ANGLES[number];
+
+export const OFFER_PHOTO_ANGLE_LABELS = [
+  'Mặt trước',
+  'Mặt sau',
+  'Mặt trái',
+  'Mặt phải',
+  'Trên nóc',
+  'Dưới gầm',
+] as const;
+
+export const DEFAULT_BASELINE_DEPOT_COST_VND = QA_RULES.pricing.defaultBaselineDepotCostVnd;
+export const DEFAULT_BASELINE_PICKUP_COST_VND = QA_RULES.pricing.defaultBaselinePickupCostVnd;
 
 export const PAYMENT_DEADLINE_MS = QA_RULES.payment.deadlineHours * 60 * 60 * 1000;
 export const CARRIER_TIMEOUT_MS = QA_RULES.carrier.responseTimeoutHours * 60 * 60 * 1000;
