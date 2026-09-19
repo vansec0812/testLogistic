@@ -300,8 +300,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               <div className="mt-6 border-t border-slate-200 pt-4">
                 <p className="text-xs text-slate-500 font-semibold mb-2">Demo: bạn có thể dùng tài khoản mẫu</p>
                 <ul className="text-xs text-slate-600 space-y-1 bg-slate-50 p-3 rounded border border-slate-100">
-                  <li><code className="font-bold">bena / bena123</code> → Hưng Thịnh Logistics (Bên A)</li>
-                  <li><code className="font-bold">benb / benb123</code> → Toàn Cầu Export (Bên B)</li>
+                  <li><code className="font-bold">bena / bena123</code> → Hưng Thịnh Logistics (Nhà cung cấp Container)</li>
+                  <li><code className="font-bold">benb / benb123</code> → Toàn Cầu Export (Cần vỏ Container)</li>
                   <li><code className="font-bold">ops / ops123</code> → ECont Ops (Vận hành)</li>
                 </ul>
               </div>
@@ -422,8 +422,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                     <div className="col-span-2">
                       <label className="block text-xs font-medium text-slate-700 mb-1">Vai trò tham gia ECont</label>
                       <select value={compRole} onChange={e => setCompRole(e.target.value as UserRole)} className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
-                        <option value="ENTERPRISE_A">Bên A (Có nguồn vỏ / Đơn vị trả rỗng)</option>
-                        <option value="ENTERPRISE_B">Bên B (Cần vỏ / Đơn vị đóng hàng)</option>
+                        <option value="ENTERPRISE_A">Nhà cung cấp Container (Có nguồn vỏ)</option>
+                        <option value="ENTERPRISE_B">Cần vỏ Container (Đơn vị đóng hàng)</option>
+                        <option value="ENTERPRISE_BOTH">Cả hai: Nhà cung cấp và Cần vỏ Container</option>
                       </select>
                     </div>
                   </div>

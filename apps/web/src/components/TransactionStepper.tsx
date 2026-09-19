@@ -24,7 +24,7 @@ const STEPS: Array<{
   { status: 'READY_FOR_PICKUP', label: 'Phiếu điều phối', sublabel: 'Phát DP / QR', icon: QrCode, step: 4 },
   { status: 'INSPECTION', label: 'Kiểm tra cont', sublabel: 'Checklist 6 mặt', icon: Eye, step: 5 },
   { status: 'HANDOVER_PENDING', label: 'Bàn giao', sublabel: 'Ký 2 chiều', icon: PenTool, step: 6 },
-  { status: 'COMPLETED', label: 'Hoàn tất', sublabel: 'Custody chuyển B', icon: CheckCircle2, step: 7 },
+  { status: 'COMPLETED', label: 'Hoàn tất', sublabel: 'Custody chuyển cho đơn vị cần vỏ', icon: CheckCircle2, step: 7 },
 ];
 
 const TERMINAL_STATUSES: TransactionStatus[] = ['CANCELLED', 'REJECTED', 'EXPIRED', 'DISPUTED', 'PICKUP_REFUSED', 'CARRIER_REJECTED', 'PAYMENT_EXPIRED'];
@@ -40,9 +40,11 @@ const STATUS_TO_STEP: Partial<Record<TransactionStatus, number>> = {
 
 interface TransactionStepperProps {
   transaction: Transaction;
+  selectedStep?: number | null;
+  onStepClick?: (step: number) => void;
 }
 
-export const TransactionStepper: React.FC<TransactionStepperProps> = ({ transaction }) => {
+export const TransactionStepper: React.FC<TransactionStepperProps> = ({ transaction, selectedStep, onStepClick }) => {
   const { status, isOnHold, dueAt } = transaction;
   const [countdown, setCountdown] = useState(formatCountdown(dueAt));
 
@@ -96,6 +98,8 @@ export const TransactionStepper: React.FC<TransactionStepperProps> = ({ transact
             const isCompleted = currentStep > step.step;
             const isCurrent = currentStep === step.step;
             const isFuture = currentStep < step.step;
+            const isReviewable = step.step < currentStep;
+            const isSelected = selectedStep === step.step || (selectedStep == null && isCurrent);
             const Icon = step.icon;
 
             return (
@@ -110,16 +114,29 @@ export const TransactionStepper: React.FC<TransactionStepperProps> = ({ transact
                 )}
 
                 {/* Step node */}
-                <div className="flex flex-col items-center shrink-0">
+                <div
+                  className={`flex flex-col items-center shrink-0 ${isReviewable ? 'cursor-pointer' : ''}`}
+                  onClick={() => isReviewable && onStepClick?.(step.step)}
+                  onKeyDown={event => {
+                    if (isReviewable && (event.key === 'Enter' || event.key === ' ')) {
+                      event.preventDefault();
+                      onStepClick?.(step.step);
+                    }
+                  }}
+                  role={isReviewable ? 'button' : undefined}
+                  tabIndex={isReviewable ? 0 : undefined}
+                  title={isReviewable ? 'Xem lại bước đã hoàn tất (chỉ xem)' : step.label}
+                >
                   <div
                     className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
-                      isCompleted
+                      isSelected && isReviewable
+                        ? 'bg-white border-brand-500 shadow-md shadow-brand-200 ring-2 ring-brand-200'
+                        : isCompleted
                         ? 'bg-brand-500 border-brand-500'
                         : isCurrent
                         ? 'bg-white border-brand-500 shadow-md shadow-brand-200 ring-2 ring-brand-200'
                         : 'bg-white border-slate-200'
                     }`}
-                    title={step.label}
                   >
                     {isCompleted ? (
                       <CheckCircle2 className="w-4 h-4 text-white" />
@@ -127,14 +144,14 @@ export const TransactionStepper: React.FC<TransactionStepperProps> = ({ transact
                       <Icon className={`w-3.5 h-3.5 ${isCurrent ? 'text-brand-600' : 'text-slate-300'}`} />
                     )}
                   </div>
-                  <div className={`mt-1.5 text-center ${isCurrent ? 'block' : 'hidden md:block'}`}>
+                  <div className={`mt-1.5 text-center ${isCurrent || isSelected ? 'block' : 'hidden md:block'}`}>
                     <p className={`text-xs font-bold leading-tight ${
-                      isCurrent ? 'text-brand-700' : isCompleted ? 'text-slate-600' : 'text-slate-400'
+                      isSelected ? 'text-brand-700' : isCompleted ? 'text-slate-600' : 'text-slate-400'
                     }`}>
                       {step.label}
                     </p>
                     <p className={`text-xs leading-tight mt-0.5 ${
-                      isCurrent ? 'text-brand-600 font-medium' : 'text-slate-400'
+                      isSelected ? 'text-brand-600 font-medium' : 'text-slate-400'
                     }`}>
                       {step.sublabel}
                     </p>
@@ -145,6 +162,12 @@ export const TransactionStepper: React.FC<TransactionStepperProps> = ({ transact
           })}
         </div>
       </div>
+
+      {currentStep > 1 && (
+        <p className="text-center text-[11px] text-slate-500">
+          Chọn các bước đã hoàn tất để xem lại thông tin đã gửi. Nội dung xem lại ở chế độ chỉ đọc.
+        </p>
+      )}
 
       {/* Deadline countdown */}
       {!isTerminal && status !== 'COMPLETED' && (

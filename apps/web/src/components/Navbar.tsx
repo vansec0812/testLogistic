@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import {
   Box, Boxes, Database, Handshake, HeadphonesIcon, LayoutDashboard,
-  MessageCircle, PackageOpen, Search, ShieldCheck, WalletCards,
+  MessageCircle, PackageOpen, Search, ShieldCheck,
   Bell, AlertCircle, RefreshCw, ChevronDown, BarChart3
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -19,11 +19,9 @@ interface NavbarProps {
 }
 
 const ROLE_OPTIONS: Array<{ value: UserRole; label: string; icon: string }> = [
-  { value: 'ENTERPRISE_A', label: 'Bên A · Chủ container', icon: '🏭' },
-  { value: 'ENTERPRISE_B', label: 'Bên B · Cần container', icon: '📦' },
+  { value: 'ENTERPRISE_A', label: 'Nhà cung cấp Container', icon: '🏭' },
+  { value: 'ENTERPRISE_B', label: 'Cần vỏ Container', icon: '📦' },
   { value: 'OPS', label: 'Điều phối vận hành', icon: '⚙️' },
-  { value: 'FINANCE', label: 'Tài chính & đối soát', icon: '💰' },
-  { value: 'SUPER_ADMIN', label: 'Quản trị hệ thống', icon: '🛡️' },
 ];
 
 interface NavItem {
@@ -51,15 +49,15 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => 
     { id: 'dashboard', label: 'Bàn làm việc', icon: LayoutDashboard },
     {
       id: 'assets', label: 'Vỏ container', icon: Boxes,
-      roles: ['OPS', 'SUPER_ADMIN'],
+      roles: ['OPS'],
     },
     {
       id: 'offers', label: 'Nguồn cung', icon: PackageOpen,
-      badge: (currentRole === 'OPS' || currentRole === 'SUPER_ADMIN') ? pendingOffers : undefined,
+      badge: currentRole === 'OPS' ? pendingOffers : undefined,
     },
     {
       id: 'requests', label: 'Nhu cầu', icon: Search,
-      badge: (currentRole === 'OPS' || currentRole === 'SUPER_ADMIN') ? pendingRequests : undefined,
+      badge: currentRole === 'OPS' ? pendingRequests : undefined,
     },
     {
       id: 'transactions', label: 'Giao dịch', icon: Handshake,
@@ -68,12 +66,8 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => 
     { id: 'chat', label: 'Tin nhắn', icon: MessageCircle },
     {
       id: 'ops', label: 'Vận hành', icon: HeadphonesIcon,
-      roles: ['OPS', 'SUPER_ADMIN'],
+      roles: ['OPS'],
       badge: openCases > 0 ? openCases : undefined,
-    },
-    {
-      id: 'finance', label: 'Tài chính', icon: WalletCards,
-      roles: ['FINANCE', 'SUPER_ADMIN'],
     },
     {
       id: 'cases', label: 'Sự cố / Case', icon: AlertCircle,
@@ -81,7 +75,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => 
     },
     {
       id: 'database', label: 'Dữ liệu', icon: Database,
-      roles: ['OPS', 'FINANCE', 'SUPER_ADMIN'],
+      roles: ['OPS'],
     },
   ];
 

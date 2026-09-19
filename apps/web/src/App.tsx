@@ -17,7 +17,6 @@ import { RequestsPage } from './pages/RequestsPage';
 import { TransactionsPage } from './pages/TransactionsPage';
 import { ChatPage } from './pages/ChatPage';
 import { OpsPortalPage } from './pages/OpsPortalPage';
-import { FinancePortalPage } from './pages/FinancePortalPage';
 import { CasesPage } from './pages/CasesPage';
 import { OnlineDatabasePage } from './pages/OnlineDatabasePage';
 import { LoginPage } from './pages/LoginPage';
@@ -42,11 +41,11 @@ function AppContent() {
   // Strict role-based navigation guard
   useEffect(() => {
     if (currentRole === 'ENTERPRISE_A') {
-      if (['assets', 'ops', 'finance', 'database'].includes(currentTab)) {
+      if (['assets', 'ops', 'database'].includes(currentTab)) {
         setCurrentTab('dashboard');
       }
-    } else if (currentRole === 'ENTERPRISE_B') {
-      if (['assets', 'offers', 'ops', 'finance', 'database'].includes(currentTab)) {
+    } else if (currentRole === 'ENTERPRISE_B' || currentRole === 'ENTERPRISE_BOTH') {
+      if (['assets', 'offers', 'ops', 'database'].includes(currentTab)) {
         setCurrentTab('dashboard');
       }
     }
@@ -72,8 +71,6 @@ function AppContent() {
         return <ChatPage />;
       case 'ops':
         return <OpsPortalPage setCurrentTab={setCurrentTab} setSelectedTxnId={setSelectedTxnId} />;
-      case 'finance':
-        return <FinancePortalPage setCurrentTab={setCurrentTab} setSelectedTxnId={setSelectedTxnId} />;
       case 'cases':
         return <CasesPage setCurrentTab={setCurrentTab} setSelectedTxnId={setSelectedTxnId} />;
       case 'database':

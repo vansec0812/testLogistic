@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { ContainerRequest, MatchCandidate } from '../types';
 import { useDatabase } from '../context/DatabaseContext';
 import { findMatchesForRequest } from '../services/matchingEngine';
-import { formatVnd, formatDistance, formatDateTime } from '../lib/utils';
+import { formatVnd, formatDistance, formatDate } from '../lib/utils';
 import { RouteVisualizer } from './RouteVisualizer';
 import { PricingBreakdownCard } from './PricingBreakdownCard';
 import { 
@@ -148,7 +148,7 @@ export const MatchingModal: React.FC<MatchingModalProps> = ({
                   </div>
                 </div>
 
-                {/* 7 THÔNG TIN CHUẨN MỰC HIỂN THỊ CHO BÊN B */}
+                {/* 7 thông tin chuẩn mực hiển thị cho đơn vị cần vỏ */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-center text-xs">
                   {/* 1. Khoảng cách (Distance) */}
                   <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-left">
@@ -160,7 +160,7 @@ export const MatchingModal: React.FC<MatchingModalProps> = ({
                   <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-left col-span-2">
                     <span className="text-slate-500 text-[11px] block">2. Thời gian bàn giao</span>
                     <strong className="text-slate-800 text-xs mt-0.5 block leading-tight">
-                      ⏱️ {formatDateTime(cand.offer.availableFrom)} → {formatDateTime(cand.offer.availableTo)}
+                      ⏱️ {formatDate(cand.offer.availableFrom)} → {formatDate(cand.offer.availableTo)}
                     </strong>
                   </div>
 
@@ -172,9 +172,9 @@ export const MatchingModal: React.FC<MatchingModalProps> = ({
                     </strong>
                   </div>
 
-                  {/* 5. Điểm uy tín Bên A (Trust Score) */}
+                  {/* 5. Điểm uy tín nhà cung cấp (Trust Score) */}
                   <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-left">
-                    <span className="text-slate-500 text-[11px] block">5. Uy tín Bên A</span>
+                    <span className="text-slate-500 text-[11px] block">5. Uy tín nhà cung cấp</span>
                     <strong className="text-amber-700 text-xs font-bold mt-0.5 block">
                       ⭐ {cand.trustScoreA || 94}/100 (5★)
                     </strong>
@@ -192,7 +192,7 @@ export const MatchingModal: React.FC<MatchingModalProps> = ({
                 {/* 7. Mức tiết kiệm ước tính (Estimated saving) */}
                 <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50/60 border border-emerald-200 text-xs">
                   <span className="text-emerald-900 font-medium">
-                    7. Mức tiết kiệm ước tính cho Bên B (so với đi lấy vỏ từ depot):
+                    7. Mức tiết kiệm ước tính cho đơn vị cần vỏ (so với đi lấy vỏ từ depot):
                   </span>
                   <span className="font-mono font-bold text-base text-emerald-800">
                     💰 +{formatVnd(Math.abs(cand.quote.sBVnd))}

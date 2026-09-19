@@ -16,15 +16,17 @@ import {
   normalizeIsoContainerNumber
 } from '../services/aiService';
 import { validateContainerNumber } from '../services/iso6346';
+import { DateInput } from './DateInput';
 
 export type { ExtractedEdoData } from '../services/aiService';
 
 function displayDateDdMmYyyy(value: string): string {
   const isoMatch = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return isoMatch ? `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}` : value;
+  return isoMatch ? `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}` : value;
 }
 
 function parseDateDdMmYyyy(value: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return value.trim();
   const match = value.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   return match ? `${match[3]}-${match[2]}-${match[1]}` : value;
 }
@@ -596,12 +598,9 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
                 {/* 6. Hạn Free time */}
                 <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-1">
                   <label className="text-xs text-slate-500 font-semibold block">Hạn Free time / Trả vỏ</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="dd/mm/yyyy"
-                    value={displayDateDdMmYyyy(editableData.expiryDate)}
-                    onChange={e => setEditableData(p => p ? ({ ...p, expiryDate: parseDateDdMmYyyy(e.target.value) }) : null)}
+                  <DateInput
+                    value={editableData.expiryDate}
+                    onChange={v => setEditableData(p => p ? ({ ...p, expiryDate: v ? v.split('T')[0] : '' }) : null)}
                     className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono font-semibold text-amber-800 outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>

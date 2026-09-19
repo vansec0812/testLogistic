@@ -1,5 +1,5 @@
 // ============================================================================
-// ECont Chat Page - Trao đổi A/B và Giám sát Điều phối (Version 2.0)
+// ECont Chat Page - Trao đổi đối tác và Giám sát Điều phối (Version 2.0)
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -18,7 +18,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   setSelectedThreadId: propSetSelectedThreadId 
 }) => {
   const { currentRole, currentCompany } = useAuth();
-  const { chatThreads, chatMessages, sendChatMessage } = useDatabase();
+  const { chatThreads, chatMessages, sendChatMessage, companies, transactions, offers, requests } = useDatabase();
   
   // Local state if props not passed
   const [localSelectedId, setLocalSelectedId] = useState<string | null>(null);
@@ -27,14 +27,32 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
   const [draft, setDraft] = useState('');
 
-  const isOpsOrAdmin = currentRole === 'OPS' || currentRole === 'SUPER_ADMIN';
+  const isOps = currentRole === 'OPS';
+  const roleLabel = (role: string) => {
+    if (role === 'ENTERPRISE_A' || role === 'A') return 'Nhà cung cấp Container';
+    if (role === 'ENTERPRISE_B' || role === 'B') return 'Cần vỏ Container';
+    if (role === 'OPS') return 'Ops';
+    return role;
+  };
 
-  // Threads visible: A and B see their own threads, Ops sees all
+  // Mỗi đối tác chỉ thấy thread của mình; Ops thấy toàn bộ thread.
   const visibleThreads = useMemo(() => {
     return chatThreads
-      .filter(thread => isOpsOrAdmin || thread.companyAId === currentCompany.id || thread.companyBId === currentCompany.id)
+      .filter(thread => isOps || thread.companyAId === currentCompany.id || thread.companyBId === currentCompany.id)
+      .map(thread => {
+        const transaction = thread.transactionId ? transactions.find(item => item.id === thread.transactionId) : undefined;
+        const offer = thread.offerId ? offers.find(item => item.id === thread.offerId) : undefined;
+        const request = thread.requestId ? requests.find(item => item.id === thread.requestId) : undefined;
+        const resolveName = (id: string, provided?: string, relatedName?: string) =>
+          provided?.trim() || relatedName?.trim() || companies.find(company => company.id === id)?.shortName || id;
+        return {
+          ...thread,
+          companyAName: resolveName(thread.companyAId, thread.companyAName, transaction?.companyAName || offer?.companyName),
+          companyBName: resolveName(thread.companyBId, thread.companyBName, transaction?.companyBName || request?.companyName),
+        };
+      })
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  }, [chatThreads, currentCompany.id, isOpsOrAdmin]);
+  }, [chatThreads, currentCompany.id, isOps, companies, transactions, offers, requests]);
 
   useEffect(() => {
     if (visibleThreads.length > 0 && !visibleThreads.some(thread => thread.id === selectedThreadId)) {
@@ -69,12 +87,12 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             <span>TRAO ĐỔI & ĐÀM PHÁN GIAO DỊCH</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Kênh trao đổi trực tiếp giữa Bên A và Bên B trước và trong suốt quá trình tái sử dụng vỏ container.
+            Kênh trao đổi trực tiếp giữa Nhà cung cấp Container và đơn vị Cần vỏ Container trước và trong suốt quá trình tái sử dụng vỏ container.
           </p>
         </div>
         <span className="px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold flex items-center gap-1.5">
           <ShieldCheck className="w-4 h-4" />
-          {isOpsOrAdmin ? 'Ops giám sát trao đổi' : 'Bảo mật giữa Bên A & Bên B'}
+          {isOps ? 'Ops giám sát trao đổi' : 'Bảo mật giữa các đối tác'}
         </span>
       </div>
 
@@ -93,7 +111,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             ) : (
               visibleThreads.map(thread => {
                 const isA = thread.companyAId === currentCompany.id;
-                const otherName = isA ? thread.companyBName : thread.companyAName;
+                const partnerLabel = isA ? 'Cần vỏ Container' : 'Nhà cung cấp Container';
                 const lastMessage = chatMessages
                   .filter(message => message.threadId === thread.id)
                   .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
@@ -119,8 +137,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                       </span>
                     </div>
                     <div className="text-xs sm:text-sm font-semibold text-slate-800 mt-1 truncate">
-                      {isOpsOrAdmin ? `${thread.companyAName} ↔ ${thread.companyBName}` : otherName}
+                      {isOps ? `${thread.companyAName} · ${thread.companyBName}` : 'Nhà cung cấp Container · Cần vỏ Container'}
                     </div>
+                    {!isOps && (
+                      <div className="text-[11px] text-brand-700 mt-0.5 truncate">Đối tác: {partnerLabel}</div>
+                    )}
                     <div className="text-xs text-slate-500 truncate mt-0.5">
                       {lastMessage ? lastMessage.body : 'Chưa có tin nhắn...'}
                     </div>
@@ -144,8 +165,24 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                       <span className="text-xs text-slate-600 font-medium">· Hãng {selectedThread.carrierCode} ({selectedThread.containerType || ''})</span>
                     )}
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5">
-                    {selectedThread.companyAName} ↔ {selectedThread.companyBName} {selectedThread.pickupLocationName ? `· Điểm lấy: ${selectedThread.pickupLocationName}` : ''}
+                  <div className="text-xs text-slate-700 mt-1">
+                    {isOps ? (
+                      <>
+                        <span className="font-semibold">{selectedThread.companyAName}</span>
+                        <span className="mx-1 text-slate-400">·</span>
+                        <span className="font-semibold">{selectedThread.companyBName}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-semibold">Nhà cung cấp Container</span>
+                        <span className="mx-1 text-slate-400">·</span>
+                        <span className="font-semibold">Cần vỏ Container</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-brand-700 mt-0.5">
+                    {isOps ? 'Ops đang giám sát cuộc trao đổi' : `Bạn đang chat với ${selectedThread.companyAId === currentCompany.id ? 'Cần vỏ Container' : 'Nhà cung cấp Container'}`}
+                    {selectedThread.pickupLocationName ? ` · Điểm lấy: ${selectedThread.pickupLocationName}` : ''}
                   </div>
                 </div>
               </div>
@@ -165,7 +202,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                         className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}
                       >
                         <div className="text-xs text-slate-500 mb-1 px-1 font-medium">
-                          {msg.senderCompanyName} · {msg.senderRole} · {formatDateTime(msg.createdAt)}
+                          {isOps ? `${msg.senderCompanyName} · ${roleLabel(msg.senderRole)}` : roleLabel(msg.senderRole)} · {formatDateTime(msg.createdAt)}
                         </div>
                         <div
                           className={`max-w-[80%] p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm ${

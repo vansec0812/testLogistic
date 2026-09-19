@@ -98,6 +98,8 @@ function DeadlineAlert({ txn, setCurrentTab, setSelectedTxnId }: {
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) => {
   const { currentRole, currentCompany, currentUserName, roleBadge } = useAuth();
+  const isSupplierRole = currentRole === 'ENTERPRISE_A' || currentRole === 'ENTERPRISE_BOTH';
+  const isRequesterRole = currentRole === 'ENTERPRISE_B' || currentRole === 'ENTERPRISE_BOTH';
   const {
     assets, offers, requests, transactions, cases, auditLogs,
     notifications, unreadNotificationCount, markNotificationRead, resetToDemoData,
@@ -134,7 +136,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
       pendingOpsRequests: requests.filter(r => r.status === 'UNDER_REVIEW').length,
       pendingCarrier: transactions.filter(t => t.status === 'PENDING_CARRIER').length,
       openCases: cases.filter(c => c.status === 'OPEN' || c.status === 'IN_REVIEW').length,
-      // Finance stats
+      // Payment review stats handled by Ops
       pendingPayments: transactions.filter(t => t.status === 'AWAITING_PAYMENT').length,
     };
   }, [assets, offers, requests, transactions, cases, currentCompany.id]);
@@ -144,7 +146,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
     return transactions.filter(t => {
       if (['COMPLETED', 'CANCELLED', 'REJECTED', 'EXPIRED'].includes(t.status)) return false;
       if (t.companyAId !== currentCompany.id && t.companyBId !== currentCompany.id &&
-          currentRole !== 'OPS' && currentRole !== 'FINANCE' && currentRole !== 'SUPER_ADMIN') return false;
+          currentRole !== 'OPS') return false;
       const cd = formatCountdown(t.dueAt);
       return cd.isUrgent || cd.isExpired;
     });
@@ -178,14 +180,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
               <span className="text-xs text-slate-500 font-medium">· {roleBadge.desc}</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-              Xin chào, {currentUserName.split(' ')[0]} 👋
+              Xin chào, {currentUserName.split('(')[0].trim()} 👋
             </h2>
             <p className="text-sm sm:text-base text-slate-600 mt-1.5 font-medium">
               Doanh nghiệp: <span className="font-bold text-slate-900">{currentCompany.companyName}</span>
             </p>
           </div>
           <div className="flex flex-wrap gap-2.5">
-            {currentRole === 'ENTERPRISE_A' && (
+            {isSupplierRole && (
               <button
                 onClick={() => setCurrentTab('offers')}
                 className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold flex items-center gap-2 shadow-sm transition-all"
@@ -194,7 +196,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
                 Đăng nguồn vỏ cont
               </button>
             )}
-            {currentRole === 'ENTERPRISE_B' && (
+            {isRequesterRole && (
               <button
                 onClick={() => setCurrentTab('requests')}
                 className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold flex items-center gap-2 shadow-sm transition-all"
@@ -203,22 +205,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
                 Tìm vỏ ghép đôi
               </button>
             )}
-            {(currentRole === 'OPS' || currentRole === 'SUPER_ADMIN') && (
+            {currentRole === 'OPS' && (
               <button
                 onClick={() => setCurrentTab('ops')}
                 className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold flex items-center gap-2 shadow-sm transition-all"
               >
                 <Activity className="w-4 h-4" />
                 Vào cổng Vận hành
-              </button>
-            )}
-            {(currentRole === 'FINANCE' || currentRole === 'SUPER_ADMIN') && (
-              <button
-                onClick={() => setCurrentTab('finance')}
-                className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold flex items-center gap-2 shadow-sm transition-all"
-              >
-                <CreditCard className="w-4 h-4" />
-                Cổng Tài chính
               </button>
             )}
           </div>
@@ -243,30 +236,29 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
         <h3 className="text-sm sm:text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
           <BarChart3 className="w-4 h-4 text-blue-600" />
           Tổng quan chỉ số
-          {currentRole === 'ENTERPRISE_A' && ' · Bên A (Chủ vỏ)'}
-          {currentRole === 'ENTERPRISE_B' && ' · Bên B (Chủ hàng)'}
-          {currentRole === 'OPS' && ' · Vận hành ECont'}
-          {currentRole === 'FINANCE' && ' · Tài chính & Ký quỹ'}
-          {currentRole === 'SUPER_ADMIN' && ' · Quản trị Hệ thống'}
+          {currentRole === 'ENTERPRISE_A' && ' · Nhà cung cấp Container'}
+          {currentRole === 'ENTERPRISE_B' && ' · Cần vỏ Container'}
+          {currentRole === 'ENTERPRISE_BOTH' && ' · Nhà cung cấp & Cần vỏ Container'}
+          {currentRole === 'OPS' && ' · Vận hành & Điều phối'}
         </h3>
 
-        {(currentRole === 'ENTERPRISE_A' || currentRole === 'ENTERPRISE_B') && (
+        {(isSupplierRole || isRequesterRole) && (
           <div className={`grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 ${
-            currentRole === 'ENTERPRISE_A' ? 'lg:grid-cols-6' : 'lg:grid-cols-5'
+            currentRole === 'ENTERPRISE_BOTH' ? 'lg:grid-cols-7' : currentRole === 'ENTERPRISE_A' ? 'lg:grid-cols-6' : 'lg:grid-cols-5'
           }`}>
-            {currentRole === 'ENTERPRISE_A' && (
+            {isSupplierRole && (
               <KpiCard
                 icon={Box} label="Container đang quản lý" value={stats.myAssets}
                 color="blue" onClick={() => setCurrentTab('offers')}
               />
             )}
-            {currentRole === 'ENTERPRISE_A' && (
+            {isSupplierRole && (
               <KpiCard
                 icon={Package} label="Offer đang hoạt động" value={stats.myActiveOffers}
                 color="emerald" onClick={() => setCurrentTab('offers')}
               />
             )}
-            {currentRole === 'ENTERPRISE_B' && (
+            {isRequesterRole && (
               <KpiCard
                 icon={Sparkles} label="Nhu cầu đang tìm" value={stats.myActiveRequests}
                 color="emerald" onClick={() => setCurrentTab('requests')}
@@ -292,8 +284,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
           </div>
         )}
 
-        {(currentRole === 'OPS' || currentRole === 'SUPER_ADMIN') && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+        {currentRole === 'OPS' && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
             <KpiCard icon={FileText} label="Offer chờ thẩm định" value={stats.pendingOpsOffers}
               color={stats.pendingOpsOffers > 0 ? 'amber' : 'blue'} onClick={() => setCurrentTab('offers')} />
             <KpiCard icon={FileText} label="Nhu cầu chờ xác minh" value={stats.pendingOpsRequests}
@@ -302,21 +294,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
               color={stats.pendingCarrier > 0 ? 'amber' : 'blue'} onClick={() => setCurrentTab('ops')} />
             <KpiCard icon={Handshake} label="Giao dịch hoạt động" value={transactions.filter(t => !['COMPLETED','CANCELLED','REJECTED','EXPIRED'].includes(t.status)).length}
               color="violet" onClick={() => setCurrentTab('transactions')} />
+            <KpiCard icon={CreditCard} label="Chờ Ops xác nhận tiền" value={stats.pendingPayments}
+              color={stats.pendingPayments > 0 ? 'amber' : 'blue'} onClick={() => setCurrentTab('transactions')} />
             <KpiCard icon={AlertCircle} label="Case cần xử lý" value={stats.openCases}
               color={stats.openCases > 0 ? 'red' : 'blue'} onClick={() => setCurrentTab('cases')} />
-          </div>
-        )}
-
-        {currentRole === 'FINANCE' && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-            <KpiCard icon={CreditCard} label="Chờ đối soát thanh toán" value={stats.pendingPayments}
-              color={stats.pendingPayments > 0 ? 'amber' : 'blue'} onClick={() => setCurrentTab('finance')} />
-            <KpiCard icon={CheckCircle2} label="Giao dịch đã hoàn tất" value={transactions.filter(t => t.status === 'COMPLETED').length}
-              color="emerald" onClick={() => setCurrentTab('transactions')} />
-            <KpiCard icon={TrendingUp} label="Tổng tiết kiệm ròng" value={formatVnd(transactions.filter(t => t.status === 'COMPLETED').reduce((a, t) => a + Math.max(t.quote.sAVnd, 0) + Math.max(t.quote.sBVnd, 0), 0))}
-              color="violet" />
-            <KpiCard icon={AlertCircle} label="Case liên quan thanh toán" value={cases.filter(c => c.caseType === 'PAYMENT_ISSUE' && c.status !== 'CLOSED').length}
-              color="red" onClick={() => setCurrentTab('cases')} />
           </div>
         )}
       </div>

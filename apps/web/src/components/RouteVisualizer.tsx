@@ -68,13 +68,13 @@ export const RouteVisualizer: React.FC<RouteProps> = ({
           <div className="relative pl-6 space-y-3 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-emerald-500">
             <div className="relative">
               <div className="absolute -left-6 top-1 w-3 h-3 rounded-full bg-emerald-600 ring-4 ring-emerald-100"></div>
-              <div className="text-xs font-bold text-slate-800">Kho Bên A (Điểm lấy vỏ rỗng):</div>
+              <div className="text-xs font-bold text-slate-800">Kho nhà cung cấp (Điểm lấy vỏ rỗng):</div>
               <div className="text-xs text-slate-600 font-medium">{locationA}</div>
             </div>
 
             <div className="relative">
               <div className="absolute -left-6 top-1 w-3 h-3 rounded-full bg-emerald-500 ring-4 ring-emerald-100"></div>
-              <div className="text-xs font-bold text-slate-800">Kho Bên B (Đóng hàng xuất khẩu):</div>
+              <div className="text-xs font-bold text-slate-800">Kho đơn vị cần vỏ (Đóng hàng xuất khẩu):</div>
               <div className="text-xs text-slate-600 font-medium">{locationB}</div>
             </div>
           </div>
@@ -99,12 +99,12 @@ export const RouteVisualizer: React.FC<RouteProps> = ({
 
           <div className="space-y-2 text-xs text-slate-600">
             <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
-              <span>Chuyến 1: A kéo cont rỗng hạ về Depot ({depotReturn})</span>
-              <span className="text-rose-600 font-mono font-bold">+T_A</span>
+              <span>Chuyến 1: Nhà cung cấp đưa cont rỗng về Depot ({depotReturn})</span>
+              <span className="text-rose-600 font-mono font-bold">+Cước hạ</span>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
-              <span>Chuyến 2: B thuê xe kéo cont rỗng từ Depot về đóng hàng</span>
-              <span className="text-rose-600 font-mono font-bold">+T_B</span>
+              <span>Chuyến 2: Đơn vị cần vỏ thuê xe kéo cont rỗng từ Depot về đóng hàng</span>
+              <span className="text-rose-600 font-mono font-bold">+Cước lấy</span>
             </div>
           </div>
 
@@ -117,4 +117,3 @@ export const RouteVisualizer: React.FC<RouteProps> = ({
     </div>
   );
 };
-

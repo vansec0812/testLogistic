@@ -45,6 +45,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     !['COMPLETED', 'CANCELLED', 'REJECTED', 'EXPIRED'].includes(t.status)
   ).length;
   const unreadChatTotal = chatThreads.reduce((sum, t) => {
+    if (currentRole === 'OPS') {
+      return sum + (t.unreadCountA ?? 0) + (t.unreadCountB ?? 0);
+    }
     return sum + (currentRole === 'ENTERPRISE_A' ? (t.unreadCountA ?? 0) : (t.unreadCountB ?? 0));
   }, 0);
 
@@ -65,14 +68,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'offers',
       label: currentRole === 'OPS' ? 'Thẩm định Nguồn vỏ' : 'Offer nguồn vỏ của tôi',
       icon: PackageOpen,
-      roles: ['ENTERPRISE_A', 'OPS'], // Bên B KHÔNG thấy Offers
+      roles: ['ENTERPRISE_A', 'ENTERPRISE_BOTH', 'OPS'],
       badge: currentRole === 'OPS' && pendingOffers > 0 ? pendingOffers : undefined,
     },
     {
       id: 'requests',
-      label: currentRole === 'OPS' ? 'Thẩm định Nhu cầu B' : 'Nhu cầu tìm vỏ cont',
+      label: currentRole === 'OPS' ? 'Thẩm định Nhu cầu cần vỏ' : 'Nhu cầu tìm vỏ cont',
       icon: Search,
-      roles: ['ENTERPRISE_A', 'ENTERPRISE_B', 'OPS'], // Bên A chỉ xem nhu cầu OPEN, không tạo/sửa
+      roles: ['ENTERPRISE_A', 'ENTERPRISE_B', 'ENTERPRISE_BOTH', 'OPS'],
       badge: currentRole === 'OPS' && pendingRequests > 0 ? pendingRequests : undefined,
     },
     {
@@ -91,7 +94,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'ops',
       label: 'Cổng Vận Hành Ops',
       icon: HeadphonesIcon,
-      roles: ['OPS'], // Chỉ Ops thấy Ops Portal
+      roles: ['OPS'],
       badge: openCases > 0 ? openCases : undefined,
     },
     {
@@ -104,7 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'database',
       label: 'Cơ sở dữ liệu',
       icon: Database,
-      roles: ['OPS'], // Chỉ Ops thấy Database
+      roles: ['OPS'],
     },
   ];
 

@@ -72,10 +72,10 @@ export const RequestStatusBadge: React.FC<{ status: RequestStatus } & BadgeProps
 // ==================== TRANSACTION STATUS ====================
 
 const TXN_STATUS_MAP: Record<TransactionStatus, StatusBadgeInfo & { step?: number }> = {
-  MATCH_REQUESTED: { label: 'Match chờ Bên A', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  MATCH_REQUESTED: { label: 'Match chờ nhà cung cấp', className: 'bg-amber-50 text-amber-700 border-amber-200' },
   MATCH_ACCEPTED: { label: 'Match đã được chấp nhận', className: 'bg-blue-50 text-blue-700 border-blue-200' },
   DISPUTED: { label: 'Đang tranh chấp', className: 'bg-rose-50 text-rose-700 border-rose-200' },
-  PICKUP_REFUSED: { label: 'Bên B từ chối nhận', className: 'bg-rose-50 text-rose-700 border-rose-200' },
+  PICKUP_REFUSED: { label: 'Đơn vị cần vỏ từ chối nhận', className: 'bg-rose-50 text-rose-700 border-rose-200' },
   CARRIER_REJECTED: { label: 'Carrier từ chối', className: 'bg-red-50 text-red-700 border-red-200' },
   PAYMENT_EXPIRED: { label: 'Quá hạn thanh toán', className: 'bg-red-50 text-red-700 border-red-200' },
   NEGOTIATING: { label: 'Bước 1 · Thương lượng', className: 'bg-blue-50 text-blue-700 border-blue-200', step: 1 },

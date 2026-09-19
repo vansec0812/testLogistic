@@ -30,9 +30,7 @@ interface AuthContextType {
   canCreateOffers: boolean;
   canCreateRequests: boolean;
   canOpsReview: boolean;
-  canFinanceReconcile: boolean;
-  canAdmin: boolean;
-  // Kiểm tra xem user có phải là Bên A hay B trong giao dịch cụ thể không
+  // Kiểm tra xem user có thuộc đúng đối tác trong giao dịch cụ thể không
   isPartyA: (companyAId: string) => boolean;
   isPartyB: (companyBId: string) => boolean;
 }
@@ -41,8 +39,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const ROLE_OPTIONS: Array<{ value: UserRole; label: string; icon: string; desc: string }> = [
-  { value: 'ENTERPRISE_A', label: 'Bên A · Quản lý nguồn vỏ', icon: '🏭', desc: 'Hưng Thịnh Logistics — Đơn vị cần trả vỏ rỗng' },
-  { value: 'ENTERPRISE_B', label: 'Bên B · Cần vỏ container', icon: '📦', desc: 'Toàn Cầu Export Corp — Đơn vị đóng hàng xuất khẩu' },
+  { value: 'ENTERPRISE_A', label: 'Nhà cung cấp Container', icon: '🏭', desc: 'Hưng Thịnh Logistics — Đơn vị cung cấp vỏ rỗng' },
+  { value: 'ENTERPRISE_B', label: 'Cần vỏ Container', icon: '📦', desc: 'Toàn Cầu Export Corp — Đơn vị đóng hàng xuất khẩu' },
   { value: 'OPS', label: 'Vận hành · ECont Ops', icon: '⚙️', desc: 'Trung tâm Vận hành, Duyệt hãng tàu & Đối soát ECont' },
 ];
 
@@ -65,34 +63,27 @@ export const ECONT_OPS_COMPANY: Company = {
 
 const ROLE_INFO: Record<UserRole, RoleBadge> = {
   ENTERPRISE_A: {
-    label: 'Bên A · Đơn vị quản lý nguồn vỏ',
+    label: 'Nhà cung cấp Container',
     color: 'text-emerald-700 border-emerald-300',
     bgColor: 'bg-emerald-50',
     desc: 'Hưng Thịnh Logistics — Quản lý cont rỗng nhập khẩu cần trả vỏ',
     icon: '🏭',
   },
   ENTERPRISE_B: {
-    label: 'Bên B · Đơn vị có nhu cầu',
+    label: 'Cần vỏ Container',
     color: 'text-blue-700 border-blue-300',
     bgColor: 'bg-blue-50',
     desc: 'Toàn Cầu Export Corp — Tìm vỏ cont đóng hàng xuất khẩu',
     icon: '📦',
   },
+  ENTERPRISE_BOTH: {
+    label: 'Nhà cung cấp & Cần vỏ Container',
+    color: 'text-indigo-700 border-indigo-300',
+    bgColor: 'bg-indigo-50',
+    desc: 'Tài khoản doanh nghiệp có đầy đủ quyền cung cấp và tìm vỏ Container',
+    icon: '↔️',
+  },
   OPS: {
-    label: 'Vận hành & Điều phối',
-    color: 'text-amber-700 border-amber-300',
-    bgColor: 'bg-amber-50',
-    desc: 'Điều phối viên ECont — Thẩm định doanh nghiệp, duyệt RU, điều phối & xử lý tranh chấp',
-    icon: '⚙️',
-  },
-  FINANCE: {
-    label: 'Vận hành & Điều phối',
-    color: 'text-amber-700 border-amber-300',
-    bgColor: 'bg-amber-50',
-    desc: 'Điều phối viên ECont — Thẩm định doanh nghiệp, duyệt RU, điều phối & xử lý tranh chấp',
-    icon: '⚙️',
-  },
-  SUPER_ADMIN: {
     label: 'Vận hành & Điều phối',
     color: 'text-amber-700 border-amber-300',
     bgColor: 'bg-amber-50',
@@ -115,20 +106,16 @@ const ROLE_USERS: Record<UserRole, { companyIndex: number; email: string; name: 
     name: 'Trần Thị Mai (Trưởng phòng XNK)',
     userId: 'USR-B01',
   },
+  ENTERPRISE_BOTH: {
+    // Demo account belongs to a verified enterprise so the dual-role profile
+    // can exercise both Offer and Booking flows instead of falling back to Ops.
+    companyIndex: 0,
+    email: 'doanhnghiep@econt.vn',
+    name: 'Doanh nghiệp ECont (Cả hai vai trò)',
+    userId: 'USR-BOTH01',
+  },
   OPS: {
     companyIndex: -1, // Use ECONT_OPS_COMPANY
-    email: 'ops.lead@econt.vn',
-    name: 'Vũ Minh Trí (Trưởng ban Điều phối & Vận hành)',
-    userId: 'USR-OPS01',
-  },
-  FINANCE: {
-    companyIndex: -1,
-    email: 'ops.lead@econt.vn',
-    name: 'Vũ Minh Trí (Trưởng ban Điều phối & Vận hành)',
-    userId: 'USR-OPS01',
-  },
-  SUPER_ADMIN: {
-    companyIndex: -1,
     email: 'ops.lead@econt.vn',
     name: 'Vũ Minh Trí (Trưởng ban Điều phối & Vận hành)',
     userId: 'USR-OPS01',
@@ -141,8 +128,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const [currentRole, setCurrentRole] = useState<UserRole>(() => {
-    const saved = localStorage.getItem('econt_active_role') as UserRole;
-    return saved && ['ENTERPRISE_A', 'ENTERPRISE_B', 'OPS'].includes(saved) ? saved : 'ENTERPRISE_A';
+    const saved = localStorage.getItem('econt_active_role');
+    return saved && ['ENTERPRISE_A', 'ENTERPRISE_B', 'ENTERPRISE_BOTH', 'OPS'].includes(saved)
+      ? saved as UserRole
+      : 'ENTERPRISE_A';
   });
 
   // (Optional) We can also save current logged-in user details to override ROLE_USERS,
@@ -215,18 +204,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const setRole = (role: UserRole) => {
-    // If legacy role passed, map to OPS
-    const normalizedRole = (role === 'FINANCE' || role === 'SUPER_ADMIN') ? 'OPS' : role;
-    setCurrentRole(normalizedRole);
+    setCurrentRole(role);
   };
 
   const value = useMemo((): AuthContextType => {
     const userInfo = ROLE_USERS[currentRole] || ROLE_USERS.OPS;
-    const currentCompany = (currentRole === 'OPS' || currentRole === 'FINANCE' || currentRole === 'SUPER_ADMIN')
+    const currentCompany = currentRole === 'OPS'
       ? ECONT_OPS_COMPANY
       : activeCompany || (userInfo.companyIndex === -1 ? ECONT_OPS_COMPANY : INITIAL_COMPANIES[userInfo.companyIndex]);
 
-    const isOps = currentRole === 'OPS' || currentRole === 'FINANCE' || currentRole === 'SUPER_ADMIN';
+    const isOps = currentRole === 'OPS';
+    const hasSupplierRole = currentRole === 'ENTERPRISE_A' || currentRole === 'ENTERPRISE_BOTH';
+    const hasRequesterRole = currentRole === 'ENTERPRISE_B' || currentRole === 'ENTERPRISE_BOTH';
 
     return {
       isAuthenticated,
@@ -239,15 +228,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       currentUserName: activeUserName || userInfo.name,
       currentUserId: activeUserId || userInfo.userId,
       roleBadge: ROLE_INFO[currentRole] || ROLE_INFO.OPS,
-      canCreateOffers: currentRole === 'ENTERPRISE_A' && currentCompany.verificationStatus === 'VERIFIED',
-      canCreateRequests: currentRole === 'ENTERPRISE_B' && currentCompany.verificationStatus === 'VERIFIED',
+      canCreateOffers: hasSupplierRole && currentCompany.verificationStatus === 'VERIFIED',
+      canCreateRequests: hasRequesterRole && currentCompany.verificationStatus === 'VERIFIED',
       canOpsReview: isOps,
-      canFinanceReconcile: isOps,
-      canAdmin: isOps,
       isPartyA: (companyAId: string) =>
-        currentRole === 'ENTERPRISE_A' && currentCompany.id === companyAId,
+        hasSupplierRole && currentCompany.id === companyAId,
       isPartyB: (companyBId: string) =>
-        currentRole === 'ENTERPRISE_B' && currentCompany.id === companyBId,
+        hasRequesterRole && currentCompany.id === companyBId,
     };
   }, [currentRole, isAuthenticated, activeUserEmail, activeUserName, activeUserId, activeCompany]);
 

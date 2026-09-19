@@ -74,7 +74,7 @@ export const PricingBreakdownCard: React.FC<PricingBreakdownCardProps> = ({
       {/* Summary row: A savings vs B savings */}
       <div className="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100">
         <div className="px-4 py-3">
-          <p className="text-xs text-slate-500 font-medium">Bên A tiết kiệm ròng</p>
+          <p className="text-xs text-slate-500 font-medium">Nhà cung cấp tiết kiệm ròng</p>
           <p className={`text-base sm:text-lg font-bold font-mono mt-0.5 ${quote.negativeSavingA ? 'text-red-600' : 'text-slate-900'}`}>
             {quote.negativeSavingA ? '- ' : ''}{formatVnd(Math.abs(quote.sAVnd))}
           </p>
@@ -83,7 +83,7 @@ export const PricingBreakdownCard: React.FC<PricingBreakdownCardProps> = ({
           </p>
         </div>
         <div className="px-4 py-3">
-          <p className="text-xs text-slate-500 font-medium">Bên B tiết kiệm ròng</p>
+          <p className="text-xs text-slate-500 font-medium">Đơn vị cần vỏ tiết kiệm ròng</p>
           <p className={`text-base sm:text-lg font-bold font-mono mt-0.5 ${quote.negativeSavingB ? 'text-red-600' : 'text-slate-900'}`}>
             {quote.negativeSavingB ? '- ' : ''}{formatVnd(Math.abs(quote.sBVnd))}
           </p>
@@ -99,7 +99,7 @@ export const PricingBreakdownCard: React.FC<PricingBreakdownCardProps> = ({
           <div>
             <p className="text-xs text-slate-500 font-medium">ECont thu (phí RU + phí nền tảng)</p>
             <p className="text-sm sm:text-base font-bold text-slate-800 font-mono mt-0.5">
-              A: {formatVnd(quote.econtCollectedFromA)} · B: {formatVnd(quote.econtCollectedFromB)}
+              Nhà cung cấp: {formatVnd(quote.econtCollectedFromA)} · Đơn vị cần vỏ: {formatVnd(quote.econtCollectedFromB)}
             </p>
           </div>
           <div className="text-right">
@@ -117,33 +117,33 @@ export const PricingBreakdownCard: React.FC<PricingBreakdownCardProps> = ({
           {/* Input parameters */}
           <div className="space-y-1.5">
             <p className="text-xs font-bold text-slate-400 uppercase">Thông số đầu vào</p>
-            <Row label="T_A · Cước hạ cont về depot (Bên A)" value={formatVnd(quote.tAVnd)} status={quote.tAStatus} />
-            <Row label="T_B · Cước lấy cont từ depot (Bên B)" value={formatVnd(quote.tBVnd)} status={quote.tBStatus} />
+            <Row label="Cước hạ cont về depot (nhà cung cấp)" value={formatVnd(quote.tAVnd)} status={quote.tAStatus} />
+            <Row label="Cước lấy cont từ depot (đơn vị cần vỏ)" value={formatVnd(quote.tBVnd)} status={quote.tBStatus} />
             <Row label="F_RU · Phí duyệt RU hãng tàu" value={formatVnd(quote.fRuVnd)} status={quote.fRuStatus} />
-            <Row label={`α · Tỷ lệ Bên A gánh F_RU`} value={`${(quote.shareAlpha * 100).toFixed(0)}%`} />
-            <Row label="Cước xe A→B (Bên B tự bố trí)" value={formatVnd(quote.truckingAbVnd)} status={quote.truckingStatus} note="B thanh toán riêng" />
-            {quote.extrasAVnd > 0 && <Row label="Chi phí phát sinh A" value={formatVnd(quote.extrasAVnd)} />}
-            {quote.extrasBVnd > 0 && <Row label="Chi phí phát sinh B" value={formatVnd(quote.extrasBVnd)} />}
+            <Row label={`α · Tỷ lệ nhà cung cấp gánh F_RU`} value={`${(quote.shareAlpha * 100).toFixed(0)}%`} />
+            <Row label="Cước xe giữa hai điểm (đơn vị cần vỏ tự bố trí)" value={formatVnd(quote.truckingAbVnd)} status={quote.truckingStatus} note="Đơn vị cần vỏ thanh toán riêng" />
+            {quote.extrasAVnd > 0 && <Row label="Chi phí phát sinh của nhà cung cấp" value={formatVnd(quote.extrasAVnd)} />}
+            {quote.extrasBVnd > 0 && <Row label="Chi phí phát sinh của đơn vị cần vỏ" value={formatVnd(quote.extrasBVnd)} />}
           </div>
 
           {/* Calculation steps */}
           <div className="space-y-1.5 border-t border-dashed border-slate-200 pt-2">
             <p className="text-xs font-bold text-slate-400 uppercase">Tính toán</p>
-            <Row label="R_A0 · Chi phí mới phát sinh A" value={formatVnd(quote.rA0Vnd)} note="α×F_RU + extras_A" />
-            <Row label="R_B0 · Chi phí mới phát sinh B" value={formatVnd(quote.rB0Vnd)} note="trucking + (1-α)×F_RU + extras_B" />
-            <Row label="G_A · Tiết kiệm gộp A" value={formatVnd(quote.gAVnd)} highlight={quote.gAVnd < 0 ? 'negative' : 'positive'} />
-            <Row label="G_B · Tiết kiệm gộp B" value={formatVnd(quote.gBVnd)} highlight={quote.gBVnd < 0 ? 'negative' : 'positive'} />
-            <Row label="F_A · Phí nền tảng A (25% × max(G_A,0))" value={formatVnd(quote.fAVnd)} />
-            <Row label="F_B · Phí nền tảng B (15% × max(G_B,0))" value={formatVnd(quote.fBVnd)} />
+            <Row label="Chi phí mới phát sinh của nhà cung cấp" value={formatVnd(quote.rA0Vnd)} note="phần RU + chi phí riêng" />
+            <Row label="Chi phí mới phát sinh của đơn vị cần vỏ" value={formatVnd(quote.rB0Vnd)} note="cước xe + phần RU + chi phí riêng" />
+            <Row label="Tiết kiệm gộp của nhà cung cấp" value={formatVnd(quote.gAVnd)} highlight={quote.gAVnd < 0 ? 'negative' : 'positive'} />
+            <Row label="Tiết kiệm gộp của đơn vị cần vỏ" value={formatVnd(quote.gBVnd)} highlight={quote.gBVnd < 0 ? 'negative' : 'positive'} />
+            <Row label="Phí nền tảng của nhà cung cấp" value={formatVnd(quote.fAVnd)} />
+            <Row label="Phí nền tảng của đơn vị cần vỏ" value={formatVnd(quote.fBVnd)} />
           </div>
 
           {/* Results */}
           <div className="space-y-1.5 border-t border-dashed border-slate-200 pt-2">
             <p className="text-xs font-bold text-slate-400 uppercase">Kết quả</p>
-            <Row label="S_A · Tiết kiệm ròng A" value={formatVnd(quote.sAVnd)} highlight={quote.sAVnd < 0 ? 'negative' : 'positive'} bold />
-            <Row label="S_B · Tiết kiệm ròng B" value={formatVnd(quote.sBVnd)} highlight={quote.sBVnd < 0 ? 'negative' : 'positive'} bold />
-            <Row label="ECont thu từ A" value={formatVnd(quote.econtCollectedFromA)} note="α×F_RU + F_A" />
-            <Row label="ECont thu từ B" value={formatVnd(quote.econtCollectedFromB)} note="(1-α)×F_RU + F_B" />
+            <Row label="Tiết kiệm ròng của nhà cung cấp" value={formatVnd(quote.sAVnd)} highlight={quote.sAVnd < 0 ? 'negative' : 'positive'} bold />
+            <Row label="Tiết kiệm ròng của đơn vị cần vỏ" value={formatVnd(quote.sBVnd)} highlight={quote.sBVnd < 0 ? 'negative' : 'positive'} bold />
+            <Row label="ECont thu từ nhà cung cấp" value={formatVnd(quote.econtCollectedFromA)} note="phần RU + phí nền tảng" />
+            <Row label="ECont thu từ đơn vị cần vỏ" value={formatVnd(quote.econtCollectedFromB)} note="phần RU + phí nền tảng" />
           </div>
 
           {/* Transaction binding note */}

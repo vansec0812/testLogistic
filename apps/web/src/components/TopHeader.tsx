@@ -37,7 +37,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   },
   chat: {
     title: 'Tin nhắn trao đổi trực tiếp',
-    subtitle: 'Trao đổi nghiệp vụ giữa Bên A, Bên B và Đội ngũ Vận hành Ops',
+    subtitle: 'Trao đổi nghiệp vụ giữa nhà cung cấp, đơn vị cần vỏ và Đội ngũ Vận hành Ops',
   },
   ops: {
     title: 'Cổng Vận Hành ECont',
