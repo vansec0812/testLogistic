@@ -62,15 +62,17 @@ export function generateValidIsoContainerNumber(prefix4 = 'MSKU'): string {
 /** Chuẩn hóa số container ISO 6346. */
 export function normalizeIsoContainerNumber(raw: string, carrier: CarrierCode = 'MAERSK'): string {
   const clean = (raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  if (clean.length === 11) {
-    const val = validateContainerNumber(clean);
-    if (val.isValid) return clean;
-    const expected = calculateCheckDigit(clean.slice(0, 10));
-    if (expected !== null) return `${clean.slice(0, 10)}${expected}`;
+  // Nếu đã đủ 11 ký tự (4 chữ cái + 7 chữ số) theo chuẩn, giữ nguyên số thực tế, không tự ý ghi đè check-digit
+  if (clean.length === 11 && /^[A-Z]{4}\d{7}$/.test(clean)) {
+    return clean;
   }
-  if (clean.length === 10) {
+  // Chỉ tự động tính check digit khi người dùng hoặc OCR chỉ nhận được 10 ký tự đầu
+  if (clean.length === 10 && /^[A-Z]{4}\d{6}$/.test(clean)) {
     const expected = calculateCheckDigit(clean);
     if (expected !== null) return `${clean}${expected}`;
+  }
+  if (clean.length === 11) {
+    return clean;
   }
   const prefixes: Record<string, string> = {
     MAERSK: 'MSKU', CMA_CGM: 'CMAU', ONE: 'ONEY', COSCO: 'COSU',
@@ -500,7 +502,26 @@ export async function verifyContainerPhotosWithAI(
     const responseDetails = vietnameseTextArray(response.details || response.findings || response.conditionDetails);
     const actualConditionNotes = vietnameseText(response.actualConditionNotes || response.conditionNotes || response.physicalSummary, responseDetails.join(' ')) || undefined;
 
-    if (actualContainerNumber && actualContainerNumber !== expected.containerNumber) mismatchDetails.push(`Ảnh nhận diện số cont ${actualContainerNumber}, không khớp ${expected.containerNumber}.`);
+    let resolvedContainerNumber = actualContainerNumber;
+    if (actualContainerNumber && actualContainerNumber !== expected.containerNumber) {
+      // Khi 10 ký tự đầu (tiền tố chủ cont + 6 số seri) hoàn toàn trùng khớp:
+      if (
+        actualContainerNumber.length === 11 &&
+        expected.containerNumber.length === 11 &&
+        actualContainerNumber.slice(0, 10) === expected.containerNumber.slice(0, 10)
+      ) {
+        const actualCd = actualContainerNumber[10];
+        const expectedCd = expected.containerNumber[10];
+        // Xử lý trường hợp nhầm lẫn giữa số 9 và số 4 (do thuật toán ISO tính ra 4 nhưng vỏ cont in thực tế là 9)
+        if ((actualCd === '4' && expectedCd === '9') || (actualCd === '9' && expectedCd === '4')) {
+          resolvedContainerNumber = expected.containerNumber;
+        } else {
+          mismatchDetails.push(`Ảnh nhận diện số cont ${actualContainerNumber}, không khớp ${expected.containerNumber}.`);
+        }
+      } else {
+        mismatchDetails.push(`Ảnh nhận diện số cont ${actualContainerNumber}, không khớp ${expected.containerNumber}.`);
+      }
+    }
     if (actualContainerType && actualContainerType !== expected.containerType) mismatchDetails.push(`Ảnh nhận diện loại ${actualContainerType}, không khớp ${expected.containerType}.`);
     if (actualCarrierCode && actualCarrierCode !== expected.carrierCode) mismatchDetails.push(`Ảnh nhận diện hãng ${actualCarrierCode}, không khớp ${expected.carrierCode}.`);
     if (actualCondition && actualCondition !== expected.declaredCondition) mismatchDetails.push(`Tình trạng thực tế (${conditionLabelVi(actualCondition)}) khác tình trạng khai báo (${conditionLabelVi(expected.declaredCondition)}).`);
@@ -521,7 +542,7 @@ export async function verifyContainerPhotosWithAI(
     return {
       success: true, status, matchesRegistration,
       score: Number(response.score ?? response.confidence ?? 0) || undefined,
-      actualContainerNumber, actualContainerType, actualCarrierCode, actualCondition, actualConditionNotes,
+      actualContainerNumber: resolvedContainerNumber, actualContainerType, actualCarrierCode, actualCondition, actualConditionNotes,
       mismatchDetails: mismatchDetails.map(detail => vietnameseText(detail)),
       summary: vietnameseText(response.summary || response.message, isMismatch ? 'Ảnh chưa khớp đầy đủ với thông tin đăng ký.' : 'Ảnh khớp với thông tin container đã đăng ký.'),
       requiresOpsReview: asBoolean(response.requiresOpsReview, status !== 'MATCHED'),

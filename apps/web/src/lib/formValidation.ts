@@ -42,6 +42,9 @@ export function setError(errors: FieldErrors, field: string, message?: string): 
 export function validateIsoContainer(value: string | undefined): string | undefined {
   const missing = required(value, 'Vui lòng nhập số container.');
   if (missing) return missing;
-  const result = validateContainerNumber(value!.trim().toUpperCase());
-  return result.isValid ? undefined : (result.message || 'Số container không hợp lệ theo ISO 6346.');
+  const clean = value!.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!/^[A-Z]{4}\d{7}$/.test(clean)) {
+    return 'Số container phải gồm đúng 11 ký tự: 4 chữ cái in hoa và 7 chữ số (ví dụ: TGBU2415789).';
+  }
+  return undefined;
 }

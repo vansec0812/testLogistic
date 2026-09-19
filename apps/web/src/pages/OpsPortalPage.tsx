@@ -40,6 +40,7 @@ import {
 } from '../components/StatusBadge';
 import { Company, CompanyStatus, Offer } from '../types';
 import { DateTimeInput } from '../components/DateInput';
+import { getOfferAiConditionTitle as getSharedOfferAiConditionTitle, sortOffersForOps } from '../services/offerReview';
 
 interface OpsPortalPageProps {
   setCurrentTab?: (tab: string) => void;
@@ -66,6 +67,39 @@ function getOfferManualReviewReasons(offer: Offer): string[] {
   if (ai.verificationStatus === 'ERROR') reasons.push('AI trả về lỗi khi xử lý hồ sơ.');
   if (!ai.passed && !reasons.length) reasons.push('AI chưa kết luận hồ sơ đạt điều kiện tự động duyệt.');
   return reasons;
+}
+
+function getOfferAiConditionTitle(offer: Offer): string {
+  const ai = offer.aiCheck;
+  if (!ai) return 'Chưa nhận được kết quả AI đối chiếu ảnh container';
+
+  const evidence = [ai.photoConditionNotes, ai.summary, ...(ai.details || [])]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  if (/mờ|blur|không rõ|khó đọc|unreadable/.test(evidence)) {
+    return 'Ảnh container mờ hoặc chưa đủ rõ để đối chiếu';
+  }
+  if (/mã số|số cont|container number|container no|không khớp|không chính xác|mismatch/.test(evidence)) {
+    return 'Mã số container không khớp thông tin đăng ký';
+  }
+  if (ai.photoCondition === 'MAJOR_DAMAGE' || /thủng|móp nặng|rỉ sét nặng|hư hỏng nặng/.test(evidence)) {
+    return 'Chất lượng container có vấn đề nghiêm trọng';
+  }
+  if (ai.photoCondition === 'MINOR_DAMAGE' || /xước|trầy|móp nhẹ|rỉ nhẹ|hư hỏng nhẹ/.test(evidence)) {
+    return 'Container có dấu hiệu xước hoặc hư hỏng nhẹ';
+  }
+  if (!ai.photoChecked) return 'Chưa có kết quả đối chiếu ảnh container';
+  if (ai.edoValid === false || ai.edoAnomaly) return 'eDO có dấu hiệu cần Ops xác minh';
+  if (ai.photoCondition === 'GOOD' && ai.photoChecked && ai.passed) {
+    return 'Ảnh container khớp thông tin đăng ký, tình trạng đạt chuẩn';
+  }
+
+  const shortDescription = ai.photoConditionNotes || ai.details?.[0] || ai.summary;
+  if (shortDescription) {
+    return shortDescription.length > 110 ? `${shortDescription.slice(0, 107)}...` : shortDescription;
+  }
+  return 'AI chưa phân loại được tình trạng; Ops cần kiểm tra ảnh';
 }
 
 export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
@@ -140,7 +174,10 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
 
   // Filter queues
   const carrierPendingTxns = transactions.filter(t => t.status === 'PENDING_CARRIER');
-  const underReviewOffers = offers.filter(o => o.status === 'UNDER_REVIEW');
+  const pendingOffers = offers.filter(o => o.status === 'UNDER_REVIEW');
+  const underReviewOffers = sortOffersForOps(
+    offers.filter(o => o.status === 'UNDER_REVIEW' || o.status === 'AVAILABLE')
+  );
   const underReviewRequests = requests.filter(r => r.status === 'UNDER_REVIEW');
   const openCases = cases.filter(c => c.status === 'OPEN' || c.status === 'IN_REVIEW');
   const aiReviewAssets = assets.filter(a =>
@@ -338,7 +375,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
         <div className="flex items-center gap-2">
           <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5" />
-            <span>{carrierPendingTxns.length + underReviewOffers.length + underReviewRequests.length + aiReviewAssets.length + openCases.length} tác vụ</span>
+            <span>{carrierPendingTxns.length + pendingOffers.length + underReviewRequests.length + aiReviewAssets.length + openCases.length} tác vụ</span>
           </span>
         </div>
       </div>
@@ -376,7 +413,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
             <PackageOpen className="w-5 h-5 text-emerald-600" />
           </div>
           <div className="text-2xl sm:text-3xl font-bold font-mono text-slate-900 mt-2">
-            {underReviewOffers.length}
+            {pendingOffers.length}
           </div>
           <p className="text-xs text-emerald-700 font-medium mt-1">Kiểm tra ảnh & vị trí vỏ</p>
         </button>
@@ -456,7 +493,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Thẩm định Nguồn vỏ ({underReviewOffers.length})
+            Thẩm định Nguồn vỏ ({pendingOffers.length})
           </button>
           <button
             onClick={() => setActiveTab('requests')}
@@ -656,15 +693,14 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                       </div>
                     )}
 
-                    {(o.aiCheck?.photoCondition || o.aiCheck?.photoConditionNotes) && (
-                      <div className="p-3 rounded-xl border border-violet-200 bg-violet-50/60 text-xs text-violet-950 space-y-1.5">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <strong>Tình trạng thực tế do AI nhận diện:</strong>
-                          {o.aiCheck.photoCondition && <ConditionBadge condition={o.aiCheck.photoCondition} size="xs" />}
-                        </div>
-                        {o.aiCheck.photoConditionNotes && <p className="leading-relaxed">{o.aiCheck.photoConditionNotes}</p>}
+                    <div className="p-3 rounded-xl border border-violet-200 bg-violet-50/60 text-xs text-violet-950 space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <strong>Kết quả tình trạng thực tế do AI báo về:</strong>
+                        {o.aiCheck?.photoCondition && <ConditionBadge condition={o.aiCheck.photoCondition} size="xs" />}
                       </div>
-                    )}
+                      <p className="font-semibold leading-relaxed">{getSharedOfferAiConditionTitle(o)}</p>
+                      {o.aiCheck?.photoConditionNotes && <p className="leading-relaxed">{o.aiCheck.photoConditionNotes}</p>}
+                    </div>
 
                     {/* Bộ ảnh Container phục vụ Ops kiểm tra thủ công */}
                     <div
@@ -689,6 +725,8 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                     </div>
 
                     {/* Kết luận bắt buộc trước khi Ops quyết định */}
+                    {o.status === 'UNDER_REVIEW' && (
+                      <>
                     <div className="pt-3 border-t border-slate-200 space-y-2">
                       <label htmlFor={`offerReviewNote-${o.id}`} className="text-xs font-bold text-slate-800 block">
                         Kết luận thẩm định Offer <RequiredMark />
@@ -730,6 +768,13 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                         </div>
                       </div>
                     </div>
+                      </>
+                    )}
+                    {o.status === 'AVAILABLE' && (
+                      <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-xs text-emerald-800">
+                        Offer đã được Ops duyệt và đang sẵn sàng để ghép lệnh. Thông tin này chỉ hiển thị trong hàng đợi để Ops tra cứu.
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

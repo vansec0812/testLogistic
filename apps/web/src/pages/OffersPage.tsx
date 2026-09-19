@@ -32,6 +32,7 @@ import {
   setError, validateIsoContainer
 } from '../lib/formValidation';
 import { DEFAULT_BASELINE_DEPOT_COST_VND, OFFER_PHOTO_ANGLE_LABELS } from '../services/qaRules';
+import { getOfferAiConditionTitle, sortOffersForOps } from '../services/offerReview';
 
 interface OffersPageProps {
   setCurrentTab?: (tab: string) => void;
@@ -141,6 +142,12 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
     score: number;
     summary: string;
     hasAnomaly: boolean;
+    matchesRegistration?: boolean;
+    actualContainerNumber?: string;
+    actualContainerType?: '20GP' | '40HC';
+    actualCarrierCode?: string;
+    actualConditionNotes?: string;
+    mismatchDetails: string[];
     details?: string[];
     edoValid: boolean;
     edoAnomaly: boolean;
@@ -220,7 +227,12 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
     if (filterStatus !== 'all') {
       list = list.filter(o => o.status === filterStatus);
     }
-    return list;
+    if (currentRole === 'OPS') return sortOffersForOps(list);
+    return [...list].sort((a, b) => {
+      const createdAtA = new Date(a.createdAt || 0).getTime() || 0;
+      const createdAtB = new Date(b.createdAt || 0).getTime() || 0;
+      return createdAtB - createdAtA;
+    });
   }, [offers, currentRole, currentCompany.id, search, filterStatus]);
 
   const handleEdoFileSelection = async (file: File) => {
@@ -377,6 +389,12 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
         score: Math.round(edoResult.score || photoResult.score || 0),
         summary: `eDO: ${edoResult.summary} Ảnh: ${photoResult.summary}`,
         hasAnomaly,
+        matchesRegistration: photoResult.matchesRegistration,
+        actualContainerNumber: photoResult.actualContainerNumber,
+        actualContainerType: photoResult.actualContainerType,
+        actualCarrierCode: photoResult.actualCarrierCode,
+        actualConditionNotes: photoResult.actualConditionNotes,
+        mismatchDetails: photoResult.mismatchDetails,
         details,
         edoValid: edoResult.isLegal,
         edoAnomaly: edoResult.hasAnomaly,
@@ -447,6 +465,12 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
         photoAiResult ? `Ảnh: ${photoAiResult.summary}` : '',
       ].filter(Boolean).join(' '),
       hasAnomaly: Boolean(edoVerification?.hasAnomaly || (photoAiResult && photoAiResult.status !== 'MATCHED')),
+      matchesRegistration: photoAiResult?.matchesRegistration,
+      actualContainerNumber: photoAiResult?.actualContainerNumber,
+      actualContainerType: photoAiResult?.actualContainerType,
+      actualCarrierCode: photoAiResult?.actualCarrierCode,
+      actualConditionNotes: photoAiResult?.actualConditionNotes,
+      mismatchDetails: photoAiResult?.mismatchDetails || [],
       details: [
         ...(edoVerification?.details || []),
         ...(photoAiResult?.mismatchDetails || []),
@@ -485,6 +509,13 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
         score: persistedAiResult.score,
         summary: persistedAiResult.summary,
         hasAnomaly: persistedAiResult.hasAnomaly,
+        matchesRegistration: persistedAiResult.matchesRegistration,
+        actualContainerNumber: persistedAiResult.actualContainerNumber,
+        actualContainerType: persistedAiResult.actualContainerType,
+        actualCarrierCode: persistedAiResult.actualCarrierCode,
+        actualConditionNotes: persistedAiResult.actualConditionNotes,
+        mismatchDetails: persistedAiResult.mismatchDetails,
+        photoStatus: persistedAiResult.photoStatus,
         anomalyReason: persistedAiResult.verificationStatus === 'ANOMALY' ? persistedAiResult.summary : undefined,
         edoChecked: Boolean(edoVerification),
         edoValid: persistedAiResult.edoValid,
@@ -724,6 +755,13 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
         score: editPhotoAiResult.score ?? previousAi?.score ?? 0,
         summary: `${previousAi?.summary || 'Đã kiểm tra eDO'} Ảnh cập nhật: ${editPhotoAiResult.summary}`,
         hasAnomaly: Boolean(previousAi?.hasAnomaly || aiStatus !== 'MATCHED'),
+        matchesRegistration: editPhotoAiResult.matchesRegistration,
+        actualContainerNumber: editPhotoAiResult.actualContainerNumber ?? previousAi?.actualContainerNumber,
+        actualContainerType: editPhotoAiResult.actualContainerType ?? previousAi?.actualContainerType,
+        actualCarrierCode: editPhotoAiResult.actualCarrierCode ?? previousAi?.actualCarrierCode,
+        actualConditionNotes: editPhotoAiResult.actualConditionNotes ?? previousAi?.actualConditionNotes,
+        mismatchDetails: editPhotoAiResult.mismatchDetails,
+        photoStatus: aiStatus,
         anomalyReason: aiStatus === 'MATCHED' ? previousAi?.anomalyReason : editPhotoAiResult.summary,
         edoChecked: previousAi?.edoChecked,
         edoValid: previousAi?.edoValid,
@@ -745,6 +783,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
             passed: false,
             hasAnomaly: true,
             photoChecked: false,
+            photoStatus: 'MANUAL_REVIEW',
+            matchesRegistration: undefined,
+            mismatchDetails: ['Ảnh mới chờ Ops kiểm tra thủ công.'],
             verificationStatus: 'MANUAL_REVIEW',
             summary: `${previousAi.summary} Ảnh đã cập nhật nhưng chưa có kết quả AI đối chiếu.`,
             details: [...(previousAi.details || []), 'Ảnh mới chờ Ops kiểm tra thủ công.'],
@@ -755,6 +796,8 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
             summary: 'Ảnh đã cập nhật nhưng chưa có kết quả AI đối chiếu.',
             hasAnomaly: true,
             photoChecked: false,
+            photoStatus: 'MANUAL_REVIEW',
+            mismatchDetails: ['Ảnh mới chờ Ops kiểm tra thủ công.'],
             verificationStatus: 'MANUAL_REVIEW',
             details: ['Ảnh mới chờ Ops kiểm tra thủ công.'],
           };
@@ -1014,19 +1057,19 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-bold text-blue-900 flex items-center gap-1.5 text-xs sm:text-sm">
                   <FileText className="w-4 h-4 text-blue-600" />
-                  Hồ sơ e-DO / Booking
+                  Hồ sơ e-DO
                 </span>
               </div>
 
                <div className="space-y-2 text-xs">
                  <div className="flex flex-wrap items-center gap-2">
-                   <label className="text-slate-700 font-medium">Tệp e-DO / Booking (ảnh hoặc PDF) <RequiredMark /></label>
+                   <label className="text-slate-700 font-medium">Tệp e-DO <RequiredMark /></label>
                  </div>
                  <div className="flex flex-wrap items-center gap-2">
                    <label className="flex min-w-[260px] flex-1 items-center gap-2 border border-slate-200 bg-white rounded-lg px-3 py-2 cursor-pointer hover:bg-slate-50 transition-colors">
                      <UploadCloud className="w-4 h-4 text-blue-600 shrink-0" />
                      <span className="truncate text-xs font-medium text-slate-700">
-                       {form.edoFileName || 'Chọn tệp e-DO / Booking PDF hoặc ảnh'}
+                       {form.edoFileName || 'Chọn tệp e-DO PDF hoặc ảnh'}
                      </span>
                      <input
                        type="file"
@@ -1573,7 +1616,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                         <span className="font-medium bg-slate-100 px-2 py-0.5 rounded-md text-slate-700">{offer.photoUrls.length}/6 tối thiểu</span>
                         {offer.edoNumber && (
                           <span className="text-blue-700 font-mono bg-blue-50 px-2 py-0.5 rounded-md font-semibold">
-                            e-DO / Booking: {offer.edoNumber}
+                            e-DO: {offer.edoNumber}
                           </span>
                         )}
                       </div>
@@ -1603,7 +1646,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                     <div className="flex flex-wrap items-center gap-2 text-xs">
                       <strong className="text-violet-950">Kết quả tình trạng thực tế do AI báo về:</strong>
                       {offer.aiCheck?.photoCondition && <ConditionBadge condition={offer.aiCheck.photoCondition} size="xs" />}
-                      {!offer.aiCheck?.photoCondition && <span className="text-amber-800">Chưa có phân loại tự động</span>}
+                      <span className="text-violet-950 font-semibold">{getOfferAiConditionTitle(offer)}</span>
                     </div>
                     {offer.aiCheck?.photoConditionNotes && <p className="text-xs leading-relaxed text-violet-950">{offer.aiCheck.photoConditionNotes}</p>}
                     {offer.conditionNotes && <p className="text-xs leading-relaxed text-slate-700"><strong>Mô tả đang lưu:</strong> {offer.conditionNotes}</p>}

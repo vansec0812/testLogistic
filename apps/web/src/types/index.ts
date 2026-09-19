@@ -264,6 +264,14 @@ export interface OfferAiCheckResult {
   score: number;
   summary: string;
   hasAnomaly: boolean;
+  /** Exact identity result returned by the photo verification API. */
+  matchesRegistration?: boolean;
+  actualContainerNumber?: string;
+  actualContainerType?: ContainerType;
+  actualCarrierCode?: string;
+  actualConditionNotes?: string;
+  mismatchDetails?: string[];
+  photoStatus?: 'MATCHED' | 'MISMATCH' | 'MANUAL_REVIEW' | 'ERROR';
   anomalyReason?: string;
   edoChecked?: boolean;
   edoValid?: boolean;
