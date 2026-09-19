@@ -13,8 +13,7 @@ import {
   Ship, CreditCard, AlertCircle, BarChart3, RefreshCw
 } from 'lucide-react';
 import { TransactionStatusBadge, OfferStatusBadge, RequestStatusBadge } from '../components/StatusBadge';
-import { Transaction, ContainerRequest, MatchCandidate } from '../types';
-import { findMatchesForRequest } from '../services/matchingEngine';
+import { Transaction } from '../types';
 
 interface DashboardPageProps {
   setCurrentTab: (tab: string) => void;
@@ -152,20 +151,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
     });
   }, [transactions, currentCompany.id, currentRole]);
 
-  const availableOffers = useMemo(() => offers.filter(o => o.status === 'AVAILABLE'), [offers]);
-  const openRequests = useMemo(() => requests.filter(r => r.status === 'OPEN'), [requests]);
-
-  const liveMatches = useMemo(() => {
-    const list: Array<{ req: ContainerRequest; bestCand: MatchCandidate }> = [];
-    openRequests.forEach(req => {
-      const res = findMatchesForRequest(req, availableOffers);
-      if (res.candidates.length > 0) {
-        list.push({ req, bestCand: res.candidates[0] });
-      }
-    });
-    return list;
-  }, [openRequests, availableOffers]);
-
   return (
     <div className="space-y-6">
       {/* Welcome Banner (Light Modern Enterprise SaaS Style) */}
@@ -301,65 +286,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
           </div>
         )}
       </div>
-
-      {/* Auto-Match Radar Widget (Light Theme) */}
-      {liveMatches.length > 0 && (
-        <div className="bg-gradient-to-r from-emerald-50 via-teal-50/60 to-white rounded-2xl p-5 border border-emerald-200 shadow-sm space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <span className="w-3 h-3 rounded-full bg-emerald-500 ring-4 ring-emerald-100 animate-pulse" />
-              <div>
-                <h3 className="text-sm sm:text-base font-bold tracking-tight text-emerald-950 flex items-center gap-2">
-                  <span>RADAR TỰ ĐỘNG GHÉP ĐÔI REAL-TIME (AUTO-MATCH RADAR)</span>
-                  <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-emerald-600 text-white shadow-sm">
-                    LIVE
-                  </span>
-                </h3>
-                <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
-                  Phát hiện <strong className="text-emerald-700">{liveMatches.length}</strong> cơ hội ghép vỏ container tối ưu ngay lúc này
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setCurrentTab('requests')}
-              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold transition-colors shadow-sm flex items-center gap-1.5"
-            >
-              <span>Xem tất cả trên Sàn Nhu Cầu</span>
-              <ArrowUpRight className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {liveMatches.slice(0, 2).map(({ req, bestCand }) => (
-              <div
-                key={req.id}
-                className="p-4 rounded-xl bg-white border border-emerald-200/90 shadow-sm flex items-center justify-between gap-3"
-              >
-                <div className="space-y-1.5 text-xs sm:text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-slate-900 text-base">{bestCand.offer.asset.containerNumber}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-mono font-bold">
-                      Điểm M: {bestCand.scoreM}/100
-                    </span>
-                    <span className="text-slate-500 font-medium">↔ {req.bookingNumber}</span>
-                  </div>
-                  <p className="text-xs text-slate-600">
-                    Khoảng cách: <strong className="text-slate-800">{bestCand.distanceKm}km</strong> · Tiết kiệm dự kiến: <strong className="text-emerald-700 font-mono font-bold">{formatVnd(Math.abs(bestCand.quote.sBVnd))}</strong>
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => setCurrentTab('requests')}
-                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold whitespace-nowrap shadow-sm"
-                >
-                  Khớp Ngay
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Recent transactions */}

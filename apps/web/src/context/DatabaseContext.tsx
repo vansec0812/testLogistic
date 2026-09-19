@@ -14,7 +14,7 @@ import {
   INITIAL_COMPANIES, INITIAL_ASSETS, INITIAL_OFFERS, INITIAL_REQUESTS,
   INITIAL_TRANSACTIONS, INITIAL_CASES, INITIAL_AUDIT_LOGS,
   INITIAL_NOTIFICATIONS, INITIAL_CHAT_THREADS, INITIAL_CHAT_MESSAGES,
-  INITIAL_CARRIERS,
+  INITIAL_CARRIERS, DEMO_DATASET_VERSION,
 } from '../data/mockData';
 import { canTransitionTo, getAllowedActions } from '../services/stateMachine';
 import { calculateQuote } from '../services/pricingEngine';
@@ -31,6 +31,7 @@ import {
   hasRequiredOfferPhotos,
   isWithinDisputeWindow,
 } from '../services/qaRules';
+import { inferNotificationEntityType } from '../services/notificationRouting';
 
 // ==================== CONTEXT TYPE ====================
 
@@ -129,6 +130,7 @@ interface DatabaseContextType {
   // Chat
   startChatThread: (thread: Omit<ChatThread, 'id' | 'createdAt' | 'updatedAt'>) => string | null;
   sendChatMessage: (threadId: string, body: string) => ActionResult;
+  markChatThreadRead: (threadId: string) => void;
 
   // Notifications
   myNotifications: Notification[];
@@ -154,6 +156,7 @@ const DatabaseContext = createContext<DatabaseContextType | undefined>(undefined
 
 let idCounter = 1000;
 const genId = (prefix: string) => `${prefix}-${++idCounter}`;
+const DEMO_DATA_VERSION_STORAGE_KEY = 'econt_demo_dataset_version';
 
 // ==================== PROVIDER ====================
 
@@ -205,6 +208,21 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [onlineConfig, setOnlineConfig] = useState<OnlineDbConfig>(() => onlineDb.getConfig());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncMessage, setLastSyncMessage] = useState<string>('Sẵn sàng đồng bộ trực tuyến');
+
+  // Đồng bộ notification giữa các tab/role đang mở trên cùng trình duyệt.
+  useEffect(() => {
+    const handleNotificationStorage = (event: StorageEvent) => {
+      if (event.key !== 'econt_notifications_v2' || !event.newValue) return;
+      try {
+        const next = JSON.parse(event.newValue);
+        if (Array.isArray(next)) setNotifications(next);
+      } catch {
+        // Bỏ qua dữ liệu notification hỏng; tab hiện tại vẫn giữ state an toàn.
+      }
+    };
+    window.addEventListener('storage', handleNotificationStorage);
+    return () => window.removeEventListener('storage', handleNotificationStorage);
+  }, []);
 
   const updateOnlineConfig = useCallback((cfg: Partial<OnlineDbConfig>) => {
     onlineDb.saveConfig(cfg);
@@ -335,7 +353,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       title,
       body,
       relatedEntityId,
-      relatedEntityType: relatedEntityId ? 'Transaction' : undefined,
+      relatedEntityType: inferNotificationEntityType(relatedEntityId),
       isRead: false,
       createdAt: new Date().toISOString(),
     };
@@ -351,14 +369,19 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   const myNotifications = useMemo(() => {
-    if (currentRole === 'ENTERPRISE_A' || currentRole === 'ENTERPRISE_BOTH') {
-      return notifications.filter(n => n.recipientCompanyId === currentCompany.id || n.recipientCompanyId === 'COMP-A01' || n.recipientCompanyId === 'ALL');
-    }
-    if (currentRole === 'ENTERPRISE_B') {
-      return notifications.filter(n => n.recipientCompanyId === currentCompany.id || n.recipientCompanyId === 'COMP-B01' || n.recipientCompanyId === 'ALL');
-    }
-    // OPS sees Ops-targeted notifications or all system alerts
-    return notifications.filter(n => n.recipientCompanyId === 'COMP-OPS' || n.recipientCompanyId === 'OPS' || n.recipientCompanyId === 'ALL' || n.type === 'OPS_ALERT' || !n.recipientCompanyId.startsWith('COMP-'));
+    const allowedRecipients = currentRole === 'ENTERPRISE_BOTH'
+      ? new Set([currentCompany.id, 'COMP-A01', 'COMP-B01', 'ALL'])
+      : currentRole === 'OPS'
+        ? new Set([currentCompany.id, 'COMP-OPS', 'OPS', 'ALL'])
+        : new Set([currentCompany.id, 'ALL']);
+
+    return notifications
+      .filter(n => allowedRecipients.has(n.recipientCompanyId))
+      .sort((a, b) => {
+        const createdAtA = new Date(a.createdAt || 0).getTime() || 0;
+        const createdAtB = new Date(b.createdAt || 0).getTime() || 0;
+        return createdAtB - createdAtA;
+      });
   }, [notifications, currentRole, currentCompany.id]);
 
   const unreadNotificationCount = useMemo(() => {
@@ -627,6 +650,14 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         'OPS_ALERT',
         `Offer mới cần thẩm định: ${newOffer.id}`,
         `Nhà cung cấp Container (${ownerCompany.shortName}) đã đăng nguồn vỏ ${targetAsset.containerNumber} (${targetAsset.carrierCode} ${targetAsset.containerType}) kèm e-DO. Vui lòng kiểm tra ảnh và kết luận thủ công.`,
+        newOffer.id
+      );
+    } else {
+      addNotification(
+        newOffer.companyId,
+        'TRANSACTION_UPDATE',
+        `Offer ${newOffer.id} đã được tự động duyệt`,
+        'eDO và bộ ảnh container đạt yêu cầu. Offer đã sẵn sàng để ghép lệnh.',
         newOffer.id
       );
     }
@@ -954,8 +985,15 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     persistRequests(requests.map(r => r.id === requestId ? { ...r, status: 'UNDER_REVIEW', updatedAt: new Date().toISOString() } : r));
     addAudit('REQUEST_SUBMITTED_FOR_REVIEW', 'ContainerRequest', requestId, 'Gửi nhu cầu để Ops xác minh');
+    addNotification(
+      'COMP-OPS',
+      'OPS_ALERT',
+      `Booking mới cần thẩm định: ${requestId}`,
+      `Đơn vị cần vỏ đã gửi Booking để Ops xác minh trước khi matching.`,
+      requestId
+    );
     return { success: true, message: 'Đã gửi nhu cầu để Ops xác minh booking.' };
-  }, [requests, currentRole, currentCompany, persistRequests, addAudit]);
+  }, [requests, currentRole, currentCompany, persistRequests, addAudit, addNotification]);
 
   const withdrawRequest = useCallback((requestId: string, reason: string): ActionResult => {
     const req = requests.find(r => r.id === requestId);
@@ -1025,8 +1063,15 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       } : r
     ));
     addAudit(`REQUEST_${decision}`, 'ContainerRequest', requestId, `Ops xác minh ${decision}: ${notes}`);
+    addNotification(
+      req.companyId,
+      'TRANSACTION_UPDATE',
+      `Booking ${requestId} — ${decision === 'APPROVE' ? 'đã được duyệt' : decision === 'REQUEST_CHANGES' ? 'cần bổ sung' : 'bị từ chối'}`,
+      notes,
+      requestId
+    );
     return { success: true, message: `Đã xử lý nhu cầu.` };
-  }, [requests, currentRole, currentUserEmail, persistRequests, addAudit]);
+  }, [requests, currentRole, currentUserEmail, persistRequests, addAudit, addNotification]);
 
   // ==================== RESERVATION ====================
 
@@ -2134,10 +2179,29 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setChatMessages(prev => [...prev, newMsg]);
     setChatThreads(prev => prev.map(t =>
-      t.id === threadId ? { ...t, updatedAt: newMsg.createdAt, lastMessageAt: newMsg.createdAt } : t
+      t.id === threadId ? {
+        ...t,
+        updatedAt: newMsg.createdAt,
+        lastMessageAt: newMsg.createdAt,
+        unreadCountA: isA || isB ? (isB ? (t.unreadCountA ?? 0) + 1 : t.unreadCountA ?? 0) : (t.unreadCountA ?? 0) + 1,
+        unreadCountB: isA || isB ? (isA ? (t.unreadCountB ?? 0) + 1 : t.unreadCountB ?? 0) : (t.unreadCountB ?? 0) + 1,
+      } : t
     ));
     return { success: true, message: 'Đã gửi tin nhắn.' };
   }, [chatThreads, currentRole, currentCompany, addAudit]);
+
+  const markChatThreadRead = useCallback((threadId: string) => {
+    setChatThreads(previous => previous.map(thread => {
+      if (thread.id !== threadId) return thread;
+      const isA = thread.companyAId === currentCompany.id;
+      const isB = thread.companyBId === currentCompany.id;
+      return {
+        ...thread,
+        unreadCountA: currentRole === 'OPS' || isA ? 0 : thread.unreadCountA,
+        unreadCountB: currentRole === 'OPS' || isB ? 0 : thread.unreadCountB,
+      };
+    }));
+  }, [currentRole, currentCompany.id]);
 
   // ==================== NOTIFICATIONS ====================
 
@@ -2170,7 +2234,23 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setChatThreads(INITIAL_CHAT_THREADS);
     setChatMessages(INITIAL_CHAT_MESSAGES);
     persistMatches([]);
+    try {
+      localStorage.setItem(DEMO_DATA_VERSION_STORAGE_KEY, DEMO_DATASET_VERSION);
+    } catch {
+      // Không chặn thao tác reset nếu trình duyệt không cho phép ghi localStorage.
+    }
   }, [persistAssets, persistOffers, persistRequests, persistTransactions, persistNotifications, persistMatches]);
+
+  // Chỉ khôi phục một lần khi mã seed thay đổi. Điều này sửa các session cũ mà
+  // vẫn giữ nguyên dữ liệu sau khi người dùng đã thao tác trên seed hiện tại.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(DEMO_DATA_VERSION_STORAGE_KEY) === DEMO_DATASET_VERSION) return;
+    } catch {
+      // Vẫn nạp seed vào state nếu không đọc được mã phiên bản.
+    }
+    resetToDemoData();
+  }, [resetToDemoData]);
 
   // ==================== CONTEXT VALUE ====================
 
@@ -2188,7 +2268,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     confirmHandoverA, confirmHandoverB,
     toggleHold, addCase, updateCase, deleteCase, resolveCase, closeCase,
     cancelTransaction,
-    startChatThread, sendChatMessage,
+    startChatThread, sendChatMessage, markChatThreadRead,
     markNotificationRead, markAllNotificationsRead, deleteNotification, unreadNotificationCount,
     resetToDemoData,
     onlineConfig, isSyncing, lastSyncMessage, syncAllToOnlineDb, updateOnlineConfig,

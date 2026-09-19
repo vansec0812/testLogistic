@@ -8,8 +8,10 @@ import {
   Clock, ShieldAlert, CheckCircle, Package, Search, X
 } from 'lucide-react';
 import { useDatabase } from '../context/DatabaseContext';
+import { useAuth } from '../context/AuthContext';
 import { Notification } from '../types';
 import { formatRelativeTime } from '../lib/utils';
+import { getNotificationTab, resolveNotificationEntityType } from '../services/notificationRouting';
 
 interface NotificationCenterProps {
   setCurrentTab: (tab: string) => void;
@@ -27,6 +29,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     markAllNotificationsRead,
     deleteNotification,
   } = useDatabase();
+  const { currentRole } = useAuth();
 
   const [isOpen, setIsOpen] = useState(false);
   const [filterTab, setFilterTab] = useState<'ALL' | 'UNREAD'>('ALL');
@@ -53,16 +56,13 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   const handleNotificationClick = (n: Notification) => {
     markNotificationRead(n.id);
 
-    // Smart routing based on notification context
-    if (n.relatedEntityType === 'Transaction' && n.relatedEntityId) {
+    const entityType = resolveNotificationEntityType(n);
+    const targetTab = getNotificationTab(n, currentRole);
+    if (entityType === 'Transaction' && n.relatedEntityId) {
       setSelectedTxnId?.(n.relatedEntityId);
-      setCurrentTab('transactions');
-    } else if (n.relatedEntityType === 'Offer') {
-      setCurrentTab('offers');
-    } else if (n.relatedEntityType === 'Request') {
-      setCurrentTab('requests');
-    } else if (n.relatedEntityType === 'Case') {
-      setCurrentTab('cases');
+    }
+    if (targetTab) {
+      setCurrentTab(targetTab);
     }
 
     setIsOpen(false);
@@ -229,4 +229,3 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     </div>
   );
 };
-

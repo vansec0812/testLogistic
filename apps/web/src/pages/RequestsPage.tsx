@@ -368,7 +368,11 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
       );
     }
     if (filterStatus !== 'all') list = list.filter(r => r.status === filterStatus);
-    return list;
+    return [...list].sort((a, b) => {
+      const createdAtA = new Date(a.createdAt || 0).getTime() || 0;
+      const createdAtB = new Date(b.createdAt || 0).getTime() || 0;
+      return createdAtB - createdAtA;
+    });
   }, [requests, currentRole, currentCompany.id, search, filterStatus]);
 
   // Pre-calculate auto-matches for all OPEN requests
@@ -599,7 +603,6 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
       requestId: req.id,
       contextLabel: `Booking ${req.bookingNumber}`,
       contextType: 'PRE_BOOKING',
-      // Không đưa số cont thật vào chat trước khi đặt/giữ chỗ.
       containerNumber: 'Cont •••••••',
       carrierCode: offer?.asset.carrierCode || req.carrierCode,
       containerType: offer?.asset.containerType || req.containerType,
@@ -1097,7 +1100,6 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
           const autoMatchResult = canManageMatching ? requestMatchResult : undefined;
           const bestMatch = autoMatchResult?.candidates[0];
           const isMatching = matchingForId === req.id;
-          const canStartRequestChat = (isSupplierRole && req.status === 'OPEN') || canManageMatching;
 
           return (
             <div 
@@ -1174,14 +1176,6 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
 
                   <div className="flex items-center gap-1.5">
                     <button
-                      type="button"
-                      onClick={() => handleStartChat(req, bestMatch)}
-                      className="px-3.5 py-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1.5 shadow-sm"
-                    >
-                      <MessageCircle className="w-3.5 h-3.5" />
-                      Chat với đối tác
-                    </button>
-                    <button
                       onClick={() => handleHoldReservation(bestMatch, req)}
                       disabled={bestMatch.requiresLocationRefresh}
                       className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
@@ -1225,7 +1219,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                     </button>
                   )}
 
-                  {canStartRequestChat && req.status === 'OPEN' && (
+                  {isSupplierRole && req.status === 'OPEN' && req.companyId !== currentCompany.id && (
                     <button
                       type="button"
                       onClick={() => handleStartChat(req)}

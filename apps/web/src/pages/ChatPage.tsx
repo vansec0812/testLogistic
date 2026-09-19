@@ -18,7 +18,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   setSelectedThreadId: propSetSelectedThreadId 
 }) => {
   const { currentRole, currentCompany } = useAuth();
-  const { chatThreads, chatMessages, sendChatMessage, companies, transactions, offers, requests } = useDatabase();
+  const { chatThreads, chatMessages, sendChatMessage, markChatThreadRead, companies, transactions, offers, requests } = useDatabase();
   
   // Local state if props not passed
   const [localSelectedId, setLocalSelectedId] = useState<string | null>(null);
@@ -59,6 +59,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       setSelectedThreadId(visibleThreads[0].id);
     }
   }, [selectedThreadId, setSelectedThreadId, visibleThreads]);
+
+  useEffect(() => {
+    if (selectedThreadId) markChatThreadRead(selectedThreadId);
+  }, [selectedThreadId, markChatThreadRead]);
 
   const selectedThread = visibleThreads.find(thread => thread.id === selectedThreadId) || null;
   const selectedMessages = selectedThread

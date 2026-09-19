@@ -40,12 +40,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Badge calculations
   const pendingOffers = offers.filter(o => o.status === 'UNDER_REVIEW').length;
   const pendingRequests = requests.filter(r => r.status === 'UNDER_REVIEW').length;
-  const openCases = cases.filter(c => c.status === 'OPEN' || c.status === 'IN_REVIEW').length;
+  const openCases = cases.filter(c =>
+    ['OPEN', 'IN_REVIEW'].includes(c.status)
+    && (currentRole === 'OPS' || c.openedByCompanyId === currentCompany.id)
+  ).length;
   const activeTransactions = transactions.filter(t =>
     !['COMPLETED', 'CANCELLED', 'REJECTED', 'EXPIRED'].includes(t.status)
+    && (currentRole === 'OPS' || t.companyAId === currentCompany.id || t.companyBId === currentCompany.id)
   ).length;
   const unreadChatTotal = chatThreads.reduce((sum, t) => {
-    if (currentRole === 'OPS') {
+    const isParticipant = t.companyAId === currentCompany.id || t.companyBId === currentCompany.id;
+    if (currentRole !== 'OPS' && !isParticipant) return sum;
+    if (currentRole === 'OPS' || currentRole === 'ENTERPRISE_BOTH') {
       return sum + (t.unreadCountA ?? 0) + (t.unreadCountB ?? 0);
     }
     return sum + (currentRole === 'ENTERPRISE_A' ? (t.unreadCountA ?? 0) : (t.unreadCountB ?? 0));
