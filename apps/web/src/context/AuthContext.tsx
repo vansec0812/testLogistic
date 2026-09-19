@@ -6,6 +6,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { UserRole, Company } from '../types';
 import { INITIAL_COMPANIES } from '../data/mockData';
+import { DEMO_LOGIN_ACCOUNTS } from '../data/demoAccounts';
 
 interface RoleBadge {
   label: string;
@@ -162,13 +163,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let emailToSet: string | null = null;
     let nameToSet: string | null = null;
     let registeredUser: any = null;
+    const demoAccount = DEMO_LOGIN_ACCOUNTS.find((account) =>
+      account.username === username && account.password === password
+    );
+    const demoCompany = demoAccount?.companyId
+      ? INITIAL_COMPANIES.find((company) => company.id === demoAccount.companyId) || null
+      : null;
 
-    if (username === 'bena' && password === 'bena123') {
-      success = true; roleToSet = 'ENTERPRISE_A';
-    } else if (username === 'benb' && password === 'benb123') {
-      success = true; roleToSet = 'ENTERPRISE_B';
-    } else if (username === 'ops' && password === 'ops123') {
-      success = true; roleToSet = 'OPS';
+    if (demoAccount) {
+      success = true;
+      roleToSet = demoAccount.role;
+      emailToSet = demoAccount.email || null;
+      nameToSet = demoAccount.fullName || null;
     } else {
       const users = JSON.parse(localStorage.getItem('econt_registered_users') || '[]');
       registeredUser = users.find((u: any) => u.username === username && u.password === password);
@@ -185,9 +191,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsAuthenticated(true);
       setActiveUserEmail(emailToSet);
       setActiveUserName(nameToSet);
-      setActiveUserId(registeredUser?.id || ROLE_USERS[roleToSet].userId);
-      setActiveCompany(registeredUser?.company || null);
-      if (registeredUser?.company) localStorage.setItem('econt_active_company', JSON.stringify(registeredUser.company));
+      setActiveUserId(registeredUser?.id || demoAccount?.userId || ROLE_USERS[roleToSet].userId);
+      const companyToSet = registeredUser?.company || demoCompany;
+      setActiveCompany(companyToSet);
+      if (companyToSet) localStorage.setItem('econt_active_company', JSON.stringify(companyToSet));
       else localStorage.removeItem('econt_active_company');
       return { success: true, message: 'Đăng nhập thành công' };
     }
@@ -204,18 +211,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const setRole = (role: UserRole) => {
+    if (role === currentRole) return;
+
+    // Bộ chọn này là công cụ chuyển persona demo, không phải chức năng đổi
+    // quyền của tài khoản đang đăng nhập. Khi chuyển role phải bỏ identity cũ,
+    // nếu không role B có thể giữ companyId của role A và bị lọc mất Booking.
     setCurrentRole(role);
+    setActiveUserEmail(null);
+    setActiveUserName(null);
+    setActiveUserId(null);
+    setActiveCompany(null);
+    localStorage.removeItem('econt_active_company');
   };
 
   const value = useMemo((): AuthContextType => {
     const userInfo = ROLE_USERS[currentRole] || ROLE_USERS.OPS;
-    const currentCompany = currentRole === 'OPS'
-      ? ECONT_OPS_COMPANY
-      : activeCompany || (userInfo.companyIndex === -1 ? ECONT_OPS_COMPANY : INITIAL_COMPANIES[userInfo.companyIndex]);
-
     const isOps = currentRole === 'OPS';
+    // Khôi phục an toàn cho session cũ: trước đây role switcher chỉ đổi role
+    // nhưng có thể giữ company mặc định của role khác trong localStorage.
+    const hasMismatchedDefaultCompany =
+      (currentRole === 'ENTERPRISE_A' && activeCompany?.id === 'COMP-B01') ||
+      (currentRole === 'ENTERPRISE_B' && activeCompany?.id === 'COMP-A01');
+    const currentCompany = isOps
+      ? ECONT_OPS_COMPANY
+      : (!hasMismatchedDefaultCompany && activeCompany) || (userInfo.companyIndex === -1 ? ECONT_OPS_COMPANY : INITIAL_COMPANIES[userInfo.companyIndex]);
     const hasSupplierRole = currentRole === 'ENTERPRISE_A' || currentRole === 'ENTERPRISE_BOTH';
     const hasRequesterRole = currentRole === 'ENTERPRISE_B' || currentRole === 'ENTERPRISE_BOTH';
+    const roleBadge = isOps
+      ? ROLE_INFO.OPS
+      : {
+          ...ROLE_INFO[currentRole],
+          desc: currentRole === 'ENTERPRISE_A'
+            ? `${currentCompany.shortName} — Đơn vị cung cấp vỏ Container`
+            : currentRole === 'ENTERPRISE_B'
+              ? `${currentCompany.shortName} — Đơn vị cần vỏ Container`
+              : `${currentCompany.shortName} — Cung cấp và cần vỏ Container`,
+        };
 
     return {
       isAuthenticated,
@@ -227,7 +258,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       currentUserEmail: activeUserEmail || userInfo.email,
       currentUserName: activeUserName || userInfo.name,
       currentUserId: activeUserId || userInfo.userId,
-      roleBadge: ROLE_INFO[currentRole] || ROLE_INFO.OPS,
+      roleBadge,
       canCreateOffers: hasSupplierRole && currentCompany.verificationStatus === 'VERIFIED',
       canCreateRequests: hasRequesterRole && currentCompany.verificationStatus === 'VERIFIED',
       canOpsReview: isOps,

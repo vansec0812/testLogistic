@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
 import { Company, UserRole } from '../types';
 import { isApiConfigured, postApi } from '../services/apiClient';
+import { DEMO_LOGIN_ACCOUNTS } from '../data/demoAccounts';
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -300,9 +301,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               <div className="mt-6 border-t border-slate-200 pt-4">
                 <p className="text-xs text-slate-500 font-semibold mb-2">Demo: bạn có thể dùng tài khoản mẫu</p>
                 <ul className="text-xs text-slate-600 space-y-1 bg-slate-50 p-3 rounded border border-slate-100">
-                  <li><code className="font-bold">bena / bena123</code> → Hưng Thịnh Logistics (Nhà cung cấp Container)</li>
-                  <li><code className="font-bold">benb / benb123</code> → Toàn Cầu Export (Cần vỏ Container)</li>
-                  <li><code className="font-bold">ops / ops123</code> → ECont Ops (Vận hành)</li>
+                  {DEMO_LOGIN_ACCOUNTS.map((account) => (
+                    <li key={account.username}>
+                      <code className="font-bold">{account.username} / {account.password}</code> → {account.label}
+                    </li>
+                  ))}
                 </ul>
               </div>
             </form>
