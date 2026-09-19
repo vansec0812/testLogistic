@@ -4,16 +4,23 @@ Frontend demo cho nền tảng điều phối và tái sử dụng container r�
 
 ## Kết nối API
 
-Frontend local dùng Vite proxy `/api` tới gateway `http://localhost:8000`. Để bật xác minh AI thật:
+API quét ảnh/eDO chạy cùng web khi dùng `npm run dev` hoặc `npm run preview`; không cần mở thêm gateway ở cổng 8000. Khóa được đọc phía server từ `apps/api/.env` (Git bỏ qua file này):
 
 ```powershell
-cd apps/api
-Copy-Item .env.example .env
-# điền ECONT_AI_API_KEY trong apps/api/.env, chỉ lưu ở server
-npm.cmd start
+# Từ thư mục gốc dự án, chỉ sao chép nếu chưa có .env:
+if (!(Test-Path apps/api/.env)) { Copy-Item apps/api/.env.example apps/api/.env }
+# Điền khóa Gemini API vào ECONT_AI_API_KEY trong apps/api/.env
+cd apps/web
+npm.cmd run dev
 ```
 
-Ở terminal chạy web, `VITE_API_BASE_URL` không bắt buộc khi dùng Vite mặc định. Khi deploy web và API khác origin, sao chép `apps/web/.env.example` thành `apps/web/.env` rồi đặt `VITE_API_BASE_URL` tới URL backend.
+Để `VITE_API_BASE_URL` trống khi chạy local. Nếu đã đặt biến này thành `http://localhost:8000`, hãy xóa giá trị và khởi động lại Vite. Gateway đọc lại `.env` mỗi request nên chỉ cập nhật key là có thể quét lại.
+
+Khi deploy bản build tĩnh, chạy `npm start` trong `apps/api` và cấu hình reverse proxy `/api` hoặc đặt `VITE_API_BASE_URL` tới URL backend trước khi build. Nếu khác origin, cấu hình `AI_ALLOWED_ORIGIN` trùng origin của web. Vite middleware chỉ dành cho dev/preview, không được đóng gói vào frontend production.
+
+`GET /api/health` kiểm tra gateway: `AI_KEY_MISSING` nghĩa chưa có khóa, `AI_CONFIGURED` chỉ xác nhận đã có cấu hình (chưa chứng minh khóa được provider chấp nhận). Gateway phân biệt các lỗi `AI_KEY_REJECTED`, `AI_MODEL_UNAVAILABLE`, `AI_RATE_LIMITED`, `AI_TIMEOUT` và không trả khóa/nội dung chứng từ trong thông báo lỗi.
+
+Model mặc định là `gemini-2.5-flash`, có thể thay bằng `ECONT_AI_MODEL`. Đã bỏ mặc định `gemini-2.0-flash` theo [lịch ngừng cung cấp của Google](https://ai.google.dev/gemini-api/docs/deprecations). Frontend chờ tối đa 120 giây cho API AI; provider có 90 giây xử lý.
 
 Gateway local giữ khóa AI ở server và cung cấp các endpoint AI:
 

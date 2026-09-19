@@ -1,16 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { localAiGateway } from '../api/vite-plugin.mjs';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), localAiGateway()],
   server: {
     port: 5173,
     host: true,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-    },
   }
 });

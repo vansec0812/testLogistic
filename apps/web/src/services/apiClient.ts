@@ -1,9 +1,9 @@
 // ECont API client
-// Local Vite proxy chuyển /api tới gateway ở localhost:8000. Production có thể
-// dùng cùng origin hoặc đặt VITE_API_BASE_URL tới backend riêng.
+// Vite serves the local AI gateway on the web origin. Production can configure
+// VITE_API_BASE_URL or route /api to the standalone backend.
 
 export class ApiClientError extends Error {
-  constructor(message: string, public status?: number) {
+  constructor(message: string, public status?: number, public code?: string) {
     super(message);
     this.name = 'ApiClientError';
   }
@@ -28,15 +28,21 @@ function normalizeNetworkError(error: unknown): string {
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get('content-type') || '';
-  const body = contentType.includes('application/json')
-    ? await response.json()
-    : await response.text();
+  const raw = await response.text();
+  let body: Record<string, unknown> | undefined;
+  if (contentType.includes('application/json') && raw) {
+    try { body = JSON.parse(raw); } catch { /* Use the controlled error below. */ }
+  }
 
   if (!response.ok) {
-    const message = typeof body === 'object' && body !== null
-      ? ((body as any).message || (body as any).error || `API lỗi HTTP ${response.status}`)
-      : String(body || `API lỗi HTTP ${response.status}`);
-    throw new ApiClientError(message, response.status);
+    const message = typeof body?.message === 'string' ? body.message
+      : typeof body?.error === 'string' ? body.error
+      : response.status >= 500 ? 'Máy chủ xử lý chưa sẵn sàng. Vui lòng thử lại sau.'
+      : `Yêu cầu không thành công (HTTP ${response.status}).`;
+    throw new ApiClientError(message, response.status, typeof body?.code === 'string' ? body.code : undefined);
+  }
+  if (!body || typeof body !== 'object') {
+    throw new ApiClientError('Máy chủ trả về dữ liệu không hợp lệ. Vui lòng thử lại.', response.status, 'INVALID_API_RESPONSE');
   }
   return body as T;
 }
@@ -47,7 +53,8 @@ export async function callApi<T>(path: string, init: RequestInit = {}): Promise<
   }
 
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 30_000);
+  // Allow uploads + image fetching + the provider's 90s inference budget.
+  const timeout = window.setTimeout(() => controller.abort(), path.startsWith('/api/ai/') ? 120_000 : 30_000);
   try {
     const response = await fetch(`${apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`, {
       ...init,
