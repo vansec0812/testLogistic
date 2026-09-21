@@ -34,7 +34,7 @@ export function readGatewayConfig({ env = process.env, envPath = join(currentDir
   return {
     port: Number(values.PORT || 8000),
     provider: String(values.AI_PROVIDER || 'gemini').trim().toLowerCase(),
-    model: String(values.ECONT_AI_MODEL || 'gemini-3-flash-preview').trim(),
+    model: String(values.ECONT_AI_MODEL || 'gemini-3.5-flash-lite').trim(),
     apiKey,
     allowedOrigin,
     providerTimeoutMs,
@@ -156,7 +156,6 @@ async function documentPart(document) {
 
 async function callGemini(prompt, mediaParts, config, fetchImpl) {
   const { apiKey, model, providerTimeoutMs } = config;
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   const requestBody = JSON.stringify({
     contents: [{ role: 'user', parts: [{ text: prompt }, ...mediaParts] }],
     generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
@@ -164,44 +163,54 @@ async function callGemini(prompt, mediaParts, config, fetchImpl) {
   if (Buffer.byteLength(requestBody) > 20 * 1024 * 1024) {
     throw new GatewayError('Tổng dung lượng ảnh/tệp quá lớn để quét AI. Vui lòng giảm dung lượng rồi thử lại.', 413, 'AI_MEDIA_TOO_LARGE');
   }
-  let response;
-  let body;
-  try {
-    response = await fetchImpl(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: requestBody,
-      signal: AbortSignal.timeout(providerTimeoutMs),
-    });
-    body = await response.json();
-  } catch (error) {
-    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
-      throw new GatewayError('AI xử lý quá thời gian cho phép. Vui lòng thử quét lại.', 504, 'AI_TIMEOUT');
+  const candidateModels = [model, 'gemini-3.5-flash-lite', 'gemini-3.6-flash']
+    .filter((m, idx, arr) => Boolean(m) && arr.indexOf(m) === idx);
+
+  for (let i = 0; i < candidateModels.length; i++) {
+    const currentModel = candidateModels[i];
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(currentModel)}:generateContent`;
+    let response;
+    let body;
+    try {
+      response = await fetchImpl(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: requestBody,
+        signal: AbortSignal.timeout(providerTimeoutMs),
+      });
+      body = await response.json();
+    } catch (error) {
+      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+        throw new GatewayError('AI xử lý quá thời gian cho phép. Vui lòng thử quét lại.', 504, 'AI_TIMEOUT');
+      }
+      if (error instanceof SyntaxError) {
+        throw new GatewayError('Dịch vụ AI trả về phản hồi không đọc được. Vui lòng thử lại.', 502, 'AI_INVALID_RESPONSE');
+      }
+      throw new GatewayError('Không kết nối được dịch vụ AI. Vui lòng thử lại sau.', 502, 'AI_PROVIDER_UNREACHABLE');
     }
-    if (error instanceof SyntaxError) {
-      throw new GatewayError('Dịch vụ AI trả về phản hồi không đọc được. Vui lòng thử lại.', 502, 'AI_INVALID_RESPONSE');
+    if (!response.ok) {
+      // Never echo provider messages which may contain credentials or document data.
+      const reason = String(body?.error?.message || '');
+      if ([401, 403].includes(response.status) || /API_KEY_INVALID|API key not valid|API key expired/i.test(reason)) {
+        throw new GatewayError('Khóa AI không hợp lệ hoặc chưa có quyền sử dụng. Vui lòng liên hệ quản trị viên để cập nhật khóa.', 503, 'AI_KEY_REJECTED');
+      }
+      if (response.status === 400) {
+        throw new GatewayError('AI không đọc được tệp đã gửi. Vui lòng kiểm tra định dạng và dung lượng ảnh/PDF.', 422, 'AI_MEDIA_REJECTED');
+      }
+      if (([503, 404, 429].includes(response.status) || /temporar|high demand|unavailable/i.test(reason)) && i < candidateModels.length - 1) {
+        continue;
+      }
+      if (response.status === 429) {
+        throw new GatewayError('Dịch vụ AI đã hết hạn mức hoặc đang quá tải yêu cầu. Vui lòng thử lại sau hoặc kiểm tra hạn mức tài khoản.', 429, 'AI_RATE_LIMITED');
+      }
+      if (response.status === 404) {
+        throw new GatewayError('Mô hình AI được cấu hình không khả dụng. Vui lòng liên hệ quản trị viên để cập nhật.', 503, 'AI_MODEL_UNAVAILABLE');
+      }
+      throw new GatewayError('Dịch vụ AI tạm thời không phản hồi. Vui lòng thử lại sau.', 502, 'AI_PROVIDER_UNAVAILABLE');
     }
-    throw new GatewayError('Không kết nối được dịch vụ AI. Vui lòng thử lại sau.', 502, 'AI_PROVIDER_UNREACHABLE');
+    const text = body?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('') || '';
+    return parseModelJson(text);
   }
-  if (!response.ok) {
-    // Never echo provider messages which may contain credentials or document data.
-    const reason = String(body?.error?.message || '');
-    if ([401, 403].includes(response.status) || /API_KEY_INVALID|API key not valid|API key expired/i.test(reason)) {
-      throw new GatewayError('Khóa AI không hợp lệ hoặc chưa có quyền sử dụng. Vui lòng liên hệ quản trị viên để cập nhật khóa.', 503, 'AI_KEY_REJECTED');
-    }
-    if (response.status === 429) {
-      throw new GatewayError('Dịch vụ AI đã hết hạn mức hoặc đang quá tải yêu cầu. Vui lòng thử lại sau hoặc kiểm tra hạn mức tài khoản.', 429, 'AI_RATE_LIMITED');
-    }
-    if (response.status === 404) {
-      throw new GatewayError('Mô hình AI được cấu hình không khả dụng. Vui lòng liên hệ quản trị viên để cập nhật.', 503, 'AI_MODEL_UNAVAILABLE');
-    }
-    if (response.status === 400) {
-      throw new GatewayError('AI không đọc được tệp đã gửi. Vui lòng kiểm tra định dạng và dung lượng ảnh/PDF.', 422, 'AI_MEDIA_REJECTED');
-    }
-    throw new GatewayError('Dịch vụ AI tạm thời không phản hồi. Vui lòng thử lại sau.', 502, 'AI_PROVIDER_UNAVAILABLE');
-  }
-  const text = body?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('') || '';
-  return parseModelJson(text);
 }
 
 const edoVerifyPrompt = `
