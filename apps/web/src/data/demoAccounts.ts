@@ -6,6 +6,7 @@ export interface DemoLoginAccount {
   role: UserRole;
   companyId?: string;
   email?: string;
+  phone?: string;
   fullName?: string;
   userId: string;
   label: string;
@@ -22,6 +23,7 @@ export const DEMO_LOGIN_ACCOUNTS: DemoLoginAccount[] = [
     role: 'ENTERPRISE_A',
     companyId: 'COMP-A01',
     email: 'hung.nguyen@hungthinhlog.vn',
+    phone: '0901234501',
     fullName: 'Nguyễn Văn Hưng',
     userId: 'USR-A01',
     label: 'Hưng Thịnh Logistics · Nhà cung cấp Container',
@@ -32,6 +34,7 @@ export const DEMO_LOGIN_ACCOUNTS: DemoLoginAccount[] = [
     role: 'ENTERPRISE_B',
     companyId: 'COMP-B01',
     email: 'mai.tran@toancaugroups.vn',
+    phone: '0901234502',
     fullName: 'Trần Thị Mai',
     userId: 'USR-B01',
     label: 'Toàn Cầu Export Corp · Cần vỏ Container',
@@ -41,6 +44,7 @@ export const DEMO_LOGIN_ACCOUNTS: DemoLoginAccount[] = [
     password: 'ops123',
     role: 'OPS',
     email: 'ops.lead@econt.vn',
+    phone: '0901234503',
     fullName: 'Vũ Minh Trí',
     userId: 'USR-OPS01',
     label: 'ECont Ops · Vận hành và điều phối',
@@ -51,6 +55,7 @@ export const DEMO_LOGIN_ACCOUNTS: DemoLoginAccount[] = [
     role: 'ENTERPRISE_A',
     companyId: 'COMP-C01',
     email: 'nam.le@cangmiennam.com',
+    phone: '0901234504',
     fullName: 'Lê Hoàng Nam',
     userId: 'USR-C01',
     label: 'Cảng Miền Nam Logistics · Nhà cung cấp Container',
@@ -61,6 +66,7 @@ export const DEMO_LOGIN_ACCOUNTS: DemoLoginAccount[] = [
     role: 'ENTERPRISE_B',
     companyId: 'COMP-PENDING01',
     email: 'tuan.pham@phuquocgreen.vn',
+    phone: '0901234505',
     fullName: 'Phạm Thanh Tuấn',
     userId: 'USR-PENDING01',
     label: 'Phú Quốc Green Trade · Cần vỏ Container (chờ Ops xác minh)',

@@ -6,7 +6,7 @@ import React, { useState } from 'react';
 import {
   Box, Boxes, LayoutDashboard, PackageOpen, Search, Handshake,
   MessageCircle, HeadphonesIcon, AlertCircle, Database,
-  ChevronDown, ChevronRight, User, Shield, LogOut, Check
+  ChevronDown, ChevronRight, User, Settings2, Shield, LogOut, Check
 } from 'lucide-react';
 import { useAuth, ROLE_OPTIONS } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
@@ -256,6 +256,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
 
                 <div className="p-1.5 space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowRoleSwitcher(false);
+                      handleTabClick('profile');
+                    }}
+                    className="w-full p-2.5 rounded-xl flex items-center gap-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 border-b border-slate-100"
+                  >
+                    <Settings2 className="w-4 h-4 text-blue-600" />
+                    <span>Chỉnh sửa hồ sơ</span>
+                  </button>
                   {ROLE_OPTIONS.map(opt => {
                     const isSelected = currentRole === opt.value;
                     return (

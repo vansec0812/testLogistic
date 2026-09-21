@@ -6,6 +6,8 @@ import { useDatabase } from '../context/DatabaseContext';
 import { Company, UserRole } from '../types';
 import { isApiConfigured, postApi } from '../services/apiClient';
 import { DEMO_LOGIN_ACCOUNTS } from '../data/demoAccounts';
+import { PasswordRecoveryPanel } from '../components/PasswordRecoveryPanel';
+import { getAccountById } from '../services/accountService';
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -21,6 +23,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginErrors, setLoginErrors] = useState<FieldErrors>({});
+  const [showRecovery, setShowRecovery] = useState(false);
 
   // Register State
   const [regFullName, setRegFullName] = useState('');
@@ -236,7 +239,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           <div className="flex border-b border-slate-200 mb-6">
             <button
               className={`flex-1 pb-3 text-sm font-medium border-b-2 ${activeTab === 'login' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-              onClick={() => setActiveTab('login')}
+              onClick={() => { setActiveTab('login'); setShowRecovery(false); }}
             >
               Đăng nhập
             </button>
@@ -249,6 +252,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           </div>
 
           {activeTab === 'login' ? (
+            showRecovery ? (
+              <PasswordRecoveryPanel
+                onBack={() => setShowRecovery(false)}
+                onSuccess={(recoveredUsername) => {
+                  setShowRecovery(false);
+                  setUsername(recoveredUsername);
+                  setPassword('');
+                  setLoginError('');
+                }}
+              />
+            ) : (
             <form noValidate className="space-y-6" onSubmit={handleLogin}>
               <FormErrorSummary errors={loginErrors} />
               {loginError && (
@@ -289,6 +303,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 </div>
               </div>
 
+              <div className="flex justify-end -mt-3">
+                <button type="button" onClick={() => { setLoginError(''); setShowRecovery(true); }} className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline">
+                  Quên mật khẩu?
+                </button>
+              </div>
+
               <div>
                 <button
                   type="submit"
@@ -303,12 +323,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 <ul className="text-xs text-slate-600 space-y-1 bg-slate-50 p-3 rounded border border-slate-100">
                   {DEMO_LOGIN_ACCOUNTS.map((account) => (
                     <li key={account.username}>
-                      <code className="font-bold">{account.username} / {account.password}</code> → {account.label}
+                      <code className="font-bold">{getAccountById(account.userId)?.username || account.username} / {getAccountById(account.userId)?.password || account.password}</code> → {account.label}
                     </li>
                   ))}
                 </ul>
               </div>
             </form>
+            )
           ) : (
             <form noValidate className="space-y-4" onSubmit={handleRegister}>
               {regSuccess && (

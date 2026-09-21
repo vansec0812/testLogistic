@@ -20,6 +20,8 @@ import { OpsPortalPage } from './pages/OpsPortalPage';
 import { CasesPage } from './pages/CasesPage';
 import { OnlineDatabasePage } from './pages/OnlineDatabasePage';
 import { LoginPage } from './pages/LoginPage';
+import { ProfilePage } from './pages/ProfilePage';
+import { ChangePasswordPage } from './pages/ChangePasswordPage';
 
 function LoadingSpinner() {
   return (
@@ -44,8 +46,12 @@ function AppContent() {
       if (['assets', 'ops', 'database'].includes(currentTab)) {
         setCurrentTab('dashboard');
       }
-    } else if (currentRole === 'ENTERPRISE_B' || currentRole === 'ENTERPRISE_BOTH') {
+    } else if (currentRole === 'ENTERPRISE_B') {
       if (['assets', 'offers', 'ops', 'database'].includes(currentTab)) {
+        setCurrentTab('dashboard');
+      }
+    } else if (currentRole === 'ENTERPRISE_BOTH') {
+      if (['assets', 'ops', 'database'].includes(currentTab)) {
         setCurrentTab('dashboard');
       }
     }
@@ -75,6 +81,10 @@ function AppContent() {
         return <CasesPage setCurrentTab={setCurrentTab} setSelectedTxnId={setSelectedTxnId} />;
       case 'database':
         return <OnlineDatabasePage />;
+      case 'profile':
+        return <ProfilePage setCurrentTab={setCurrentTab} />;
+      case 'change-password':
+        return <ChangePasswordPage setCurrentTab={setCurrentTab} />;
       default:
         return <DashboardPage setCurrentTab={setCurrentTab} />;
     }

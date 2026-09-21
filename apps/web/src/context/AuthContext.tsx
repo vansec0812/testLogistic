@@ -6,7 +6,12 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { UserRole, Company } from '../types';
 import { INITIAL_COMPANIES } from '../data/mockData';
-import { DEMO_LOGIN_ACCOUNTS } from '../data/demoAccounts';
+import {
+  EditableAccountProfile,
+  getAccountByCredentials,
+  getAccountById,
+  saveAccountProfile,
+} from '../services/accountService';
 
 interface RoleBadge {
   label: string;
@@ -19,6 +24,7 @@ interface RoleBadge {
 interface AuthContextType {
   isAuthenticated: boolean;
   login: (username: string, password: string) => { success: boolean; message: string };
+  updateProfile: (input: EditableAccountProfile) => { success: boolean; message: string };
   logout: () => void;
   currentRole: UserRole;
   setRole: (role: UserRole) => void;
@@ -137,9 +143,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // (Optional) We can also save current logged-in user details to override ROLE_USERS,
   // but for this demo, just matching the role works since ROLE_USERS provides a mock for each role.
-  const [activeUserEmail, setActiveUserEmail] = useState<string | null>(null);
-  const [activeUserName, setActiveUserName] = useState<string | null>(null);
-  const [activeUserId, setActiveUserId] = useState<string | null>(null);
+  const [activeUserEmail, setActiveUserEmail] = useState<string | null>(() => localStorage.getItem('econt_active_user_email'));
+  const [activeUserName, setActiveUserName] = useState<string | null>(() => localStorage.getItem('econt_active_user_name'));
+  const [activeUserId, setActiveUserId] = useState<string | null>(() => localStorage.getItem('econt_active_user_id'));
   const [activeCompany, setActiveCompany] = useState<Company | null>(() => {
     try {
       const saved = localStorage.getItem('econt_active_company');
@@ -158,41 +164,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [isAuthenticated]);
 
   const login = (username: string, password: string) => {
-    let success = false;
-    let roleToSet: UserRole = 'ENTERPRISE_A';
-    let emailToSet: string | null = null;
-    let nameToSet: string | null = null;
-    let registeredUser: any = null;
-    const demoAccount = DEMO_LOGIN_ACCOUNTS.find((account) =>
-      account.username === username && account.password === password
-    );
-    const demoCompany = demoAccount?.companyId
-      ? INITIAL_COMPANIES.find((company) => company.id === demoAccount.companyId) || null
-      : null;
-
-    if (demoAccount) {
-      success = true;
-      roleToSet = demoAccount.role;
-      emailToSet = demoAccount.email || null;
-      nameToSet = demoAccount.fullName || null;
-    } else {
-      const users = JSON.parse(localStorage.getItem('econt_registered_users') || '[]');
-      registeredUser = users.find((u: any) => u.username === username && u.password === password);
-      if (registeredUser) {
-        success = true;
-        roleToSet = registeredUser.role;
-        emailToSet = registeredUser.email;
-        nameToSet = registeredUser.fullName;
-      }
-    }
-
-    if (success) {
-      setCurrentRole(roleToSet);
+    const account = getAccountByCredentials(username, password);
+    if (account) {
+      setCurrentRole(account.role);
       setIsAuthenticated(true);
-      setActiveUserEmail(emailToSet);
-      setActiveUserName(nameToSet);
-      setActiveUserId(registeredUser?.id || demoAccount?.userId || ROLE_USERS[roleToSet].userId);
-      const companyToSet = registeredUser?.company || demoCompany;
+      setActiveUserEmail(account.email || null);
+      setActiveUserName(account.fullName || null);
+      setActiveUserId(account.id);
+      localStorage.setItem('econt_active_user_email', account.email || '');
+      localStorage.setItem('econt_active_user_name', account.fullName || '');
+      localStorage.setItem('econt_active_user_id', account.id);
+      const companyToSet = account.company;
       setActiveCompany(companyToSet);
       if (companyToSet) localStorage.setItem('econt_active_company', JSON.stringify(companyToSet));
       else localStorage.removeItem('econt_active_company');
@@ -207,6 +189,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveUserName(null);
     setActiveUserId(null);
     setActiveCompany(null);
+    localStorage.removeItem('econt_active_user_email');
+    localStorage.removeItem('econt_active_user_name');
+    localStorage.removeItem('econt_active_user_id');
     localStorage.removeItem('econt_active_company');
   };
 
@@ -221,12 +206,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveUserName(null);
     setActiveUserId(null);
     setActiveCompany(null);
+    localStorage.removeItem('econt_active_user_email');
+    localStorage.removeItem('econt_active_user_name');
+    localStorage.removeItem('econt_active_user_id');
     localStorage.removeItem('econt_active_company');
+  };
+
+  const updateProfile = (input: EditableAccountProfile) => {
+    const accountId = activeUserId || ROLE_USERS[currentRole].userId;
+    const result = saveAccountProfile(accountId, input);
+    if (result.success && result.account) {
+      setCurrentRole(result.account.role);
+      setActiveUserEmail(result.account.email);
+      setActiveUserName(result.account.fullName);
+      setActiveUserId(result.account.id);
+      setActiveCompany(result.account.company);
+      localStorage.setItem('econt_active_user_email', result.account.email);
+      localStorage.setItem('econt_active_user_name', result.account.fullName);
+      localStorage.setItem('econt_active_user_id', result.account.id);
+      if (result.account.company) localStorage.setItem('econt_active_company', JSON.stringify(result.account.company));
+    }
+    return { success: result.success, message: result.message };
   };
 
   const value = useMemo((): AuthContextType => {
     const userInfo = ROLE_USERS[currentRole] || ROLE_USERS.OPS;
     const isOps = currentRole === 'OPS';
+    const currentAccount = getAccountById(activeUserId);
     // Khôi phục an toàn cho session cũ: trước đây role switcher chỉ đổi role
     // nhưng có thể giữ company mặc định của role khác trong localStorage.
     const hasMismatchedDefaultCompany =
@@ -234,7 +240,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       (currentRole === 'ENTERPRISE_B' && activeCompany?.id === 'COMP-A01');
     const currentCompany = isOps
       ? ECONT_OPS_COMPANY
-      : (!hasMismatchedDefaultCompany && activeCompany) || (userInfo.companyIndex === -1 ? ECONT_OPS_COMPANY : INITIAL_COMPANIES[userInfo.companyIndex]);
+      : (!hasMismatchedDefaultCompany && (currentAccount?.company || activeCompany)) || (userInfo.companyIndex === -1 ? ECONT_OPS_COMPANY : INITIAL_COMPANIES[userInfo.companyIndex]);
     const hasSupplierRole = currentRole === 'ENTERPRISE_A' || currentRole === 'ENTERPRISE_BOTH';
     const hasRequesterRole = currentRole === 'ENTERPRISE_B' || currentRole === 'ENTERPRISE_BOTH';
     const roleBadge = isOps
@@ -251,12 +257,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return {
       isAuthenticated,
       login,
+      updateProfile,
       logout,
       currentRole,
       setRole,
       currentCompany,
-      currentUserEmail: activeUserEmail || userInfo.email,
-      currentUserName: activeUserName || userInfo.name,
+      currentUserEmail: currentAccount?.email || activeUserEmail || userInfo.email,
+      currentUserName: currentAccount?.fullName || activeUserName || userInfo.name,
       currentUserId: activeUserId || userInfo.userId,
       roleBadge,
       canCreateOffers: hasSupplierRole && currentCompany.verificationStatus === 'VERIFIED',

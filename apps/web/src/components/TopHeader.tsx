@@ -51,6 +51,14 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     title: 'Cơ sở Dữ liệu & Đồng bộ Trực tuyến',
     subtitle: 'Cấu hình Supabase, sao lưu và đồng bộ dữ liệu thời gian thực',
   },
+  profile: {
+    title: 'Hồ sơ tài khoản',
+    subtitle: 'Cập nhật thông tin cá nhân và doanh nghiệp với xác nhận OTP',
+  },
+  'change-password': {
+    title: 'Đổi mật khẩu',
+    subtitle: 'Xác nhận OTP bằng thông tin đã đăng ký trước khi cập nhật mật khẩu',
+  },
 };
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
