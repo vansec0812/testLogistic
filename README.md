@@ -84,3 +84,7 @@ supabase/migrations/          SQL schema cho Supabase
 plan.md                       Kế hoạch đầy đủ theo SRS v1.0 (bản hiện hành)
 agent(2).md                   Quy ước làm việc cho agent
 ```
+
+## Tài liệu hướng dẫn
+
+- [Tài liệu hướng dẫn sử dụng website dạng Redmine](./redmine.md)
