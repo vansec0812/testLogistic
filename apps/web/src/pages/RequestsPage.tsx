@@ -17,7 +17,13 @@ import {
 } from 'lucide-react';
 import { findMatchesForRequest } from '../services/matchingEngine';
 import { INITIAL_CARRIERS } from '../data/mockData';
-import { verifyBookingWithAI, EdoVerificationResult } from '../services/aiService';
+import {
+  BookingRegistrationData,
+  BookingVerificationResult,
+  reconcileBookingAiResult,
+  verifyBookingWithAI,
+} from '../services/aiService';
+import { getBookingAiEvidence, getBookingAiReviewTitle, sortRequestsForOps } from '../services/bookingReview';
 import { DEFAULT_BASELINE_PICKUP_COST_VND } from '../services/qaRules';
 import { FieldErrors, FieldError, FormErrorSummary, RequiredMark, getFieldErrorClass, scrollToFirstFieldError } from '../components/FormValidation';
 import { required, validDateRange, validFutureDate, setError } from '../lib/formValidation';
@@ -45,17 +51,116 @@ function parseDateInputDdMmYyyy(value: string, endOfDay = false): string {
   return `${date[3]}-${date[2]}-${date[1]}T${endOfDay ? '23:59:59' : '00:00:00'}`;
 }
 
-function mapBookingAiResult(result: EdoVerificationResult): BookingAiCheckResult {
+function toBookingRegistrationData(values: {
+  bookingNumber?: string;
+  carrierId?: string;
+  containerType?: string;
+  cutOffTime?: string;
+}): BookingRegistrationData {
+  const carrierId = String(values.carrierId || '').trim();
+  const carrierCode = INITIAL_CARRIERS.find(carrier => carrier.id === carrierId)?.code
+    || carrierId.replace(/^CARR-/, '')
+    || undefined;
+  const containerType = values.containerType === '20GP' || values.containerType === '40HC'
+    ? values.containerType
+    : undefined;
+  return {
+    bookingNumber: String(values.bookingNumber || '').trim().toUpperCase() || undefined,
+    carrierCode,
+    containerType,
+    cutOffTime: values.cutOffTime,
+  };
+}
+
+function mapBookingAiResult(result: BookingVerificationResult): BookingAiCheckResult {
   return {
     status: result.status,
-    isValid: result.status === 'VALID' && result.isLegal,
+    isValid: result.status === 'VALID' && result.isLegal && result.matchesRegistration && result.comparisonStatus === 'MATCHED',
     hasAnomaly: result.hasAnomaly || result.status === 'ANOMALY',
     score: result.score,
     summary: result.summary,
     details: result.details,
-    requiresOpsReview: result.requiresOpsReview || result.status !== 'VALID',
+    requiresOpsReview: result.requiresOpsReview || result.status !== 'VALID' || result.comparisonStatus !== 'MATCHED',
+    matchesRegistration: result.matchesRegistration,
+    comparisonStatus: result.comparisonStatus,
+    actualBookingNumber: result.actualBookingNumber,
+    actualCarrierCode: result.actualCarrierCode,
+    actualContainerType: result.actualContainerType,
+    actualCutOffDate: result.actualCutOffDate,
+    mismatchDetails: result.mismatchDetails,
+    mismatchedFields: result.mismatchedFields,
+    anomalyReason: result.anomalyReason,
     error: result.error,
   };
+}
+
+function bookingAiPanelTone(check: BookingAiCheckResult): string {
+  if (check.comparisonStatus === 'MATCHED' && check.status === 'VALID') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  if (check.comparisonStatus === 'MISMATCH' || check.status === 'INVALID' || check.status === 'ANOMALY' || check.status === 'ERROR') return 'border-red-200 bg-red-50 text-red-800';
+  return 'border-amber-200 bg-amber-50 text-amber-900';
+}
+
+const BookingAiResultPanel: React.FC<{ check: BookingAiCheckResult; showObservedValues?: boolean }> = ({
+  check,
+  showObservedValues = true,
+}) => {
+  const evidence = getBookingAiEvidence(check);
+  const hasObservedValues = Boolean(check.actualBookingNumber || check.actualCarrierCode || check.actualContainerType || check.actualCutOffDate);
+  const reviewTitle = getBookingAiReviewTitle(check);
+  const isMatchValid = check.comparisonStatus === 'MATCHED' && check.status === 'VALID';
+  const isMismatch = check.comparisonStatus === 'MISMATCH';
+  const isManualReview = check.status === 'MANUAL_REVIEW';
+
+  const badgeText = isMatchValid
+    ? 'AI: File Booking hợp lệ'
+    : isMismatch
+      ? 'AI: File Booking có sai lệch'
+      : isManualReview
+        ? 'AI: Booking chờ Ops thẩm định'
+        : 'AI: Booking có cảnh báo';
+
+  return (
+    <div className={`rounded-xl border p-3 text-xs ${bookingAiPanelTone(check)}`}>
+      <div className="flex flex-wrap items-center gap-1.5 font-bold">
+        <span>{badgeText}</span>
+        {reviewTitle && !reviewTitle.toLowerCase().includes(badgeText.toLowerCase().replace('ai: ', '')) && (
+          <span className="font-medium text-slate-700">· {reviewTitle}</span>
+        )}
+      </div>
+      {check.summary && <p className="mt-1 leading-relaxed text-slate-700">{check.summary}</p>}
+      {showObservedValues && hasObservedValues && (
+        <div className="mt-2 grid grid-cols-2 gap-1.5 text-[11px]">
+          <span className="rounded-lg bg-white/80 px-2 py-1 border border-slate-100">AI đọc số Booking: <strong>{check.actualBookingNumber || 'Không đọc được'}</strong></span>
+          <span className="rounded-lg bg-white/80 px-2 py-1 border border-slate-100">AI đọc hãng tàu: <strong>{check.actualCarrierCode || 'Không đọc được'}</strong></span>
+          <span className="rounded-lg bg-white/80 px-2 py-1 border border-slate-100">AI đọc loại cont: <strong>{check.actualContainerType || 'Không đọc được'}</strong></span>
+          <span className="rounded-lg bg-white/80 px-2 py-1 border border-slate-100">AI đọc cut-off: <strong>{check.actualCutOffDate || 'Không thấy trên file'}</strong></span>
+        </div>
+      )}
+      {evidence.length > 0 && <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-slate-600">{evidence.map((detail, index) => <li key={`${detail}-${index}`}>{detail}</li>)}</ul>}
+    </div>
+  );
+};
+
+function getBookingAiMismatchErrors(check: BookingAiCheckResult, target: 'create' | 'edit'): FieldErrors {
+  if (check.comparisonStatus !== 'MISMATCH') return {};
+  const prefix = target === 'edit' ? 'edit-' : '';
+  const details = check.mismatchDetails?.join(' ') || check.summary;
+  const errors: FieldErrors = { [`${prefix}bookingEvidence`]: `File Booking có sai lệch: ${details}` };
+  if (check.mismatchedFields?.includes('BOOKING_NUMBER')) errors[`${prefix}bookingNumber`] = 'Số Booking không khớp file Booking đã tải.';
+  if (check.mismatchedFields?.includes('CARRIER_CODE')) errors[`${prefix}carrierId`] = 'Hãng tàu không khớp file Booking đã tải.';
+  if (check.mismatchedFields?.includes('CONTAINER_TYPE')) errors[`${prefix}containerType`] = 'Loại container không khớp file Booking đã tải.';
+  if (check.mismatchedFields?.includes('CUT_OFF_TIME')) errors[`${prefix}cutOffTime`] = 'Ngày cut-off không khớp file Booking đã tải.';
+  return errors;
+}
+
+function clearResolvedBookingAiErrors(errors: FieldErrors, target: 'create' | 'edit'): FieldErrors {
+  const prefix = target === 'edit' ? 'edit-' : '';
+  const fields = [`${prefix}bookingEvidence`, `${prefix}bookingNumber`, `${prefix}carrierId`, `${prefix}containerType`, `${prefix}cutOffTime`];
+  const next = { ...errors };
+  fields.forEach(field => {
+    if (/khớp file Booking đã tải|File Booking có sai lệch/.test(next[field] || '')) delete next[field];
+  });
+  return next;
 }
 
 function MatchCandidateCard({
@@ -245,10 +350,12 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
   const [withdrawErrors, setWithdrawErrors] = useState<FieldErrors>({});
   const [opsErrors, setOpsErrors] = useState<FieldErrors>({});
   const [bookingFile, setBookingFile] = useState<File | null>(null);
-  const [bookingAiResult, setBookingAiResult] = useState<EdoVerificationResult | null>(null);
+  const [bookingAiResult, setBookingAiResult] = useState<BookingAiCheckResult | null>(null);
+  const [bookingAiSource, setBookingAiSource] = useState<BookingVerificationResult | null>(null);
   const [isBookingAiChecking, setIsBookingAiChecking] = useState(false);
   const [editBookingFile, setEditBookingFile] = useState<File | null>(null);
-  const [editBookingAiResult, setEditBookingAiResult] = useState<EdoVerificationResult | null>(null);
+  const [editBookingAiResult, setEditBookingAiResult] = useState<BookingAiCheckResult | null>(null);
+  const [editBookingAiSource, setEditBookingAiSource] = useState<BookingVerificationResult | null>(null);
   const [isEditBookingAiChecking, setIsEditBookingAiChecking] = useState(false);
 
   useEffect(() => {
@@ -265,10 +372,54 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     carrierId: '',
   });
 
+  const createBookingRegistration = useMemo(() => toBookingRegistrationData(form), [
+    form.bookingNumber,
+    form.carrierId,
+    form.containerType,
+    form.cutOffTime,
+  ]);
+  const editBookingRegistration = useMemo(() => toBookingRegistrationData(editForm), [
+    editForm.bookingNumber,
+    editForm.carrierId,
+    editForm.containerType,
+    editForm.cutOffTime,
+  ]);
+
+  // Người dùng có thể upload file trước khi hoàn tất các trường tay. Khi họ
+  // nhập/sửa Booking, hãng tàu, loại cont hoặc cut-off, dùng dữ liệu AI đã đọc
+  // để đối chiếu lại ngay mà không phải tải file lần nữa.
+  useEffect(() => {
+    if (!bookingAiSource) return;
+    const next = mapBookingAiResult(reconcileBookingAiResult(bookingAiSource, createBookingRegistration));
+    setBookingAiResult(next);
+    setForm(previous => ({ ...previous, bookingAiCheck: next }));
+    setFormErrors(previous => next.comparisonStatus === 'MISMATCH'
+      ? { ...previous, ...getBookingAiMismatchErrors(next, 'create') }
+      : clearResolvedBookingAiErrors(previous, 'create'));
+  }, [bookingAiSource, createBookingRegistration]);
+
+  useEffect(() => {
+    if (!editBookingAiSource) return;
+    const next = mapBookingAiResult(reconcileBookingAiResult(editBookingAiSource, editBookingRegistration));
+    setEditBookingAiResult(next);
+    setEditForm(previous => ({ ...previous, bookingAiCheck: next }));
+    setEditErrors(previous => next.comparisonStatus === 'MISMATCH'
+      ? { ...previous, ...getBookingAiMismatchErrors(next, 'edit') }
+      : clearResolvedBookingAiErrors(previous, 'edit'));
+  }, [editBookingAiSource, editBookingRegistration]);
+
   const showMsg = (msg: string, isError = false) => {
     if (isError) setErrorMsg(msg);
     else setSuccessMsg(msg);
     setTimeout(() => { setErrorMsg(''); setSuccessMsg(''); }, 5000);
+  };
+
+  const applyBookingAiMismatchErrors = (check: BookingAiCheckResult, target: 'create' | 'edit') => {
+    if (check.comparisonStatus !== 'MISMATCH') return;
+    const errors = getBookingAiMismatchErrors(check, target);
+    if (target === 'create') setFormErrors(previous => ({ ...previous, ...errors }));
+    else setEditErrors(previous => ({ ...previous, ...errors }));
+    scrollToFirstFieldError(errors);
   };
 
   const handleBookingFileSelection = async (file: File, target: 'create' | 'edit') => {
@@ -285,6 +436,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     if (target === 'create') {
       setBookingFile(file);
       setBookingAiResult(null);
+      setBookingAiSource(null);
       clearRequestError('bookingEvidence');
       setForm(previous => ({
         ...previous,
@@ -295,6 +447,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     } else {
       setEditBookingFile(file);
       setEditBookingAiResult(null);
+      setEditBookingAiSource(null);
       setEditErrors(previous => {
         const next = { ...previous };
         delete next['edit-bookingEvidence'];
@@ -309,17 +462,23 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
     }
 
     try {
-      const result = await verifyBookingWithAI(file);
+      const expected = target === 'create' ? createBookingRegistration : editBookingRegistration;
+      const result = await verifyBookingWithAI(file, expected);
       const aiCheck = mapBookingAiResult(result);
       if (target === 'create') {
-        setBookingAiResult(result);
+        setBookingAiSource(result);
+        setBookingAiResult(aiCheck);
         setForm(previous => ({ ...previous, bookingAiCheck: aiCheck }));
       } else {
-        setEditBookingAiResult(result);
+        setEditBookingAiSource(result);
+        setEditBookingAiResult(aiCheck);
         setEditForm(previous => ({ ...previous, bookingAiCheck: aiCheck }));
       }
-      if (result.status === 'VALID') {
-        showMsg('AI xác minh file Booking hợp lệ. Hồ sơ vẫn chờ Ops duyệt.');
+      if (aiCheck.comparisonStatus === 'MATCHED' && result.status === 'VALID') {
+        showMsg('AI xác minh file Booking hợp lệ và khớp thông tin đã nhập. Hồ sơ vẫn chờ Ops duyệt.');
+      } else if (aiCheck.comparisonStatus === 'MISMATCH') {
+        applyBookingAiMismatchErrors(aiCheck, target);
+        showMsg(`Booking có sai lệch: ${getBookingAiReviewTitle(aiCheck)}. Nếu vẫn đăng ký, hồ sơ sẽ được chuyển ngay Ops kiểm tra.`, true);
       } else if (result.status === 'MANUAL_REVIEW') {
         showMsg(`AI chưa thể kết luận Booking: ${result.error || result.summary} Hồ sơ sẽ chuyển Ops kiểm tra.`);
       } else {
@@ -334,17 +493,22 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
         summary: 'AI chưa thể kiểm tra file Booking; cần Ops kiểm tra thủ công.',
         details: [message],
         requiresOpsReview: true,
+        matchesRegistration: false,
+        comparisonStatus: 'PENDING',
+        mismatchDetails: [],
+        mismatchedFields: [],
         error: message,
       };
       if (target === 'create') {
-        setBookingAiResult({ ...fallback, success: false, isLegal: false } as EdoVerificationResult);
+        setBookingAiSource(null);
+        setBookingAiResult(fallback);
         setForm(previous => ({ ...previous, bookingAiCheck: fallback }));
       } else {
-        setEditBookingAiResult({ ...fallback, success: false, isLegal: false } as EdoVerificationResult);
+        setEditBookingAiSource(null);
+        setEditBookingAiResult(fallback);
         setEditForm(previous => ({ ...previous, bookingAiCheck: fallback }));
       }
       showMsg(fallback.summary, true);
-    } finally {
       setChecking(false);
     }
   };
@@ -368,6 +532,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
       );
     }
     if (filterStatus !== 'all') list = list.filter(r => r.status === filterStatus);
+    if (currentRole === 'OPS') return sortRequestsForOps(list);
     return [...list].sort((a, b) => {
       const createdAtA = new Date(a.createdAt || 0).getTime() || 0;
       const createdAtB = new Date(b.createdAt || 0).getTime() || 0;
@@ -454,6 +619,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
       setForm({ containerType: undefined, maxDistanceKm: undefined, carrierId: '' });
       setBookingFile(null);
       setBookingAiResult(null);
+      setBookingAiSource(null);
       setFormErrors({});
     } else {
       showMsg(result.message, true);
@@ -483,7 +649,8 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
       cargoRequirements: req.cargoRequirements || '',
     });
     setEditBookingFile(null);
-    setEditBookingAiResult(null);
+    setEditBookingAiResult(req.bookingAiCheck || null);
+    setEditBookingAiSource(null);
   };
 
   const handleSaveEdit = () => {
@@ -623,12 +790,14 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
         <div>
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
             <Search className="w-6 h-6 text-cyan-600" />
-            <span>{isRequesterRole ? 'Quản lý Nhu cầu & Tự động Ghép đôi' : 'Danh sách Nhu cầu tìm vỏ'}</span>
+            <span>{isRequesterRole ? 'Quản lý Nhu cầu & Tự động Ghép đôi' : currentRole === 'OPS' ? 'Thẩm định Nhu cầu cần vỏ' : 'Danh sách Nhu cầu tìm vỏ'}</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1">
             {isRequesterRole
               ? 'Tự động dò tìm và ghép đôi vỏ container rỗng theo Hãng tàu, Loại cont và Bán kính Dmax'
-              : `${filtered.length} nhu cầu đang hiển thị`}
+              : currentRole === 'OPS'
+                ? `${filtered.length} nhu cầu trong hàng đợi thẩm định Booking`
+                : `${filtered.length} nhu cầu đang hiển thị`}
           </p>
         </div>
         {canCreateRequests && (
@@ -717,11 +886,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
               </div>
               <FieldError message={formErrors.bookingEvidence} />
               {bookingAiResult && (
-                <div className={`rounded-lg border px-3 py-2 text-xs ${bookingAiResult.status === 'VALID' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : bookingAiResult.status === 'MANUAL_REVIEW' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
-                  <strong>{bookingAiResult.status === 'VALID' ? 'AI: Booking hợp lệ' : bookingAiResult.status === 'MANUAL_REVIEW' ? 'AI: Booking chờ Ops xác minh' : 'AI: Booking có cảnh báo'}</strong>
-                  <span className="ml-1">{bookingAiResult.summary}</span>
-                  {bookingAiResult.details.length > 0 && <ul className="mt-1 list-disc pl-4">{bookingAiResult.details.map((detail, index) => <li key={index}>{detail}</li>)}</ul>}
-                </div>
+                <BookingAiResultPanel check={bookingAiResult} />
               )}
             </div>
             <div>
@@ -946,21 +1111,18 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
                     />
                   </label>
                   <button
-                    type="button"
-                    disabled={!editBookingFile || isEditBookingAiChecking}
-                    onClick={() => editBookingFile && void handleBookingFileSelection(editBookingFile, 'edit')}
-                    className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50"
-                  >
-                    {isEditBookingAiChecking ? 'Đang quét AI...' : 'Quét lại Booking bằng AI'}
-                  </button>
-                </div>
-                <FieldError message={editErrors['edit-bookingEvidence']} />
-                {editBookingAiResult && (
-                  <div className={`rounded-lg border px-3 py-2 text-xs ${editBookingAiResult.status === 'VALID' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : editBookingAiResult.status === 'MANUAL_REVIEW' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
-                    <strong>{editBookingAiResult.status === 'VALID' ? 'AI: Booking hợp lệ' : editBookingAiResult.status === 'MANUAL_REVIEW' ? 'AI: Booking chờ Ops xác minh' : 'AI: Booking có cảnh báo'}</strong>
-                    <span className="ml-1">{editBookingAiResult.summary}</span>
+                      type="button"
+                      disabled={!editBookingFile || isEditBookingAiChecking}
+                      onClick={() => editBookingFile && void handleBookingFileSelection(editBookingFile, 'edit')}
+                      className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50"
+                    >
+                      {isEditBookingAiChecking ? 'Đang quét AI...' : 'Quét lại Booking bằng AI'}
+                    </button>
                   </div>
-                )}
+                  <FieldError message={editErrors['edit-bookingEvidence']} />
+                  {editBookingAiResult && (
+                    <BookingAiResultPanel check={editBookingAiResult} />
+                  )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1149,10 +1311,26 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ setCurrentTab, setSe
               </div>
 
               {req.bookingFileName && (!isSupplierRole || (isRequesterRole && req.companyId === currentCompany.id)) && (
-                <div className={`flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-xs ${req.bookingAiCheck?.status === 'VALID' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
-                  <FileText className="w-3.5 h-3.5 shrink-0" />
-                  <span className="font-semibold">Booking: {req.bookingFileName}</span>
-                  <span>· AI: {req.bookingAiCheck?.status === 'VALID' ? 'hợp lệ' : req.bookingAiCheck?.status === 'INVALID' || req.bookingAiCheck?.status === 'ANOMALY' ? 'có cảnh báo' : 'chờ Ops kiểm tra'}</span>
+                <div className={`space-y-2 rounded-xl border ${currentRole === 'OPS' ? 'border-blue-200 bg-blue-50/50' : 'border-slate-200 bg-slate-50/70'} px-3 py-2 text-xs`}>
+                  <div className="flex flex-wrap items-center gap-2 text-slate-700">
+                    <FileText className="w-3.5 h-3.5 shrink-0 text-blue-600" />
+                    <span className="font-semibold">File Booking: {req.bookingFileName}</span>
+                    {currentRole === 'OPS' && (
+                      <span>· AI: {req.bookingAiCheck?.comparisonStatus === 'MATCHED' && req.bookingAiCheck.status === 'VALID' ? 'hợp lệ, khớp thông tin' : req.bookingAiCheck?.comparisonStatus === 'MISMATCH' || req.bookingAiCheck?.status === 'INVALID' || req.bookingAiCheck?.status === 'ANOMALY' ? 'có sai lệch/cảnh báo' : 'chờ Ops kiểm tra'}</span>
+                    )}
+                  </div>
+                  {currentRole === 'OPS' && req.bookingAiCheck && <BookingAiResultPanel check={req.bookingAiCheck} />}
+                  {currentRole === 'OPS' && req.bookingAiCheck && (
+                    <div className="rounded-lg border border-violet-200 bg-violet-50/70 p-2.5 text-violet-950">
+                      <strong>Kết quả AI đối chiếu với thông tin đăng ký:</strong>
+                      <div className="mt-1.5 grid grid-cols-2 gap-1.5 text-[11px]">
+                        <span className="rounded bg-white px-2 py-1">Đăng ký số Booking: <strong>{req.bookingNumber}</strong></span>
+                        <span className="rounded bg-white px-2 py-1">Đăng ký hãng tàu: <strong>{req.carrierCode}</strong></span>
+                        <span className="rounded bg-white px-2 py-1">Đăng ký loại cont: <strong>{req.containerType}</strong></span>
+                        <span className="rounded bg-white px-2 py-1">Đăng ký cut-off: <strong>{formatDate(req.cutOffTime)}</strong></span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
