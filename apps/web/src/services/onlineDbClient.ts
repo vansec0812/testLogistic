@@ -16,15 +16,19 @@ export interface OnlineDbConfig {
 }
 
 const STORAGE_KEY_CONFIG = 'econt_online_db_config';
+const runtimeEnv = (import.meta as any).env || {};
+const configuredSupabaseUrl = String(runtimeEnv.VITE_SUPABASE_URL || '').trim();
+const configuredSupabaseAnonKey = String(runtimeEnv.VITE_SUPABASE_ANON_KEY || '').trim();
+const configuredSupabaseDashboardUrl = String(runtimeEnv.VITE_SUPABASE_DASHBOARD_URL || '').trim();
 
 // URL mặc định của dự án CSDL Online Supabase dành cho ECont
 export const DEFAULT_ONLINE_DB_CONFIG: OnlineDbConfig = {
-  supabaseUrl: 'https://vugvksvlypnhfsqjnmzt.supabase.co',
-  supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ1Z3Zrc3ZseXBuaGZzcWpubXp0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTE2MjY3NDEsImV4cCI6MjAyNzIwMjc0MX0.zH_6K8N7L0eS4tqO9ZgK5x1_dummy_placeholder_for_demo',
-  adminDashboardUrl: 'https://supabase.com/dashboard/project/vugvksvlypnhfsqjnmzt/editor',
-  isConnected: true,
+  supabaseUrl: configuredSupabaseUrl,
+  supabaseAnonKey: configuredSupabaseAnonKey,
+  adminDashboardUrl: configuredSupabaseDashboardUrl,
+  isConnected: Boolean(configuredSupabaseUrl && configuredSupabaseAnonKey),
   lastSyncedAt: new Date().toISOString(),
-  autoSync: true
+  autoSync: Boolean(configuredSupabaseUrl && configuredSupabaseAnonKey)
 };
 
 export class OnlineDbService {
@@ -172,4 +176,3 @@ export class OnlineDbService {
 }
 
 export const onlineDb = new OnlineDbService();
-

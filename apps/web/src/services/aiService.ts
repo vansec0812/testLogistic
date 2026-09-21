@@ -104,12 +104,47 @@ export function fileToBase64(file: File): Promise<{ mimeType: string; data: stri
   });
 }
 
+const MAX_AI_DOCUMENT_BASE64_CHARS = 3_600_000;
+const MAX_AI_PHOTO_BASE64_CHARS = 3_600_000;
+
+function assertAiDocumentSize(document: { data: string }): void {
+  if (document.data.length > MAX_AI_DOCUMENT_BASE64_CHARS) {
+    throw new Error('Tệp quá lớn cho phiên quét AI trên Vercel. Vui lòng nén tệp xuống khoảng 2,5 MB rồi thử lại.');
+  }
+}
+
+function assertAiPhotoSize(photos: string[]): void {
+  const encodedChars = photos.reduce((total, photo) => {
+    const separator = photo.indexOf(',');
+    return total + (separator >= 0 ? photo.length - separator - 1 : photo.length);
+  }, 0);
+  if (encodedChars > MAX_AI_PHOTO_BASE64_CHARS) {
+    throw new Error('Tổng dung lượng 6 ảnh quá lớn cho phiên quét AI trên Vercel. Vui lòng chọn ảnh nhẹ hơn.');
+  }
+}
+
+async function fileToAiDocument(file: File): Promise<{ mimeType: string; data: string }> {
+  if (file.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name)) {
+    const dataUrl = await imageFileToDataUrl(file);
+    const separator = dataUrl.indexOf(',');
+    if (separator >= 0) {
+      const mimeType = dataUrl.slice(5, dataUrl.indexOf(';')) || 'image/jpeg';
+      const document = { mimeType, data: dataUrl.slice(separator + 1) };
+      assertAiDocumentSize(document);
+      return document;
+    }
+  }
+  const document = await fileToBase64(file);
+  assertAiDocumentSize(document);
+  return document;
+}
+
 /**
  * Nén ảnh trước khi gửi lên gateway. Ảnh điện thoại thường rất lớn; nếu gửi
  * nguyên bản cả 6-12 ảnh sẽ dễ vượt giới hạn body của Gemini dù file từng ảnh
  * vẫn hợp lệ.
  */
-export function imageFileToDataUrl(file: File, maxDimension = 1800, quality = 0.82): Promise<string> {
+export function imageFileToDataUrl(file: File, maxDimension = 1400, quality = 0.75): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/') && !/\.(png|jpe?g|webp)$/i.test(file.name)) {
       reject(new Error('Tệp không phải là ảnh container.'));
@@ -298,7 +333,7 @@ function fallbackApiMessage(error: unknown): string {
 export async function extractEdoWithAI(file: File): Promise<{ success: boolean; data?: ExtractedEdoData; error?: string }> {
   try {
     if (isApiConfigured) {
-      const document = await fileToBase64(file);
+      const document = await fileToAiDocument(file);
       const response = unwrapApiPayload(await postApi<any>('/api/ai/edo/scan', {
         task: 'EDO_EXTRACTION',
         document: { fileName: file.name, ...document },
@@ -354,7 +389,7 @@ export async function verifyEdoWithAI(
   }
 
   try {
-    const document = await fileToBase64(file);
+    const document = await fileToAiDocument(file);
     const response = unwrapApiPayload(await postApi<any>('/api/ai/edo/verify', {
       task: documentType === 'BOOKING' ? 'BOOKING_LEGALITY_AND_ANOMALY_CHECK' : 'EDO_LEGALITY_AND_ANOMALY_CHECK',
       document: { fileName: file.name, ...document },
@@ -435,6 +470,7 @@ export async function inspectContainerWithAI(photos: string[]): Promise<AiInspec
     return { success: false, status: 'ERROR', requiresOpsReview: true, error: 'Chưa cấu hình ECont AI API. Không được tự đánh dấu ảnh đạt khi chưa có kết quả AI.' };
   }
   try {
+    assertAiPhotoSize(photos);
     const response = unwrapApiPayload(await postApi<any>('/api/ai/container/inspect', {
       task: 'CONTAINER_PHYSICAL_CONDITION',
       photos,
@@ -486,6 +522,7 @@ export async function verifyContainerPhotosWithAI(
   }
 
   try {
+    assertAiPhotoSize(photos);
     const response = unwrapApiPayload(await postApi<any>('/api/ai/container/verify', {
       task: 'CONTAINER_IDENTITY_AND_PHYSICAL_CONDITION',
       photos,

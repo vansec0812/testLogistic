@@ -22,13 +22,22 @@ export function readGatewayConfig({ env = process.env, envPath = join(currentDir
     && !/^(replace[-_ ]|your[-_ ]|<|PASTE_)/i.test(value.trim());
   const apiKey = [values.ECONT_AI_API_KEY, values.GOOGLE_AI_API_KEY, values.GEMINI_API_KEY, values.GOOGLE_API_KEY]
     .find(usableValue)?.trim() || '';
+  const configuredTimeout = Number(values.ECONT_AI_TIMEOUT_MS);
+  const defaultTimeout = values.VERCEL ? 50_000 : 90_000;
+  const providerTimeoutMs = Number.isFinite(configuredTimeout)
+    ? Math.min(Math.max(configuredTimeout, 5_000), 300_000)
+    : defaultTimeout;
+  const allowedOrigin = String(
+    values.AI_ALLOWED_ORIGIN
+      || (values.VERCEL_URL ? `https://${values.VERCEL_URL}` : 'http://localhost:5173'),
+  ).trim();
   return {
     port: Number(values.PORT || 8000),
     provider: String(values.AI_PROVIDER || 'gemini').trim().toLowerCase(),
     model: String(values.ECONT_AI_MODEL || 'gemini-3-flash-preview').trim(),
     apiKey,
-    allowedOrigin: values.AI_ALLOWED_ORIGIN || 'http://localhost:5173',
-    providerTimeoutMs: 90_000,
+    allowedOrigin,
+    providerTimeoutMs,
   };
 }
 
@@ -52,6 +61,25 @@ function sendJson(response, status, payload, allowedOrigin) {
 }
 
 async function readJson(request) {
+  // Vercel's Node runtime may parse the body before invoking the function,
+  // while the local HTTP server exposes it as a readable request stream.
+  if (request.body !== undefined && request.body !== null) {
+    if (typeof request.body === 'object' && !Buffer.isBuffer(request.body)) {
+      if (Array.isArray(request.body)) throw new GatewayError('Payload JSON không hợp lệ.', 400);
+      return request.body;
+    }
+    const parsedBody = Buffer.isBuffer(request.body)
+      ? request.body.toString('utf8')
+      : String(request.body);
+    try {
+      const payload = JSON.parse(parsedBody);
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('object required');
+      return payload;
+    } catch {
+      throw new GatewayError('Payload JSON không hợp lệ.', 400);
+    }
+  }
+
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
