@@ -55,6 +55,31 @@ test('eDO forwards actual PDF bytes using a server-side header and preserves man
   assert.deepEqual(await response.json(), result);
 });
 
+test('Booking verification forwards manual registration data into the dedicated comparison prompt', async t => {
+  const result = {
+    status: 'ANOMALY', isLegal: false, hasAnomaly: true, requiresOpsReview: true,
+    summary: 'Số Booking không khớp.', details: [], matchesRegistration: false,
+    actualBookingNumber: 'CMA-VN-100001', actualCarrierCode: 'CMA', actualContainerType: '20GP',
+    mismatchDetails: ['Số Booking trên file khác số Booking đã nhập.'],
+  };
+  const request = await startGateway(t, { fetchImpl: async (_url, init) => {
+    const parts = JSON.parse(init.body).contents[0].parts;
+    assert.match(parts[0].text, /bộ phận kiểm tra file Booking/i);
+    assert.match(parts[0].text, /MSK-VN-984210/);
+    assert.match(parts[0].text, /"carrierCode":"MSK"/);
+    assert.deepEqual(parts[1].inline_data, { mime_type: document.mimeType, data: document.data });
+    return providerJson(result);
+  } });
+  const response = await request('/api/ai/edo/verify', {
+    task: 'BOOKING_LEGALITY_AND_REGISTRATION_MATCH',
+    documentType: 'BOOKING',
+    document,
+    expectedBooking: { bookingNumber: 'MSK-VN-984210', carrierCode: 'MSK', containerType: '40HC', cutOffDate: '30/09/2026' },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), result);
+});
+
 test('container scan forwards all six images and declared identity, returning observed condition', async t => {
   const result = { status: 'MISMATCH', matchesRegistration: false, actualCondition: 'MINOR_DAMAGE', actualConditionNotes: 'Vách xước và rỉ.', summary: 'Có hư hỏng', requiresOpsReview: true };
   const request = await startGateway(t, { fetchImpl: async (_url, init) => {
