@@ -55,13 +55,36 @@ test('eDO forwards actual PDF bytes using a server-side header and preserves man
   assert.deepEqual(await response.json(), result);
 });
 
-test('container scan forwards all six images and declared identity, returning observed condition', async t => {
+test('eDO verification extracts file identity without showing Offer values to the model', async t => {
+  const result = {
+    status: 'VALID', isLegal: true, hasAnomaly: false, requiresOpsReview: false,
+    documentType: 'EDO', actualContainerNumber: 'CMAU2197439',
+    actualCarrierCode: 'CMA', actualContainerType: '20GP',
+    summary: 'eDO đọc rõ.', details: [],
+  };
+  const request = await startGateway(t, { fetchImpl: async (_url, init) => {
+    const parts = JSON.parse(init.body).contents[0].parts;
+    assert.match(parts[0].text, /kiểm tra chứng từ eDO/i);
+    assert.doesNotMatch(parts[0].text, /MSKU8421093/);
+    assert.match(parts[0].text, /actualContainerNumber/);
+    assert.deepEqual(parts[1].inline_data, { mime_type: document.mimeType, data: document.data });
+    return providerJson(result);
+  } });
+  const response = await request('/api/ai/edo/verify', {
+    task: 'EDO_LEGALITY_AND_FIELD_EXTRACTION', documentType: 'EDO', document,
+    expectedEdo: { containerNumber: 'MSKU8421093', carrierCode: 'MSK', containerType: '40HC' },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), result);
+});
+test('container scan forwards all six images but hides declared identity from OCR', async t => {
   const result = { status: 'MISMATCH', matchesRegistration: false, actualCondition: 'MINOR_DAMAGE', actualConditionNotes: 'Vách xước và rỉ.', summary: 'Có hư hỏng', requiresOpsReview: true };
   const request = await startGateway(t, { fetchImpl: async (_url, init) => {
     const parts = JSON.parse(init.body).contents[0].parts;
     assert.equal(parts.length, 7);
     assert.ok(parts.slice(1).every(part => part.inline_data.mime_type === 'image/png'));
-    assert.match(parts[0].text, /TEST1234567/);
+    assert.doesNotMatch(parts[0].text, /TEST1234567/);
+    assert.match(parts[0].text, /actualConditionNotes/);
     return providerJson(result);
   } });
   const response = await request('/api/ai/container/verify', { photos: Array(6).fill(png), expected: { containerNumber: 'TEST1234567' } });
@@ -119,4 +142,77 @@ test('configuration is reread on retry so adding a key does not require a server
   apiKey = config.apiKey;
   assert.equal((await request('/api/ai/edo/verify', { document })).status, 200);
   assert.ok(!JSON.stringify(await (await request('/api/health')).json()).includes(apiKey));
+});
+
+test('Booking extracts its own fields without being primed by manually entered values', async t => {
+  const request = await startGateway(t, { fetchImpl: async (_url, init) => {
+    const parts = JSON.parse(init.body).contents[0].parts;
+    assert.match(parts[0].text, /actualBookingNumber/);
+    assert.match(parts[0].text, /actualCutOffDate/);
+    assert.doesNotMatch(parts[0].text, /SECRET-EXPECTED-BOOKING/);
+    assert.equal(parts[1].inline_data.data, document.data);
+    return providerJson({ status: 'MANUAL_REVIEW', summary: 'Cần kiểm tra' });
+  } });
+  assert.equal((await request('/api/ai/edo/verify', { document, documentType: 'BOOKING', expected: { bookingNumber: 'SECRET-EXPECTED-BOOKING' } })).status, 200);
+});
+
+for (const failure of ['busy', 'html', 'timeout', 'missing-model']) {
+  test(`${failure}: retry/fallback preserves all uploaded evidence`, async t => {
+    const calls = [];
+    const request = await startGateway(t, {
+      getConfig: () => ({ ...config, model: 'primary-fixture', fallbackModels: ['fallback-fixture'] }),
+      fetchImpl: async (url, init) => {
+        calls.push({ url, body: init.body });
+        if (calls.length === 1) {
+          if (failure === 'timeout') throw new DOMException('timed out', 'TimeoutError');
+          if (failure === 'html') return new Response('<html>busy</html>', { status: 503 });
+          return new Response(JSON.stringify({ error: { message: 'temporary fixture error' } }), { status: failure === 'missing-model' ? 404 : 503 });
+        }
+        return providerJson({ status: 'MANUAL_REVIEW', summary: 'Đã đọc file, cần Ops kiểm tra' });
+      },
+    });
+    const result = await request('/api/ai/edo/verify', { document, documentType: 'BOOKING' });
+    assert.equal(result.status, 200);
+    assert.equal(calls.length, 2);
+    assert.match(calls[0].url, /primary-fixture/);
+    assert.match(calls[1].url, /fallback-fixture/);
+    assert.equal(calls[0].body, calls[1].body);
+  });
+}
+test('invalid key fails immediately without wasting calls on another model', async t => {
+  let calls = 0;
+  const request = await startGateway(t, {
+    getConfig: () => ({ ...config, fallbackModels: ['fallback-fixture'] }),
+    fetchImpl: async () => { calls++; return new Response(JSON.stringify({ error: { message: 'API key not valid' } }), { status: 400 }); },
+  });
+  assert.equal((await request('/api/ai/edo/verify', { document })).status, 503);
+  assert.equal(calls, 1);
+});
+test('Vercel timeout remains below function limit even if configured for local use', () => {
+  const result = readGatewayConfig({ env: { VERCEL: '1', ECONT_AI_TIMEOUT_MS: '90000' }, envPath: '/nonexistent/econt-test.env' });
+  assert.equal(result.providerTimeoutMs, 50000);
+});
+test('retry budget expires without accepting a result or calling indefinitely', async t => {
+  let calls = 0;
+  const request = await startGateway(t, {
+    getConfig: () => ({ ...config, providerTimeoutMs: 100 }),
+    fetchImpl: async () => { calls++; return new Response('{}', { status: 503 }); },
+  });
+  const result = await request('/api/ai/container/verify', { photos: Array(6).fill(png) });
+  assert.equal(result.status, 502);
+  assert.equal(calls, 1);
+});
+
+test('tiny image is rejected before Gemini can hallucinate eDO, Booking or photo evidence', async t => {
+  let calls = 0;
+  const request = await startGateway(t, { fetchImpl: async () => { calls++; return providerJson({ status: 'VALID' }); } });
+  const pixel = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/J/0AAAAASUVORK5CYII=';
+  for (const documentType of ['EDO', 'BOOKING']) {
+    const result = await request('/api/ai/edo/verify', { documentType, document: { mimeType: 'image/png', data: pixel } });
+    assert.equal(result.status, 422);
+    assert.equal((await result.json()).code, 'AI_IMAGE_TOO_SMALL');
+  }
+  const result = await request('/api/ai/container/verify', { photos: Array(6).fill('data:image/png;base64,' + pixel) });
+  assert.equal(result.status, 422);
+  assert.equal(calls, 0);
 });

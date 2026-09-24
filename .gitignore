@@ -21,3 +21,6 @@ coverage/
 .DS_Store
 Thumbs.db
 
+# Temporary directory
+tmp/
+
