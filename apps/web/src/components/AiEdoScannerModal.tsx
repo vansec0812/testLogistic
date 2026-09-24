@@ -491,6 +491,9 @@ export const AiEdoScannerModal: React.FC<AiEdoScannerModalProps> = ({
                 {verificationResult.score !== undefined && <span className="ml-auto font-mono">{verificationResult.score}/100</span>}
               </div>
               <p className="text-xs">{verificationResult.summary}</p>
+              {(verificationResult.actualContainerNumber || verificationResult.actualCarrierCode || verificationResult.actualContainerType) && (
+                <p className="text-xs">AI đọc từ eDO: Cont {verificationResult.actualContainerNumber || 'chưa rõ'} · Hãng {verificationResult.actualCarrierCode || 'chưa rõ'} · Loại {verificationResult.actualContainerType || 'chưa rõ'}</p>
+              )}
               {verificationResult.details.length > 0 && (
                 <ul className="text-xs list-disc pl-5 space-y-0.5">
                   {verificationResult.details.map((detail, index) => <li key={index}>{detail}</li>)}

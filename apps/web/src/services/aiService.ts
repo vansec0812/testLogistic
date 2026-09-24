@@ -32,6 +32,36 @@ export interface EdoVerificationResult {
   anomalyReason?: string;
   requiresOpsReview: boolean;
   error?: string;
+  documentVerification?: EdoVerificationResult;
+  documentType?: 'EDO' | 'BOOKING' | 'OTHER' | 'UNKNOWN';
+  matchesRegistration?: boolean;
+  comparisonStatus?: 'MATCHED' | 'MISMATCH' | 'PENDING';
+  actualContainerNumber?: string;
+  actualCarrierCode?: string;
+  actualContainerType?: string;
+  mismatchDetails?: string[];
+  mismatchedFields?: Array<'CONTAINER_NUMBER' | 'CARRIER_CODE' | 'CONTAINER_TYPE'>;
+  sourceReportedMismatch?: boolean;
+  sourceMismatchDetails?: string[];
+}
+
+export interface EdoRegistrationData {
+  containerNumber?: string;
+  carrierCode?: CarrierCode;
+  containerType?: ContainerType;
+}
+
+export interface BookingRegistrationData {
+  bookingNumber?: string;
+  carrierCode?: string;
+  containerType?: string;
+  cutOffTime?: string;
+}
+
+export interface BookingVerificationResult extends Omit<EdoVerificationResult, 'mismatchedFields'> {
+  actualBookingNumber?: string;
+  actualCutOffDate?: string;
+  mismatchedFields?: Array<'BOOKING_NUMBER' | 'CARRIER_CODE' | 'CONTAINER_TYPE' | 'CUT_OFF_TIME'>;
 }
 
 export interface ContainerPhotoVerificationResult {
@@ -161,8 +191,14 @@ export function imageFileToDataUrl(file: File, maxDimension = 1400, quality = 0.
       }
 
       const image = new Image();
-      image.onerror = () => resolve(source);
+      image.onerror = () => reject(new Error('Không mở được ảnh. Vui lòng chọn ảnh JPEG, PNG hoặc WebP hợp lệ.'));
       image.onload = () => {
+        const originalWidth = image.naturalWidth || image.width;
+        const originalHeight = image.naturalHeight || image.height;
+        if (Math.min(originalWidth, originalHeight) < 160 || Math.max(originalWidth, originalHeight) < 320) {
+          reject(new Error('Ảnh có độ phân giải quá thấp. Vui lòng tải ảnh gốc rõ nét.'));
+          return;
+        }
         const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
         const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
         const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
@@ -175,6 +211,17 @@ export function imageFileToDataUrl(file: File, maxDimension = 1400, quality = 0.
           return;
         }
         context.drawImage(image, 0, 0, width, height);
+        // Validate a small sample so a blank image never gets a fabricated OCR verdict.
+        const sample = document.createElement('canvas');
+        sample.width = 64; sample.height = 64;
+        const sampleContext = sample.getContext('2d');
+        if (sampleContext) {
+          sampleContext.drawImage(image, 0, 0, 64, 64);
+          if (isBlankImagePixels(sampleContext.getImageData(0, 0, 64, 64).data)) {
+            reject(new Error('Ảnh trống hoặc không thấy nội dung. Vui lòng tải lại ảnh rõ nét.'));
+            return;
+          }
+        }
         resolve(canvas.toDataURL('image/jpeg', quality));
       };
       image.src = source;
@@ -329,6 +376,190 @@ function fallbackApiMessage(error: unknown): string {
   return message;
 }
 
+function mapDocumentVerificationResponse(response: any, label: string): EdoVerificationResult {
+  const statusValue = String(response.status || '').toUpperCase();
+  if (statusValue === 'MANUAL_REVIEW') {
+    return {
+      success: true,
+      status: 'MANUAL_REVIEW',
+      isLegal: false,
+      hasAnomaly: asBoolean(response.hasAnomaly ?? response.anomaly ?? response.suspicious),
+      summary: vietnameseText(response.summary, 'AI chưa đủ cơ sở kết luận; cần Ops kiểm tra.'),
+      details: vietnameseTextArray(response.details || response.findings),
+      requiresOpsReview: true,
+    };
+  }
+
+  const hasLegalValue = typeof response.isLegal === 'boolean'
+    || typeof response.isValid === 'boolean'
+    || typeof response.legal === 'boolean'
+    || typeof response.valid === 'boolean'
+    || typeof response.isValidEdo === 'boolean';
+  if (!hasLegalValue) {
+    return {
+      success: true,
+      status: 'MANUAL_REVIEW',
+      isLegal: false,
+      hasAnomaly: true,
+      summary: 'API chưa trả về kết quả pháp lý rõ ràng; cần Ops xác minh thủ công.',
+      details: ['Thiếu trường isLegal/isValid trong phản hồi API.'],
+      requiresOpsReview: true,
+    };
+  }
+
+  const statusImpliesLegal = ['VALID', 'LEGAL', 'APPROVED'].includes(statusValue);
+  const statusImpliesInvalid = ['INVALID', 'ILLEGAL', 'REJECTED'].includes(statusValue);
+  const reportedLegal = asBoolean(
+    response.isLegal ?? response.isValid ?? response.legal ?? response.valid ?? response.isValidEdo,
+    statusImpliesLegal ? true : statusImpliesInvalid ? false : false,
+  );
+  const hasAnomaly = asBoolean(response.hasAnomaly ?? response.anomaly ?? response.suspicious);
+  const details = vietnameseTextArray(response.details || response.findings || response.anomalies);
+  const incompleteVerdict = typeof response.requiresOpsReview !== 'boolean'
+    || typeof (response.hasAnomaly ?? response.anomaly ?? response.suspicious) !== 'boolean'
+    || !asString(response.summary || response.message);
+  if (incompleteVerdict) details.push('Kết quả AI thiếu thông tin kết luận/cảnh báo; cần Ops kiểm tra.');
+  const providerNeedsReview = incompleteVerdict || asBoolean(response.requiresOpsReview);
+  const conflictingVerdict = (statusImpliesInvalid && reportedLegal) || (statusImpliesLegal && !reportedLegal);
+  const status = statusImpliesInvalid ? 'INVALID'
+    : statusValue === 'ANOMALY' || hasAnomaly ? 'ANOMALY'
+      : conflictingVerdict || providerNeedsReview ? 'MANUAL_REVIEW'
+        : reportedLegal ? 'VALID' : 'INVALID';
+  const isLegal = status === 'VALID';
+  return {
+    success: true,
+    status,
+    isLegal,
+    hasAnomaly,
+    score: Number(response.score ?? response.confidence ?? 0) || undefined,
+    summary: vietnameseText(response.summary || response.message, isLegal ? `${label} hợp lệ theo kết quả AI.` : `${label} cần Ops xác minh.`),
+    details,
+    anomalyReason: vietnameseText(response.anomalyReason || response.reason) || undefined,
+    requiresOpsReview: status !== 'VALID',
+  };
+}
+
+function normalizeBookingCarrier(value: unknown): string {
+  const normalized = asString(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!normalized) return '';
+  if (['MSK', 'MAERSK', 'MAERSKLINE'].includes(normalized)) return 'MSK';
+  if (['CMA', 'CMACGM', 'CMACGMGROUP'].includes(normalized)) return 'CMA';
+  if (['ONE', 'OCEANNETWORKEXPRESS'].includes(normalized)) return 'ONE';
+  if (['EMC', 'EVERGREEN', 'EVERGREENMARINE', 'EVERGREENMARINECORP'].includes(normalized)) return 'EMC';
+  if (['COSCO', 'COSCOSHIPPING', 'COSCOSHIPPINGLINES'].includes(normalized)) return 'COSCO';
+  return normalized;
+}
+
+function uniqueText(items: string[]): string[] {
+  return [...new Set(items.map(item => item.trim()).filter(Boolean))];
+}
+
+function normalizeEdoContainerNumber(value: unknown): string {
+  return asString(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function normalizeEdoContainerType(value: unknown): string {
+  const normalized = asString(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (['40HC', '40HQ', '40HIGHCUBE'].includes(normalized)) return '40HC';
+  if (['20GP', '20DC', '20DV', '20DRY'].includes(normalized)) return '20GP';
+  return normalized;
+}
+
+function compareEdoRegistration(
+  base: EdoVerificationResult,
+  response: any,
+  expected?: EdoRegistrationData,
+): EdoVerificationResult {
+  const documentTypeValue = asString(response.documentType).toUpperCase().replace(/[^A-Z]/g, '');
+  const documentType = (['EDO', 'BOOKING', 'OTHER'].includes(documentTypeValue)
+    ? documentTypeValue : 'UNKNOWN') as EdoVerificationResult['documentType'];
+  const actualContainerNumber = asString(response.actualContainerNumber ?? response.containerNumber) || undefined;
+  const actualCarrierCode = asString(response.actualCarrierCode ?? response.carrierCode) || undefined;
+  const actualContainerType = asString(response.actualContainerType ?? response.containerType) || undefined;
+  const sourceMismatchDetails = vietnameseTextArray(response.mismatchDetails);
+
+  const observed = {
+    documentVerification: base,
+    documentType,
+    actualContainerNumber,
+    actualCarrierCode,
+    actualContainerType,
+    sourceReportedMismatch: response.matchesRegistration === false,
+    sourceMismatchDetails,
+  };
+  const expectedNumber = normalizeEdoContainerNumber(expected?.containerNumber);
+  const expectedCarrier = normalizeBookingCarrier(expected?.carrierCode);
+  const expectedType = normalizeEdoContainerType(expected?.containerType);
+  const actualNumber = normalizeEdoContainerNumber(actualContainerNumber);
+  const actualCarrier = normalizeBookingCarrier(actualCarrierCode);
+  const actualType = normalizeEdoContainerType(actualContainerType);
+  const mismatchedFields: NonNullable<EdoVerificationResult['mismatchedFields']> = [];
+  const mismatchDetails = [...sourceMismatchDetails];
+  if (expectedNumber && actualNumber && expectedNumber !== actualNumber) {
+    mismatchedFields.push('CONTAINER_NUMBER');
+    mismatchDetails.push(`Số container trên eDO (${actualContainerNumber}) không khớp số đã nhập (${expected?.containerNumber}).`);
+  }
+  if (expectedCarrier && actualCarrier && expectedCarrier !== actualCarrier) {
+    mismatchedFields.push('CARRIER_CODE');
+    mismatchDetails.push(`Hãng tàu trên eDO (${actualCarrierCode}) không khớp hãng đã chọn (${expected?.carrierCode}).`);
+  }
+  if (expectedType && actualType && expectedType !== actualType) {
+    mismatchedFields.push('CONTAINER_TYPE');
+    mismatchDetails.push(`Loại container trên eDO (${actualContainerType}) không khớp loại đã chọn (${expected?.containerType}).`);
+  }
+
+  const missingExpected = Boolean(expected) && (!expectedNumber || !expectedCarrier || !expectedType);
+  const missingObserved = !actualNumber || !actualCarrier || !actualType;
+  const hasMismatch = mismatchedFields.length > 0 || observed.sourceReportedMismatch || sourceMismatchDetails.length > 0;
+  const hasWrongDocument = documentType === 'BOOKING' || documentType === 'OTHER';
+  const pending = !hasMismatch && !hasWrongDocument && (missingExpected || missingObserved || documentType !== 'EDO');
+  const details = uniqueText([
+    ...base.details,
+    ...mismatchDetails,
+    hasWrongDocument ? 'Tệp tải lên không được AI nhận diện là eDO.' : '',
+    missingExpected ? 'Offer chưa có đủ số container, hãng tàu và loại container để đối chiếu eDO.' : '',
+    missingObserved ? 'AI chưa đọc rõ số container, hãng tàu hoặc loại container trên eDO.' : '',
+    documentType === 'UNKNOWN' ? 'AI chưa xác định rõ loại chứng từ là eDO.' : '',
+  ]);
+  const status = hasMismatch || hasWrongDocument ? 'ANOMALY'
+    : pending && base.status === 'VALID' ? 'MANUAL_REVIEW' : base.status;
+  const summary = hasMismatch ? `Thông tin eDO không khớp thông tin đăng ký. ${mismatchDetails[0] || 'Ops cần kiểm tra chứng từ gốc.'}`
+    : hasWrongDocument ? 'Tệp tải lên không phải chứng từ eDO; cần Ops kiểm tra.'
+      : pending && base.status === 'VALID'
+        ? missingExpected ? 'Cần nhập đủ thông tin Offer để đối chiếu eDO.' : 'AI chưa đọc đủ thông tin eDO để xác minh; cần Ops kiểm tra.'
+        : status === 'VALID' && expected ? 'File eDO hợp lệ theo kết quả AI và khớp thông tin Offer.' : base.summary;
+
+  return {
+    ...base,
+    ...observed,
+    status,
+    isLegal: status === 'VALID',
+    hasAnomaly: base.hasAnomaly || hasMismatch || hasWrongDocument,
+    requiresOpsReview: status !== 'VALID' || base.requiresOpsReview || pending,
+    summary,
+    details,
+    matchesRegistration: expected ? (hasMismatch ? false : pending ? undefined : !hasWrongDocument) : undefined,
+    comparisonStatus: hasMismatch || hasWrongDocument ? 'MISMATCH' : pending || !expected ? 'PENDING' : 'MATCHED',
+    mismatchDetails: uniqueText(mismatchDetails),
+    mismatchedFields,
+  };
+}
+
+/** Recompare the AI-read eDO when Offer identity fields change after upload. */
+export function reconcileEdoVerificationResult(
+  result: EdoVerificationResult,
+  expected: EdoRegistrationData,
+): EdoVerificationResult {
+  return compareEdoRegistration(result.documentVerification || result, {
+    documentType: result.documentType,
+    actualContainerNumber: result.actualContainerNumber,
+    actualCarrierCode: result.actualCarrierCode,
+    actualContainerType: result.actualContainerType,
+    matchesRegistration: result.sourceReportedMismatch === true ? false : undefined,
+    mismatchDetails: result.sourceMismatchDetails,
+  }, expected);
+}
+
 /** OCR eDO. API thật trả dữ liệu trích xuất; secret chỉ nằm ở backend. */
 export async function extractEdoWithAI(file: File): Promise<{ success: boolean; data?: ExtractedEdoData; error?: string }> {
   try {
@@ -369,96 +600,122 @@ export async function extractEdoWithAI(file: File): Promise<{ success: boolean; 
   }
 }
 
-/** Xác minh eDO hợp pháp/bất thường. Không có kết quả API thì chuyển Ops kiểm tra thủ công. */
-export async function verifyEdoWithAI(
-  file: File,
-  extracted?: Partial<ExtractedEdoData>,
-  documentType: 'EDO' | 'BOOKING' = 'EDO',
-): Promise<EdoVerificationResult> {
-  if (!isApiConfigured) {
-    return {
-      success: true,
-      status: 'MANUAL_REVIEW',
-      isLegal: false,
-      hasAnomaly: true,
-      summary: 'Chưa thể quét eDO. Vui lòng thử lại hoặc gửi hồ sơ để Ops kiểm tra.',
-      details: ['Kết quả pháp lý chưa được xác nhận tự động.'],
-      requiresOpsReview: true,
-      error: 'Chưa cấu hình máy chủ ECont AI.',
-    };
-  }
+function failedDocumentVerification(error: unknown, label: string): EdoVerificationResult {
+  return {
+    success: false, status: 'MANUAL_REVIEW', isLegal: false, hasAnomaly: false,
+    summary: `Chưa quét được ${label}. Vui lòng thử lại hoặc gửi hồ sơ để Ops kiểm tra.`,
+    details: [fallbackApiMessage(error)], requiresOpsReview: true, error: fallbackApiMessage(error),
+  };
+}
 
+export function isBlankImagePixels(pixels: Uint8ClampedArray): boolean {
+  let min = 255, max = 0;
+  for (let index = 0; index < pixels.length; index += 4) {
+    const alpha = pixels[index + 3] / 255;
+    const luminance = ((pixels[index] + pixels[index + 1] + pixels[index + 2]) / 3) * alpha + 255 * (1 - alpha);
+    min = Math.min(min, luminance); max = Math.max(max, luminance);
+  }
+  return max - min < 8;
+}
+
+async function readDocumentWithAI(file: File, documentType: 'EDO' | 'BOOKING') {
+  if (!isApiConfigured) throw new Error('Chưa cấu hình máy chủ ECont AI.');
+  const document = await fileToAiDocument(file);
+  return unwrapApiPayload(await postApi<any>('/api/ai/edo/verify', {
+    task: documentType === 'BOOKING' ? 'BOOKING_LEGALITY_AND_FIELD_EXTRACTION' : 'EDO_LEGALITY_AND_FIELD_EXTRACTION',
+    documentType,
+    document: { fileName: file.name, ...document },
+  }));
+}
+
+/** Đọc độc lập eDO rồi so sánh bằng chứng với thông tin hiện tại của Offer. */
+export async function verifyEdoWithAI(file: File, expected?: EdoRegistrationData): Promise<EdoVerificationResult> {
   try {
-    const document = await fileToAiDocument(file);
-    const response = unwrapApiPayload(await postApi<any>('/api/ai/edo/verify', {
-      task: documentType === 'BOOKING' ? 'BOOKING_LEGALITY_AND_ANOMALY_CHECK' : 'EDO_LEGALITY_AND_ANOMALY_CHECK',
-      document: { fileName: file.name, ...document },
-      extracted,
-    }));
-    const statusValue = String(response.status || '').toUpperCase();
-    if (statusValue === 'MANUAL_REVIEW') {
-      return {
-        success: true, status: 'MANUAL_REVIEW', isLegal: false,
-        hasAnomaly: asBoolean(response.hasAnomaly ?? response.anomaly ?? response.suspicious),
-        summary: vietnameseText(response.summary, 'AI chưa đủ cơ sở kết luận; cần Ops kiểm tra.'),
-        details: vietnameseTextArray(response.details || response.findings),
-        requiresOpsReview: true,
-      };
-    }
-    const hasLegalValue = typeof response.isLegal === 'boolean'
-      || typeof response.isValid === 'boolean'
-      || typeof response.legal === 'boolean'
-      || typeof response.valid === 'boolean'
-      || typeof response.isValidEdo === 'boolean'
-      || ['VALID', 'LEGAL', 'APPROVED', 'INVALID', 'ILLEGAL', 'REJECTED'].includes(String(response.status || '').toUpperCase());
-    if (!hasLegalValue) {
-      return {
-        success: true,
-        status: 'MANUAL_REVIEW',
-        isLegal: false,
-        hasAnomaly: true,
-        summary: 'API chưa trả về kết quả pháp lý rõ ràng; cần Ops xác minh thủ công.',
-        details: ['Thiếu trường isLegal/isValid trong phản hồi API.'],
-        requiresOpsReview: true,
-      };
-    }
-    const statusImpliesLegal = ['VALID', 'LEGAL', 'APPROVED'].includes(statusValue);
-    const statusImpliesInvalid = ['INVALID', 'ILLEGAL', 'REJECTED'].includes(statusValue);
-    const isLegal = asBoolean(
-      response.isLegal ?? response.isValid ?? response.legal ?? response.valid ?? response.isValidEdo,
-      statusImpliesLegal ? true : statusImpliesInvalid ? false : false,
-    );
-    const hasAnomaly = asBoolean(response.hasAnomaly ?? response.anomaly ?? response.suspicious);
-    const details = vietnameseTextArray(response.details || response.findings || response.anomalies);
-    const status = statusValue === 'ANOMALY' ? 'ANOMALY' : !isLegal ? 'INVALID' : hasAnomaly ? 'ANOMALY' : 'VALID';
-    return {
-      success: true,
-      status,
-      isLegal,
-      hasAnomaly,
-      score: Number(response.score ?? response.confidence ?? 0) || undefined,
-      summary: vietnameseText(response.summary || response.message, isLegal ? 'eDO hợp lệ theo kết quả AI.' : 'eDO không hợp lệ theo kết quả AI.'),
-      details,
-      anomalyReason: vietnameseText(response.anomalyReason || response.reason) || undefined,
-      requiresOpsReview: asBoolean(response.requiresOpsReview, hasAnomaly || !isLegal),
-    };
+    const response = await readDocumentWithAI(file, 'EDO');
+    return compareEdoRegistration(mapDocumentVerificationResponse(response, 'eDO'), response, expected);
   } catch (error) {
-    return {
-      success: true,
-      status: 'MANUAL_REVIEW',
-      isLegal: false,
-      hasAnomaly: true,
-      summary: 'Chưa quét được eDO. Vui lòng thử lại hoặc gửi hồ sơ để Ops kiểm tra.',
-      details: [fallbackApiMessage(error)],
-      requiresOpsReview: true,
-      error: fallbackApiMessage(error),
-    };
+    return failedDocumentVerification(error, 'eDO');
   }
 }
 
-/** Xác minh file Booking ảnh/PDF; AI chỉ hỗ trợ cảnh báo, Ops là người quyết định cuối. */
-export function verifyBookingWithAI(file: File): Promise<EdoVerificationResult> {
-  return verifyEdoWithAI(file, undefined, 'BOOKING');
+function compareBookingRegistration(
+  base: EdoVerificationResult,
+  response: any,
+  expected?: BookingRegistrationData,
+): BookingVerificationResult {
+  const type = asString(response.documentType).toUpperCase().replace(/[^A-Z]/g, '');
+  const documentType = (['BOOKING', 'EDO', 'OTHER'].includes(type) ? type : 'UNKNOWN') as EdoVerificationResult['documentType'];
+  const actualBookingNumber = asString(response.actualBookingNumber ?? response.bookingNumber);
+  const actualCarrierCode = asString(response.actualCarrierCode ?? response.carrierCode);
+  const actualContainerType = asString(response.actualContainerType ?? response.containerType);
+  const actualCutOffDate = asString(response.actualCutOffDate ?? response.cutOffTime);
+  const sourceMismatchDetails = vietnameseTextArray(response.mismatchDetails);
+  const sourceReportedMismatch = response.matchesRegistration === false;
+  const mismatchDetails = [...sourceMismatchDetails];
+  const mismatchedFields: NonNullable<BookingVerificationResult['mismatchedFields']> = [];
+  const compare = (field: typeof mismatchedFields[number], label: string, actual: string, input: string | undefined, normalize = normalizeEdoContainerNumber) => {
+    if (normalize(actual) && normalize(input) && normalize(actual) !== normalize(input)) {
+      mismatchedFields.push(field);
+      mismatchDetails.push(`${label} trên file Booking (${actual}) không khớp thông tin đã nhập (${input}).`);
+    }
+  };
+  compare('BOOKING_NUMBER', 'Số Booking', actualBookingNumber, expected?.bookingNumber);
+  compare('CARRIER_CODE', 'Hãng tàu', actualCarrierCode, expected?.carrierCode, normalizeBookingCarrier);
+  compare('CONTAINER_TYPE', 'Loại container', actualContainerType, expected?.containerType, normalizeEdoContainerType);
+  const dateKey = (value: unknown) => normalizeAiDate(value).slice(0, 10);
+  compare('CUT_OFF_TIME', 'Ngày cut-off', actualCutOffDate, expected?.cutOffTime, dateKey);
+  const wrongDocument = documentType === 'EDO' || documentType === 'OTHER';
+  const missingExpected = !expected?.bookingNumber || !expected.carrierCode || !expected.containerType;
+  const missingObserved = !actualBookingNumber || !actualCarrierCode || !actualContainerType;
+  const hasMismatch = mismatchedFields.length > 0 || sourceReportedMismatch || sourceMismatchDetails.length > 0 || wrongDocument;
+  const pending = !hasMismatch && (missingExpected || missingObserved || documentType !== 'BOOKING');
+  const status = hasMismatch ? 'ANOMALY' : pending && base.status === 'VALID' ? 'MANUAL_REVIEW' : base.status;
+  const details = uniqueText([
+    ...base.details, ...mismatchDetails,
+    wrongDocument ? 'Tệp tải lên không phải chứng từ Booking.' : '',
+    documentType === 'UNKNOWN' ? 'AI chưa xác định rõ loại chứng từ Booking.' : '',
+    missingExpected ? 'Cần nhập đủ số Booking, hãng tàu và loại container để đối chiếu.' : '',
+    missingObserved ? 'AI chưa đọc rõ số Booking, hãng tàu hoặc loại container trên file.' : '',
+    !actualCutOffDate ? 'Chưa đọc được ngày cut-off trên file; Ops cần kiểm tra ngày đã khai báo.' : '',
+  ]);
+  // Cut-off cannot be silently approved when the file does not provide evidence.
+  const missingCutOff = Boolean(expected?.cutOffTime) && !actualCutOffDate;
+  const requiresOpsReview = status !== 'VALID' || base.requiresOpsReview || pending || missingCutOff;
+  return {
+    ...base,
+    documentVerification: base, documentType, actualBookingNumber, actualCarrierCode, actualContainerType, actualCutOffDate,
+    sourceReportedMismatch, sourceMismatchDetails,
+    status: missingCutOff && status === 'VALID' ? 'MANUAL_REVIEW' : status,
+    isLegal: status === 'VALID' && !requiresOpsReview,
+    hasAnomaly: base.hasAnomaly || hasMismatch,
+    matchesRegistration: hasMismatch ? false : pending || missingCutOff ? undefined : true,
+    comparisonStatus: hasMismatch ? 'MISMATCH' : pending || missingCutOff ? 'PENDING' : 'MATCHED',
+    mismatchedFields, mismatchDetails: uniqueText(mismatchDetails), details, requiresOpsReview,
+    summary: hasMismatch ? mismatchDetails[0] || 'Tệp tải lên không phải Booking hoặc có nội dung bất thường.'
+      : requiresOpsReview && base.status === 'VALID' ? 'Chưa đủ thông tin đối chiếu Booking; cần Ops xác minh.'
+        : status === 'VALID' ? 'File Booking hợp lệ theo kết quả AI và khớp thông tin đã nhập.' : base.summary,
+  };
+}
+
+export function reconcileBookingVerificationResult(result: BookingVerificationResult, expected: BookingRegistrationData): BookingVerificationResult {
+  const { mismatchedFields: _fields, ...base } = result;
+  return compareBookingRegistration(result.documentVerification || base, {
+    documentType: result.documentType, actualBookingNumber: result.actualBookingNumber,
+    actualCarrierCode: result.actualCarrierCode, actualContainerType: result.actualContainerType,
+    actualCutOffDate: result.actualCutOffDate,
+    matchesRegistration: result.sourceReportedMismatch === true ? false : undefined,
+    mismatchDetails: result.sourceMismatchDetails,
+  }, expected);
+}
+
+/** Booking dùng cùng gateway nhưng có schema và phép đối chiếu riêng. */
+export async function verifyBookingWithAI(file: File, expected?: BookingRegistrationData): Promise<BookingVerificationResult> {
+  try {
+    const response = await readDocumentWithAI(file, 'BOOKING');
+    return compareBookingRegistration(mapDocumentVerificationResponse(response, 'Booking'), response, expected);
+  } catch (error) {
+    return failedDocumentVerification(error, 'Booking') as BookingVerificationResult;
+  }
 }
 
 /** Giám định tình trạng ảnh container. Kết quả API phải trả tình trạng thực tế và chi tiết phát hiện. */
@@ -532,57 +789,41 @@ export async function verifyContainerPhotosWithAI(
     }));
     const mismatchDetails = vietnameseTextArray(response.mismatchDetails || response.mismatches || response.errors);
     const actualContainerNumber = asString(response.actualContainerNumber || response.detectedContainerNumber) || undefined;
-    const actualTypeValue = String(response.actualContainerType || response.detectedContainerType || '').toUpperCase();
+    const actualTypeValue = normalizeEdoContainerType(response.actualContainerType || response.detectedContainerType);
     const actualContainerType = actualTypeValue === '20GP' ? '20GP' : actualTypeValue === '40HC' ? '40HC' : undefined;
     const actualCarrierCode = asString(response.actualCarrierCode || response.detectedCarrierCode) || undefined;
     const actualCondition = normalizeCondition(response.actualCondition || response.detectedCondition || response.condition);
     const responseDetails = vietnameseTextArray(response.details || response.findings || response.conditionDetails);
     const actualConditionNotes = vietnameseText(response.actualConditionNotes || response.conditionNotes || response.physicalSummary, responseDetails.join(' ')) || undefined;
 
-    let resolvedContainerNumber = actualContainerNumber;
-    if (actualContainerNumber && actualContainerNumber !== expected.containerNumber) {
-      // Khi 10 ký tự đầu (tiền tố chủ cont + 6 số seri) hoàn toàn trùng khớp:
-      if (
-        actualContainerNumber.length === 11 &&
-        expected.containerNumber.length === 11 &&
-        actualContainerNumber.slice(0, 10) === expected.containerNumber.slice(0, 10)
-      ) {
-        const actualCd = actualContainerNumber[10];
-        const expectedCd = expected.containerNumber[10];
-        // Xử lý trường hợp nhầm lẫn giữa số 9 và số 4 (do thuật toán ISO tính ra 4 nhưng vỏ cont in thực tế là 9)
-        if ((actualCd === '4' && expectedCd === '9') || (actualCd === '9' && expectedCd === '4')) {
-          resolvedContainerNumber = expected.containerNumber;
-        } else {
-          mismatchDetails.push(`Ảnh nhận diện số cont ${actualContainerNumber}, không khớp ${expected.containerNumber}.`);
-        }
-      } else {
-        mismatchDetails.push(`Ảnh nhận diện số cont ${actualContainerNumber}, không khớp ${expected.containerNumber}.`);
-      }
+    // Compare OCR evidence verbatim; never replace a differing check digit.
+    if (actualContainerNumber && normalizeEdoContainerNumber(actualContainerNumber) !== normalizeEdoContainerNumber(expected.containerNumber)) {
+      mismatchDetails.push(`Ảnh nhận diện số cont ${actualContainerNumber}, không khớp ${expected.containerNumber}.`);
     }
-    if (actualContainerType && actualContainerType !== expected.containerType) mismatchDetails.push(`Ảnh nhận diện loại ${actualContainerType}, không khớp ${expected.containerType}.`);
-    if (actualCarrierCode && actualCarrierCode !== expected.carrierCode) mismatchDetails.push(`Ảnh nhận diện hãng ${actualCarrierCode}, không khớp ${expected.carrierCode}.`);
+    if (actualContainerType && normalizeEdoContainerType(actualContainerType) !== normalizeEdoContainerType(expected.containerType)) mismatchDetails.push(`Ảnh nhận diện loại ${actualContainerType}, không khớp ${expected.containerType}.`);
+    if (actualCarrierCode && normalizeBookingCarrier(actualCarrierCode) !== normalizeBookingCarrier(expected.carrierCode)) mismatchDetails.push(`Ảnh nhận diện hãng ${actualCarrierCode}, không khớp ${expected.carrierCode}.`);
     if (actualCondition && actualCondition !== expected.declaredCondition) mismatchDetails.push(`Tình trạng thực tế (${conditionLabelVi(actualCondition)}) khác tình trạng khai báo (${conditionLabelVi(expected.declaredCondition)}).`);
 
     const explicitStatus = String(response.status || '').toUpperCase();
-    if (!['MATCHED', 'MISMATCH', 'MANUAL_REVIEW'].includes(explicitStatus) || !asString(response.summary)) {
+    if (!['OBSERVED', 'MATCHED', 'MISMATCH', 'MANUAL_REVIEW'].includes(explicitStatus) || !asString(response.summary)) {
       throw new Error('AI chưa trả về kết quả đối chiếu ảnh đầy đủ. Vui lòng thử lại.');
     }
-    const explicitMatch = response.matchesRegistration ?? response.identityMatch ?? response.matches;
-    const matchesRegistration = (explicitMatch === undefined
-      ? explicitStatus === 'MATCHED' && mismatchDetails.length === 0
-      : asBoolean(explicitMatch)) && mismatchDetails.length === 0;
-    const isMismatch = explicitStatus === 'MISMATCH' || !matchesRegistration;
-    // A definite mismatch must not be hidden just because Ops review is required.
-    const status = explicitStatus === 'MISMATCH' || mismatchDetails.length > 0 ? 'MISMATCH'
-      : explicitStatus === 'MANUAL_REVIEW' || response.requiresOpsReview ? 'MANUAL_REVIEW'
-      : isMismatch ? 'MISMATCH' : 'MATCHED';
+    const hasEvidence = /^[A-Z]{4}\d{7}$/.test(normalizeEdoContainerNumber(actualContainerNumber))
+      && actualContainerType && actualCarrierCode && actualCondition && actualConditionNotes
+      && expected.containerNumber && expected.carrierCode && expected.containerType && expected.declaredCondition;
+    const reportedMismatch = explicitStatus === 'MISMATCH' || response.matchesRegistration === false;
+    const status = reportedMismatch || mismatchDetails.length > 0 ? 'MISMATCH'
+      : explicitStatus === 'MANUAL_REVIEW' || asBoolean(response.requiresOpsReview) || !hasEvidence ? 'MANUAL_REVIEW' : 'MATCHED';
+    const summary = status === 'MATCHED' ? 'Ảnh khớp thông tin container đã đăng ký.'
+      : status === 'MISMATCH' ? mismatchDetails[0] || 'Bộ ảnh có dấu hiệu không khớp thông tin đăng ký; cần Ops kiểm tra.'
+        : !hasEvidence ? 'AI chưa đọc đủ số container, hãng, loại hoặc tình trạng thực tế; cần Ops kiểm tra.'
+          : vietnameseText(response.summary, 'Bộ ảnh cần Ops kiểm tra.');
     return {
-      success: true, status, matchesRegistration,
+      success: true, status, matchesRegistration: status === 'MATCHED',
       score: Number(response.score ?? response.confidence ?? 0) || undefined,
-      actualContainerNumber: resolvedContainerNumber, actualContainerType, actualCarrierCode, actualCondition, actualConditionNotes,
-      mismatchDetails: mismatchDetails.map(detail => vietnameseText(detail)),
-      summary: vietnameseText(response.summary || response.message, isMismatch ? 'Ảnh chưa khớp đầy đủ với thông tin đăng ký.' : 'Ảnh khớp với thông tin container đã đăng ký.'),
-      requiresOpsReview: asBoolean(response.requiresOpsReview, status !== 'MATCHED'),
+      actualContainerNumber, actualContainerType, actualCarrierCode, actualCondition, actualConditionNotes,
+      mismatchDetails: uniqueText(mismatchDetails), summary,
+      requiresOpsReview: status !== 'MATCHED',
       error: vietnameseText(response.error) || undefined,
     };
   } catch (error) {

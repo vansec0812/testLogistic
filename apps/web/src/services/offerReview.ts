@@ -1,4 +1,17 @@
-import { Offer } from '../types';
+import { Offer, OfferAiCheckResult } from '../types';
+
+/** One approval gate for creation and resubmission; old partial verdicts never auto-pass. */
+export function offerAiCanAutoApprove(ai?: OfferAiCheckResult): boolean {
+  return Boolean(ai?.passed && !ai.hasAnomaly
+    && ai.edoChecked && ai.edoValid && ai.edoAnomaly === false
+    && ai.edoDocumentType === 'EDO' && ai.edoMatchesRegistration === true
+    && ai.edoActualContainerNumber && ai.edoActualCarrierCode && ai.edoActualContainerType
+    && !ai.edoMismatchDetails?.length
+    && ai.photoChecked && ai.photoStatus === 'MATCHED' && ai.matchesRegistration === true
+    && ai.actualContainerNumber && ai.actualContainerType && ai.actualCarrierCode
+    && ai.photoCondition && ai.photoConditionNotes && !ai.mismatchDetails?.length
+    && ai.verificationStatus === 'VERIFIED');
+}
 
 /** Short Vietnamese title used by Ops to understand why an offer needs attention. */
 export function getOfferAiConditionTitle(offer: Offer): string {
@@ -12,9 +25,12 @@ export function getOfferAiConditionTitle(offer: Offer): string {
   const mismatchDetails = ai.mismatchDetails || [];
   if (ai.photoStatus === 'MISMATCH' || (ai.matchesRegistration === false && mismatchDetails.length > 0)) {
     const identityEvidence = mismatchDetails.join(' ').toLowerCase();
-    if (/mã số|số cont|container number|container no|không khớp|không chính xác|mismatch/.test(identityEvidence)) {
+    if (/mã số|số cont|container number|container no/.test(identityEvidence) && /không khớp|không chính xác|mismatch|sai lệch/.test(identityEvidence)) {
       return 'Mã số container không khớp thông tin đăng ký';
     }
+    if (/hàng|hãng/.test(identityEvidence)) return 'Hãng tàu trên ảnh không khớp thông tin đăng ký';
+    if (/loại/.test(identityEvidence)) return 'Loại container trên ảnh không khớp thông tin đăng ký';
+    if (/tình trạng|hư hỏng|xước|móp|rỉ/.test(identityEvidence)) return 'Tình trạng thực tế khác với khai báo';
     return 'Ảnh container chưa khớp đầy đủ thông tin đăng ký';
   }
 
@@ -38,7 +54,7 @@ export function getOfferAiConditionTitle(offer: Offer): string {
   if (/mờ|blur|không rõ|khó đọc|unreadable/.test(evidence)) {
     return 'Ảnh container mờ hoặc chưa đủ rõ để đối chiếu';
   }
-  if (/không khớp|không chính xác|mismatch|sai lệch số|lệch số cont/.test(evidence)) {
+  if (/số cont|mã cont|container number/.test(evidence) && /không khớp|không chính xác|mismatch|sai lệch số|lệch số cont/.test(evidence)) {
     return 'Mã số container không khớp thông tin đăng ký';
   }
   if (ai.photoCondition === 'MAJOR_DAMAGE' || /thủng|móp nặng|rỉ sét nặng|hư hỏng nặng/.test(evidence)) {

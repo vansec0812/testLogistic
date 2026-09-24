@@ -276,11 +276,30 @@ export interface OfferAiCheckResult {
   edoChecked?: boolean;
   edoValid?: boolean;
   edoAnomaly?: boolean;
+  edoMatchesRegistration?: boolean;
+  edoDocumentType?: 'EDO' | 'BOOKING' | 'OTHER' | 'UNKNOWN';
+  edoActualContainerNumber?: string;
+  edoActualCarrierCode?: string;
+  edoActualContainerType?: string;
+  edoMismatchDetails?: string[];
   photoChecked?: boolean;
   photoCondition?: PhysicalCondition;
   photoConditionNotes?: string;
   verificationStatus?: 'VERIFIED' | 'MANUAL_REVIEW' | 'INVALID' | 'ERROR';
   details?: string[];
+}
+
+export interface DocumentAiVerdict {
+  success: boolean;
+  status: 'VALID' | 'INVALID' | 'ANOMALY' | 'MANUAL_REVIEW' | 'ERROR';
+  isLegal: boolean;
+  hasAnomaly: boolean;
+  score?: number;
+  summary: string;
+  details: string[];
+  anomalyReason?: string;
+  requiresOpsReview: boolean;
+  error?: string;
 }
 
 export interface BookingAiCheckResult {
@@ -292,6 +311,19 @@ export interface BookingAiCheckResult {
   details: string[];
   requiresOpsReview: boolean;
   error?: string;
+  documentVerification?: DocumentAiVerdict;
+  documentType?: 'EDO' | 'BOOKING' | 'OTHER' | 'UNKNOWN';
+  matchesRegistration?: boolean;
+  comparisonStatus?: 'MATCHED' | 'MISMATCH' | 'PENDING';
+  actualBookingNumber?: string;
+  actualCarrierCode?: string;
+  actualContainerType?: string;
+  actualCutOffDate?: string;
+  anomalyReason?: string;
+  mismatchDetails?: string[];
+  mismatchedFields?: Array<'BOOKING_NUMBER' | 'CARRIER_CODE' | 'CONTAINER_TYPE' | 'CUT_OFF_TIME'>;
+  sourceReportedMismatch?: boolean;
+  sourceMismatchDetails?: string[];
 }
 
 export interface Offer {

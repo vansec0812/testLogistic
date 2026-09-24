@@ -3,7 +3,7 @@
 // Quản lý Nhu cầu với Create, Read, Update, Delete & Tự Động Match Container
 // ==============================================================================
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useDatabase } from "../context/DatabaseContext";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -52,7 +52,8 @@ import { findMatchesForRequest } from "../services/matchingEngine";
 import { INITIAL_CARRIERS } from "../data/mockData";
 import {
   verifyBookingWithAI,
-  EdoVerificationResult,
+  BookingVerificationResult,
+  reconcileBookingVerificationResult,
 } from "../services/aiService";
 import { DEFAULT_BASELINE_PICKUP_COST_VND } from "../services/qaRules";
 import {
@@ -70,6 +71,7 @@ import {
   setError,
 } from "../lib/formValidation";
 import { DateInput } from "../components/DateInput";
+import { mapBookingAiResult, bookingVerificationFromCheck, getBookingAiReviewTitle, getBookingAiEvidence, bookingNeedsOpsReview, sortRequestsForOps } from "../services/bookingReview";
 
 interface RequestsPageProps {
   setCurrentTab?: (tab: string) => void;
@@ -95,19 +97,18 @@ function parseDateInputDdMmYyyy(value: string, endOfDay = false): string {
   return `${date[3]}-${date[2]}-${date[1]}T${endOfDay ? "23:59:59" : "00:00:00"}`;
 }
 
-function mapBookingAiResult(
-  result: EdoVerificationResult,
-): BookingAiCheckResult {
+function bookingExpectedFromForm(values: Partial<CreateRequestForm>) {
   return {
-    status: result.status,
-    isValid: result.status === "VALID" && result.isLegal,
-    hasAnomaly: result.hasAnomaly || result.status === "ANOMALY",
-    score: result.score,
-    summary: result.summary,
-    details: result.details,
-    requiresOpsReview: result.requiresOpsReview || result.status !== "VALID",
-    error: result.error,
+    bookingNumber: values.bookingNumber,
+    carrierCode: INITIAL_CARRIERS.find(carrier => carrier.id === values.carrierId)?.code || values.carrierId?.replace(/^CARR-/, ''),
+    containerType: values.containerType,
+    cutOffTime: values.cutOffTime,
   };
+}
+
+function bookingMismatchErrors(result: BookingVerificationResult | null, prefix = ''): FieldErrors {
+  const fields = { BOOKING_NUMBER: 'bookingNumber', CARRIER_CODE: 'carrierId', CONTAINER_TYPE: 'containerType', CUT_OFF_TIME: 'cutOffTime' };
+  return Object.fromEntries((result?.mismatchedFields || []).map(field => [prefix + fields[field], 'Thông tin không khớp file Booking. Vui lòng kiểm tra lại hoặc gửi Ops xác minh.']));
 }
 
 function MatchCandidateCard({
@@ -331,12 +332,12 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
   const [withdrawErrors, setWithdrawErrors] = useState<FieldErrors>({});
   const [opsErrors, setOpsErrors] = useState<FieldErrors>({});
   const [bookingFile, setBookingFile] = useState<File | null>(null);
-  const [bookingAiResult, setBookingAiResult] =
-    useState<EdoVerificationResult | null>(null);
+  const [bookingAiSource, setBookingAiResult] =
+    useState<BookingVerificationResult | null>(null);
   const [isBookingAiChecking, setIsBookingAiChecking] = useState(false);
   const [editBookingFile, setEditBookingFile] = useState<File | null>(null);
-  const [editBookingAiResult, setEditBookingAiResult] =
-    useState<EdoVerificationResult | null>(null);
+  const [editBookingAiSource, setEditBookingAiResult] =
+    useState<BookingVerificationResult | null>(null);
   const [isEditBookingAiChecking, setIsEditBookingAiChecking] = useState(false);
 
   useEffect(() => {
@@ -352,6 +353,21 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
     maxDistanceKm: undefined,
     carrierId: "",
   });
+
+  const bookingScanId = useRef({ create: 0, edit: 0 });
+  const latestBookingExpected = useRef({ create: bookingExpectedFromForm(form), edit: bookingExpectedFromForm(editForm) });
+  latestBookingExpected.current = { create: bookingExpectedFromForm(form), edit: bookingExpectedFromForm(editForm) };
+  const bookingAiResult = useMemo(() => bookingAiSource
+    ? reconcileBookingVerificationResult(bookingAiSource, bookingExpectedFromForm(form)) : null,
+    [bookingAiSource, form.bookingNumber, form.carrierId, form.containerType, form.cutOffTime]);
+  const editBookingAiResult = useMemo(() => editBookingAiSource
+    ? reconcileBookingVerificationResult(editBookingAiSource, bookingExpectedFromForm(editForm)) : null,
+    [editBookingAiSource, editForm.bookingNumber, editForm.carrierId, editForm.containerType, editForm.cutOffTime]);
+  const visibleFormErrors = { ...formErrors, ...bookingMismatchErrors(bookingAiResult) };
+  const visibleEditErrors = { ...editErrors, ...bookingMismatchErrors(editBookingAiResult, 'edit-') };
+  useEffect(() => { bookingScanId.current.create++; setIsBookingAiChecking(false); }, [showAddForm]);
+  useEffect(() => { bookingScanId.current.edit++; setIsEditBookingAiChecking(false); }, [editingRequest?.id]);
+  useEffect(() => () => { bookingScanId.current.create++; bookingScanId.current.edit++; }, []);
 
   const showMsg = (msg: string, isError = false) => {
     if (isError) setErrorMsg(msg);
@@ -377,6 +393,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
 
     const setChecking =
       target === "create" ? setIsBookingAiChecking : setIsEditBookingAiChecking;
+    const scanId = ++bookingScanId.current[target];
     setChecking(true);
     if (target === "create") {
       setBookingFile(file);
@@ -405,7 +422,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
     }
 
     try {
-      const result = await verifyBookingWithAI(file);
+      const observed = await verifyBookingWithAI(file);
+      if (bookingScanId.current[target] !== scanId) return;
+      const result = reconcileBookingVerificationResult(observed, latestBookingExpected.current[target]);
       const aiCheck = mapBookingAiResult(result);
       if (target === "create") {
         setBookingAiResult(result);
@@ -425,8 +444,11 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
           `Booking có cảnh báo: ${result.anomalyReason || result.summary} Ops sẽ quyết định.`,
           true,
         );
+        const aiErrors = bookingMismatchErrors(result, target === 'edit' ? 'edit-' : '');
+        scrollToFirstFieldError(Object.keys(aiErrors).length ? aiErrors : { [target === 'edit' ? 'edit-bookingEvidence' : 'bookingEvidence']: result.summary });
       }
     } catch (error) {
+      if (bookingScanId.current[target] !== scanId) return;
       const message =
         error instanceof Error
           ? error.message
@@ -446,19 +468,19 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
           ...fallback,
           success: false,
           isLegal: false,
-        } as EdoVerificationResult);
+        } as BookingVerificationResult);
         setForm((previous) => ({ ...previous, bookingAiCheck: fallback }));
       } else {
         setEditBookingAiResult({
           ...fallback,
           success: false,
           isLegal: false,
-        } as EdoVerificationResult);
+        } as BookingVerificationResult);
         setEditForm((previous) => ({ ...previous, bookingAiCheck: fallback }));
       }
       showMsg(fallback.summary, true);
     } finally {
-      setChecking(false);
+      if (bookingScanId.current[target] === scanId) setChecking(false);
     }
   };
 
@@ -491,12 +513,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
     }
     if (filterStatus !== "all")
       list = list.filter((r) => r.status === filterStatus);
+    if (canOpsReview) return sortRequestsForOps(list);
     return [...list].sort((a, b) => {
       const createdAtA = new Date(a.createdAt || 0).getTime() || 0;
       const createdAtB = new Date(b.createdAt || 0).getTime() || 0;
       return createdAtB - createdAtA;
     });
-  }, [requests, currentRole, currentCompany.id, search, filterStatus]);
+  }, [requests, currentRole, currentCompany.id, search, filterStatus, canOpsReview]);
 
   // Pre-calculate auto-matches for all OPEN requests
   const autoMatchMap = useMemo(() => {
@@ -593,6 +616,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
   };
 
   const handleAddRequest = () => {
+    if (isBookingAiChecking) { showMsg("Vui lòng chờ kết quả quét Booking.", true); return; }
     const errors = validateRequestForm();
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) {
@@ -616,7 +640,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
       baselinePickupCostVnd: DEFAULT_BASELINE_PICKUP_COST_VND,
       bookingFileName: form.bookingFileName,
       bookingFileMimeType: form.bookingFileMimeType,
-      bookingAiCheck: form.bookingAiCheck,
+      bookingAiCheck: bookingAiResult ? mapBookingAiResult(bookingAiResult) : undefined,
     });
     if (result.success) {
       showMsg(result.message);
@@ -660,11 +684,12 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
       cargoRequirements: req.cargoRequirements || "",
     });
     setEditBookingFile(null);
-    setEditBookingAiResult(null);
+    setEditBookingAiResult(req.bookingAiCheck ? bookingVerificationFromCheck(req.bookingAiCheck) : null);
   };
 
   const handleSaveEdit = () => {
     if (!editingRequest) return;
+    if (isEditBookingAiChecking) { showMsg("Vui lòng chờ kết quả quét Booking.", true); return; }
     const errors: FieldErrors = {};
     setError(
       errors,
@@ -753,7 +778,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
       maxDistanceKm: Number(editForm.maxDistanceKm),
       bookingFileName: editForm.bookingFileName,
       bookingFileMimeType: editForm.bookingFileMimeType,
-      bookingAiCheck: editForm.bookingAiCheck,
+      bookingAiCheck: editBookingAiResult ? mapBookingAiResult(editBookingAiResult) : undefined,
       cargoType: editForm.cargoType?.trim(),
     });
     showMsg(result.message, !result.success);
@@ -936,7 +961,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
             </button>
           </div>
 
-          <FormErrorSummary errors={formErrors} />
+          <FormErrorSummary errors={visibleFormErrors} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
               <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">
@@ -954,18 +979,18 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                   }));
                 }}
                 placeholder="MSKBKG2026-981..."
-                aria-invalid={Boolean(formErrors.bookingNumber)}
+                aria-invalid={Boolean(visibleFormErrors.bookingNumber)}
                 className={getFieldErrorClass(
-                  Boolean(formErrors.bookingNumber),
+                  Boolean(visibleFormErrors.bookingNumber),
                   "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                 )}
               />
-              <FieldError message={formErrors.bookingNumber} />
+              <FieldError message={visibleFormErrors.bookingNumber} />
             </div>
             <div
               data-field="bookingEvidence"
               className={getFieldErrorClass(
-                Boolean(formErrors.bookingEvidence),
+                Boolean(visibleFormErrors.bookingEvidence),
                 "md:col-span-2 rounded-xl border border-blue-200 bg-blue-50/50 p-3 space-y-2",
               )}
             >
@@ -1003,7 +1028,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                     : "Quét lại Booking bằng AI"}
                 </button>
               </div>
-              <FieldError message={formErrors.bookingEvidence} />
+              <FieldError message={visibleFormErrors.bookingEvidence} />
               {bookingAiResult && (
                 <div
                   className={`rounded-lg border px-3 py-2 text-xs ${bookingAiResult.status === "VALID" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : bookingAiResult.status === "MANUAL_REVIEW" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-red-200 bg-red-50 text-red-800"}`}
@@ -1041,9 +1066,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                   clearRequestError("carrierId");
                   setForm((p) => ({ ...p, carrierId: e.target.value }));
                 }}
-                aria-invalid={Boolean(formErrors.carrierId)}
+                aria-invalid={Boolean(visibleFormErrors.carrierId)}
                 className={getFieldErrorClass(
-                  Boolean(formErrors.carrierId),
+                  Boolean(visibleFormErrors.carrierId),
                   "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                 )}
               >
@@ -1054,7 +1079,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                   </option>
                 ))}
               </select>
-              <FieldError message={formErrors.carrierId} />
+              <FieldError message={visibleFormErrors.carrierId} />
             </div>
             <div>
               <label
@@ -1076,9 +1101,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                       : undefined,
                   }));
                 }}
-                aria-invalid={Boolean(formErrors.containerType)}
+                aria-invalid={Boolean(visibleFormErrors.containerType)}
                 className={getFieldErrorClass(
-                  Boolean(formErrors.containerType),
+                  Boolean(visibleFormErrors.containerType),
                   "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                 )}
               >
@@ -1086,7 +1111,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                 <option value="40HC">40HC (40 foot cao)</option>
                 <option value="20GP">20GP (20 foot tiêu chuẩn)</option>
               </select>
-              <FieldError message={formErrors.containerType} />
+              <FieldError message={visibleFormErrors.containerType} />
             </div>
             <div>
               <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">
@@ -1104,13 +1129,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                   }));
                 }}
                 placeholder="Kho KCN VSIP 1, Bình Dương..."
-                aria-invalid={Boolean(formErrors.deliveryLocationName)}
+                aria-invalid={Boolean(visibleFormErrors.deliveryLocationName)}
                 className={getFieldErrorClass(
-                  Boolean(formErrors.deliveryLocationName),
+                  Boolean(visibleFormErrors.deliveryLocationName),
                   "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                 )}
               />
-              <FieldError message={formErrors.deliveryLocationName} />
+              <FieldError message={visibleFormErrors.deliveryLocationName} />
             </div>
             <div>
               <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">
@@ -1125,13 +1150,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                   clearRequestError("pickupWindowEnd");
                   setForm((p) => ({ ...p, pickupWindowStart: v || undefined }));
                 }}
-                aria-invalid={Boolean(formErrors.pickupWindowStart)}
+                aria-invalid={Boolean(visibleFormErrors.pickupWindowStart)}
                 className={getFieldErrorClass(
-                  Boolean(formErrors.pickupWindowStart),
+                  Boolean(visibleFormErrors.pickupWindowStart),
                   "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                 )}
               />
-              <FieldError message={formErrors.pickupWindowStart} />
+              <FieldError message={visibleFormErrors.pickupWindowStart} />
             </div>
             <div>
               <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">
@@ -1147,13 +1172,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                   clearRequestError("pickupWindowEnd");
                   setForm((p) => ({ ...p, pickupWindowEnd: v || undefined }));
                 }}
-                aria-invalid={Boolean(formErrors.pickupWindowEnd)}
+                aria-invalid={Boolean(visibleFormErrors.pickupWindowEnd)}
                 className={getFieldErrorClass(
-                  Boolean(formErrors.pickupWindowEnd),
+                  Boolean(visibleFormErrors.pickupWindowEnd),
                   "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                 )}
               />
-              <FieldError message={formErrors.pickupWindowEnd} />
+              <FieldError message={visibleFormErrors.pickupWindowEnd} />
             </div>
             <div>
               <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">
@@ -1168,13 +1193,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                   clearRequestError("cutOffTime");
                   setForm((p) => ({ ...p, cutOffTime: v || undefined }));
                 }}
-                aria-invalid={Boolean(formErrors.cutOffTime)}
+                aria-invalid={Boolean(visibleFormErrors.cutOffTime)}
                 className={getFieldErrorClass(
-                  Boolean(formErrors.cutOffTime),
+                  Boolean(visibleFormErrors.cutOffTime),
                   "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                 )}
               />
-              <FieldError message={formErrors.cutOffTime} />
+              <FieldError message={visibleFormErrors.cutOffTime} />
             </div>
             <div>
               <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">
@@ -1198,13 +1223,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                   }));
                 }}
                 placeholder="VD: 40"
-                aria-invalid={Boolean(formErrors.maxDistanceKm)}
+                aria-invalid={Boolean(visibleFormErrors.maxDistanceKm)}
                 className={getFieldErrorClass(
-                  Boolean(formErrors.maxDistanceKm),
+                  Boolean(visibleFormErrors.maxDistanceKm),
                   "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                 )}
               />
-              <FieldError message={formErrors.maxDistanceKm} />
+              <FieldError message={visibleFormErrors.maxDistanceKm} />
             </div>
             <div>
               <label className="text-slate-700 font-semibold text-xs sm:text-sm block mb-1">
@@ -1257,7 +1282,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
               </button>
             </div>
 
-            <FormErrorSummary errors={editErrors} />
+            <FormErrorSummary errors={visibleEditErrors} />
             <div className="space-y-3 text-xs">
               <div>
                 <label className="text-slate-700 font-semibold block mb-1">
@@ -1279,13 +1304,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                     }));
                   }}
                   placeholder="MSKBKG2026-981..."
-                  aria-invalid={Boolean(editErrors["edit-bookingNumber"])}
+                  aria-invalid={Boolean(visibleEditErrors["edit-bookingNumber"])}
                   className={getFieldErrorClass(
-                    Boolean(editErrors["edit-bookingNumber"]),
+                    Boolean(visibleEditErrors["edit-bookingNumber"]),
                     "w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500",
                   )}
                 />
-                <FieldError message={editErrors["edit-bookingNumber"]} />
+                <FieldError message={visibleEditErrors["edit-bookingNumber"]} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1307,9 +1332,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                       });
                       setEditForm((p) => ({ ...p, carrierId: e.target.value }));
                     }}
-                    aria-invalid={Boolean(editErrors["edit-carrierId"])}
+                    aria-invalid={Boolean(visibleEditErrors["edit-carrierId"])}
                     className={getFieldErrorClass(
-                      Boolean(editErrors["edit-carrierId"]),
+                      Boolean(visibleEditErrors["edit-carrierId"]),
                       "w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                     )}
                   >
@@ -1322,7 +1347,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                       ),
                     )}
                   </select>
-                  <FieldError message={editErrors["edit-carrierId"]} />
+                  <FieldError message={visibleEditErrors["edit-carrierId"]} />
                 </div>
                 <div>
                   <label
@@ -1346,9 +1371,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                         containerType: e.target.value as "20GP" | "40HC",
                       }));
                     }}
-                    aria-invalid={Boolean(editErrors["edit-containerType"])}
+                    aria-invalid={Boolean(visibleEditErrors["edit-containerType"])}
                     className={getFieldErrorClass(
-                      Boolean(editErrors["edit-containerType"]),
+                      Boolean(visibleEditErrors["edit-containerType"]),
                       "w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                     )}
                   >
@@ -1356,7 +1381,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                     <option value="40HC">40HC (40 foot cao)</option>
                     <option value="20GP">20GP (20 foot tiêu chuẩn)</option>
                   </select>
-                  <FieldError message={editErrors["edit-containerType"]} />
+                  <FieldError message={visibleEditErrors["edit-containerType"]} />
                 </div>
               </div>
               <div>
@@ -1381,20 +1406,20 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                   }}
                   placeholder="Kho, cảng hoặc địa điểm đóng hàng..."
                   aria-invalid={Boolean(
-                    editErrors["edit-deliveryLocationName"],
+                    visibleEditErrors["edit-deliveryLocationName"],
                   )}
                   className={getFieldErrorClass(
-                    Boolean(editErrors["edit-deliveryLocationName"]),
+                    Boolean(visibleEditErrors["edit-deliveryLocationName"]),
                     "w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500",
                   )}
                 />
-                <FieldError message={editErrors["edit-deliveryLocationName"]} />
+                <FieldError message={visibleEditErrors["edit-deliveryLocationName"]} />
               </div>
 
               <div
                 data-field="edit-bookingEvidence"
                 className={getFieldErrorClass(
-                  Boolean(editErrors["edit-bookingEvidence"]),
+                  Boolean(visibleEditErrors["edit-bookingEvidence"]),
                   "rounded-xl border border-blue-200 bg-blue-50/50 p-3 space-y-2",
                 )}
               >
@@ -1432,7 +1457,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                       : "Quét lại Booking bằng AI"}
                   </button>
                 </div>
-                <FieldError message={editErrors["edit-bookingEvidence"]} />
+                <FieldError message={visibleEditErrors["edit-bookingEvidence"]} />
                 {editBookingAiResult && (
                   <div
                     className={`rounded-lg border px-3 py-2 text-xs ${editBookingAiResult.status === "VALID" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : editBookingAiResult.status === "MANUAL_REVIEW" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-red-200 bg-red-50 text-red-800"}`}
@@ -1445,6 +1470,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                           : "AI: Booking có cảnh báo"}
                     </strong>
                     <span className="ml-1">{editBookingAiResult.summary}</span>
+                    <ul className="mt-1 list-disc pl-4">
+                      {editBookingAiResult.details.map((detail, index) => <li key={index}>{detail}</li>)}
+                    </ul>
                   </div>
                 )}
               </div>
@@ -1473,13 +1501,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                         pickupWindowStart: v || undefined,
                       }));
                     }}
-                    aria-invalid={Boolean(editErrors["edit-pickupWindowStart"])}
+                    aria-invalid={Boolean(visibleEditErrors["edit-pickupWindowStart"])}
                     className={getFieldErrorClass(
-                      Boolean(editErrors["edit-pickupWindowStart"]),
+                      Boolean(visibleEditErrors["edit-pickupWindowStart"]),
                       "w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500",
                     )}
                   />
-                  <FieldError message={editErrors["edit-pickupWindowStart"]} />
+                  <FieldError message={visibleEditErrors["edit-pickupWindowStart"]} />
                 </div>
                 <div>
                   <label
@@ -1505,13 +1533,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                         pickupWindowEnd: v || undefined,
                       }));
                     }}
-                    aria-invalid={Boolean(editErrors["edit-pickupWindowEnd"])}
+                    aria-invalid={Boolean(visibleEditErrors["edit-pickupWindowEnd"])}
                     className={getFieldErrorClass(
-                      Boolean(editErrors["edit-pickupWindowEnd"]),
+                      Boolean(visibleEditErrors["edit-pickupWindowEnd"]),
                       "w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500",
                     )}
                   />
-                  <FieldError message={editErrors["edit-pickupWindowEnd"]} />
+                  <FieldError message={visibleEditErrors["edit-pickupWindowEnd"]} />
                 </div>
               </div>
               <div>
@@ -1534,13 +1562,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                     });
                     setEditForm((p) => ({ ...p, cutOffTime: v || undefined }));
                   }}
-                  aria-invalid={Boolean(editErrors["edit-cutOffTime"])}
+                  aria-invalid={Boolean(visibleEditErrors["edit-cutOffTime"])}
                   className={getFieldErrorClass(
-                    Boolean(editErrors["edit-cutOffTime"]),
+                    Boolean(visibleEditErrors["edit-cutOffTime"]),
                     "w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500",
                   )}
                 />
-                <FieldError message={editErrors["edit-cutOffTime"]} />
+                <FieldError message={visibleEditErrors["edit-cutOffTime"]} />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1568,13 +1596,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                       }));
                     }}
                     placeholder="VD: 40"
-                    aria-invalid={Boolean(editErrors["edit-maxDistanceKm"])}
+                    aria-invalid={Boolean(visibleEditErrors["edit-maxDistanceKm"])}
                     className={getFieldErrorClass(
-                      Boolean(editErrors["edit-maxDistanceKm"]),
+                      Boolean(visibleEditErrors["edit-maxDistanceKm"]),
                       "w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500",
                     )}
                   />
-                  <FieldError message={editErrors["edit-maxDistanceKm"]} />
+                  <FieldError message={visibleEditErrors["edit-maxDistanceKm"]} />
                 </div>
               </div>
 
@@ -1743,7 +1771,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                 (!isSupplierRole ||
                   (isRequesterRole && req.companyId === currentCompany.id)) && (
                   <div
-                    className={`flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-xs ${req.bookingAiCheck?.status === "VALID" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}
+                    className={`flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-xs ${!bookingNeedsOpsReview(req.bookingAiCheck) ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}
                   >
                     <FileText className="w-3.5 h-3.5 shrink-0" />
                     <span className="font-semibold">
@@ -1751,13 +1779,17 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                     </span>
                     <span>
                       · AI:{" "}
-                      {req.bookingAiCheck?.status === "VALID"
+                      {!bookingNeedsOpsReview(req.bookingAiCheck)
                         ? "hợp lệ"
                         : req.bookingAiCheck?.status === "INVALID" ||
                             req.bookingAiCheck?.status === "ANOMALY"
                           ? "có cảnh báo"
                           : "chờ Ops kiểm tra"}
                     </span>
+                    <p className="w-full font-semibold">{getBookingAiReviewTitle(req.bookingAiCheck)}</p>
+                    <ul className="w-full list-disc pl-4">
+                      {getBookingAiEvidence(req.bookingAiCheck).map((detail, index) => <li key={index}>{detail}</li>)}
+                    </ul>
                   </div>
                 )}
 

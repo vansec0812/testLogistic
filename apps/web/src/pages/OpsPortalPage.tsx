@@ -58,6 +58,7 @@ import {
 } from "../components/StatusBadge";
 import { Company, CompanyStatus, Offer } from "../types";
 import { DateTimeInput } from "../components/DateInput";
+import { bookingNeedsOpsReview, getBookingAiReviewTitle, getBookingAiEvidence, sortRequestsForOps } from "../services/bookingReview";
 import {
   getOfferAiConditionTitle as getSharedOfferAiConditionTitle,
   sortOffersForOps,
@@ -89,6 +90,10 @@ function getOfferManualReviewReasons(offer: Offer): string[] {
   const reasons: string[] = [];
   if (!ai.edoChecked) reasons.push("Chưa có kết quả AI xác minh eDO.");
   if (ai.edoValid === false) reasons.push("eDO chưa được AI xác nhận hợp lệ.");
+  if (ai.edoMatchesRegistration === false)
+    reasons.push(`eDO không khớp thông tin Offer: ${ai.edoMismatchDetails?.[0] || "cần đối chiếu file gốc."}`);
+  if (ai.edoDocumentType && ai.edoDocumentType !== "EDO")
+    reasons.push("AI chưa xác nhận tệp đính kèm là eDO.");
   if (ai.edoAnomaly)
     reasons.push(
       `eDO có dấu hiệu bất thường: ${ai.anomalyReason || "cần Ops đối chiếu file gốc."}`,
@@ -253,9 +258,9 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
       (o) => o.status === "UNDER_REVIEW" || o.status === "AVAILABLE",
     ),
   );
-  const underReviewRequests = requests.filter(
+  const underReviewRequests = sortRequestsForOps(requests.filter(
     (r) => r.status === "UNDER_REVIEW",
-  );
+  ));
   const openCases = cases.filter(
     (c) => c.status === "OPEN" || c.status === "IN_REVIEW",
   );
@@ -915,6 +920,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                     {o.aiCheck &&
                       (o.aiCheck.edoValid === false ||
                         o.aiCheck.edoAnomaly ||
+                        o.aiCheck.edoMatchesRegistration === false ||
                         o.aiCheck.photoConditionNotes ||
                         o.aiCheck.details?.length) && (
                         <div className="p-3 bg-orange-50 border border-orange-200 rounded-xl text-xs text-orange-900 space-y-1">
@@ -923,6 +929,12 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                           </strong>
                           {o.aiCheck.edoValid === false && (
                             <p>• eDO chưa được AI xác minh hợp pháp tự động.</p>
+                          )}
+                          {o.aiCheck.edoMatchesRegistration === false && (
+                            <p>• eDO không khớp thông tin Offer: {o.aiCheck.edoMismatchDetails?.join(" ") || "cần đối chiếu file gốc."}</p>
+                          )}
+                          {(o.aiCheck.edoActualContainerNumber || o.aiCheck.edoActualCarrierCode || o.aiCheck.edoActualContainerType) && (
+                            <p>• AI đọc từ eDO: Cont {o.aiCheck.edoActualContainerNumber || "chưa rõ"} · Hãng {o.aiCheck.edoActualCarrierCode || "chưa rõ"} · Loại {o.aiCheck.edoActualContainerType || "chưa rõ"}. Offer đăng ký: {o.asset.containerNumber} · {o.asset.carrierCode} · {o.asset.containerType}.</p>
                           )}
                           {o.aiCheck.edoAnomaly && (
                             <p>
@@ -1210,13 +1222,13 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                     </div>
 
                     <div
-                      className={`rounded-xl border px-3 py-2 text-xs ${r.bookingAiCheck?.status === "VALID" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}
+                      className={`rounded-xl border px-3 py-2 text-xs ${!bookingNeedsOpsReview(r.bookingAiCheck) ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}
                     >
                       <strong>File Booking:</strong>{" "}
                       {r.bookingFileName || "Chưa có file"}
                       <span className="ml-2">
                         · AI:{" "}
-                        {r.bookingAiCheck?.status === "VALID"
+                        {!bookingNeedsOpsReview(r.bookingAiCheck)
                           ? "hợp lệ"
                           : r.bookingAiCheck?.status === "INVALID" ||
                               r.bookingAiCheck?.status === "ANOMALY"
@@ -1226,6 +1238,18 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                       {r.bookingAiCheck?.summary && (
                         <p className="mt-1">{r.bookingAiCheck.summary}</p>
                       )}
+                      <p className="mt-2 font-bold">{getBookingAiReviewTitle(r.bookingAiCheck)}</p>
+                      {r.bookingAiCheck && (
+                        <p className="mt-1">
+                          AI đọc từ file: {r.bookingAiCheck.actualBookingNumber || "Chưa rõ số Booking"}
+                          {" · "}{r.bookingAiCheck.actualCarrierCode || "Chưa rõ hãng tàu"}
+                          {" · "}{r.bookingAiCheck.actualContainerType || "Chưa rõ loại container"}
+                          {" · Cut-off: "}{r.bookingAiCheck.actualCutOffDate || "Chưa đọc được"}
+                        </p>
+                      )}
+                      <ul className="mt-1 list-disc pl-4">
+                        {getBookingAiEvidence(r.bookingAiCheck).map((detail, index) => <li key={index}>{detail}</li>)}
+                      </ul>
                     </div>
 
                     <div className="pt-2 border-t border-slate-200 space-y-2">

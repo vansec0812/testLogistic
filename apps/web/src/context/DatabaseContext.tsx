@@ -32,6 +32,8 @@ import {
   isWithinDisputeWindow,
 } from '../services/qaRules';
 import { inferNotificationEntityType } from '../services/notificationRouting';
+import { offerAiCanAutoApprove } from '../services/offerReview';
+import { reconcileBookingAiCheck, bookingNeedsOpsReview, getBookingAiReviewTitle, getBookingAiEvidence } from '../services/bookingReview';
 
 // ==================== CONTEXT TYPE ====================
 
@@ -533,15 +535,11 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: false, message: 'Offer phải có tối thiểu 6 ảnh container.' };
     }
     if (!form.edoFileName?.trim()) {
-      return { success: false, message: 'Mỗi Offer phải gắn đúng một file eDO/Booking để Ops xác minh.' };
+      return { success: false, message: 'Mỗi Offer phải gắn đúng một file eDO để Ops xác minh.' };
     }
     // AI chỉ là tín hiệu hỗ trợ. Nếu AI chưa có kết quả, lỗi hoặc phát hiện
     // bất thường thì vẫn gửi hồ sơ để Ops kiểm tra và quyết định thủ công.
-    const needsOpsManualReview = !form.aiCheck
-      || !form.aiCheck.edoChecked
-      || !form.aiCheck.photoChecked
-      || !form.aiCheck.passed
-      || form.aiCheck.verificationStatus !== 'VERIFIED';
+    const needsOpsManualReview = !offerAiCanAutoApprove(form.aiCheck);
     // Khi eDO và toàn bộ ảnh đều đã được AI xác minh hợp lệ, không tạo thêm
     // hàng đợi Ops. Bất kỳ thiếu kết quả, lỗi kết nối hoặc dấu hiệu lệch nào
     // đều phải chuyển sang UNDER_REVIEW để Ops xem ảnh và kết luận thủ công.
@@ -649,7 +647,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         'COMP-OPS',
         'OPS_ALERT',
         `Offer mới cần thẩm định: ${newOffer.id}`,
-        `Nhà cung cấp Container (${ownerCompany.shortName}) đã đăng nguồn vỏ ${targetAsset.containerNumber} (${targetAsset.carrierCode} ${targetAsset.containerType}) kèm e-DO. Vui lòng kiểm tra ảnh và kết luận thủ công.`,
+        `Nhà cung cấp Container (${ownerCompany.shortName}) đã đăng nguồn vỏ ${targetAsset.containerNumber} (${targetAsset.carrierCode} ${targetAsset.containerType}) kèm e-DO. ${newOffer.aiCheck?.edoMismatchDetails?.[0] || newOffer.aiCheck?.anomalyReason || newOffer.aiCheck?.summary || 'Vui lòng kiểm tra file eDO, ảnh và kết luận thủ công.'}`,
         newOffer.id
       );
     } else {
@@ -730,13 +728,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (offer.status !== 'DRAFT' && offer.status !== 'CHANGES_REQUIRED') {
       return { success: false, message: `Chỉ có thể gửi review từ DRAFT hoặc CHANGES_REQUIRED (hiện: ${offer.status}).` };
     }
-    const aiPassed = Boolean(
-      offer.aiCheck?.passed
-      && offer.aiCheck.edoChecked
-      && offer.aiCheck.photoChecked
-      && offer.aiCheck.verificationStatus === 'VERIFIED'
-      && !offer.requiresOpsManualReview
-    );
+    const aiPassed = offerAiCanAutoApprove(offer.aiCheck) && !offer.requiresOpsManualReview;
     const now = new Date().toISOString();
     persistOffers(offers.map(o => o.id === offerId ? {
       ...o,
@@ -749,10 +741,11 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       updatedAt: now,
     } : o));
     addAudit('OFFER_SUBMITTED_FOR_REVIEW', 'Offer', offerId, aiPassed ? 'AI/QA tự động duyệt Offer đạt điều kiện' : 'Gửi Offer để Ops thẩm định');
+    if (!aiPassed) addNotification('COMP-OPS', 'OPS_ALERT', 'Offer cần Ops xác minh', offer.aiCheck?.summary || 'Chưa đủ kết quả AI để tự động duyệt.', offerId);
     return { success: true, message: aiPassed
       ? 'Offer đã được tự động duyệt vì toàn bộ kết quả AI đều đạt.'
       : 'Đã gửi Offer để Ops kiểm tra thủ công.' };
-  }, [offers, persistOffers, addAudit]);
+  }, [offers, persistOffers, addAudit, addNotification]);
 
   const withdrawOffer = useCallback((offerId: string, reason: string): ActionResult => {
     const offer = offers.find(o => o.id === offerId);
@@ -864,15 +857,18 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (requesterCompany.verificationStatus !== 'VERIFIED') {
       return { success: false, message: 'Doanh nghiệp chưa được Ops xác minh. Chưa thể tạo Request.' };
     }
+    const carrierCode = INITIAL_CARRIERS.find(carrier => carrier.id === form.carrierId)?.code || form.carrierId.replace(/^CARR-/, '');
+    const bookingAiCheck = reconcileBookingAiCheck(form.bookingAiCheck, { bookingNumber, carrierCode, containerType: form.containerType, cutOffTime: form.cutOffTime });
+    const needsOps = bookingNeedsOpsReview(bookingAiCheck);
     const newReq: ContainerRequest = {
       id: genId('REQ'),
       companyId: currentCompany.id,
       companyName: requesterCompany.shortName,
       carrierId: form.carrierId,
-      carrierCode: form.carrierId.replace('CARR-', ''),
+      carrierCode,
       containerType: form.containerType,
       bookingNumber,
-      status: 'DRAFT',
+      status: needsOps ? 'UNDER_REVIEW' : 'DRAFT',
       version: 1,
       deliveryLocationName: form.deliveryLocationName,
       deliveryLatitude: form.deliveryLatitude,
@@ -886,14 +882,15 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       baselinePickupCostVnd,
       bookingFileName,
       bookingFileMimeType: form.bookingFileMimeType,
-      bookingAiCheck: form.bookingAiCheck,
+      bookingAiCheck,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     persistRequests([...requests, newReq]);
     addAudit('REQUEST_CREATED', 'ContainerRequest', newReq.id, `Tạo nhu cầu booking ${form.bookingNumber}`);
-    return { success: true, message: 'Đã tạo nhu cầu thành công. Hãy gửi Ops xác minh; sau khi được OPEN, hệ thống sẽ tự động tìm Offer phù hợp.', data: newReq };
-  }, [requests, companies, currentRole, currentCompany, persistRequests, addAudit]);
+    if (needsOps) addNotification('COMP-OPS', 'OPS_ALERT', getBookingAiReviewTitle(bookingAiCheck), getBookingAiEvidence(bookingAiCheck).join(' ') || 'Chưa đủ bằng chứng AI; cần kiểm tra file Booking.', newReq.id);
+    return { success: true, message: needsOps ? 'Đã tạo nhu cầu và gửi Ops xác minh các cảnh báo Booking.' : 'Đã tạo nhu cầu thành công. Hãy gửi Ops xác minh; sau khi được OPEN, hệ thống sẽ tự động tìm Offer phù hợp.', data: newReq };
+  }, [requests, companies, currentRole, currentCompany, persistRequests, addAudit, addNotification]);
 
   const updateRequest = useCallback((requestId: string, updates: Partial<ContainerRequest>): ActionResult => {
     if (currentRole !== 'ENTERPRISE_B' && currentRole !== 'ENTERPRISE_BOTH') {
@@ -942,7 +939,14 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       || finalPickupWindowEnd !== req.pickupWindowEnd
       || finalCutOffTime !== req.cutOffTime
       || finalDistance !== req.maxDistanceKm;
-    const newStatus = req.status === 'OPEN' && matchingFieldsChanged ? 'UNDER_REVIEW' : req.status;
+    const evidenceChanged = finalBookingFileName !== req.bookingFileName || updates.bookingAiCheck !== undefined;
+    const bookingAiCheck = reconcileBookingAiCheck(
+      updates.bookingAiCheck ?? (finalBookingFileName === req.bookingFileName ? req.bookingAiCheck : undefined),
+      { bookingNumber: finalBooking, carrierCode, containerType: finalContainerType, cutOffTime: finalCutOffTime },
+    );
+    const needsOps = bookingNeedsOpsReview(bookingAiCheck);
+    const newStatus = (req.status === 'OPEN' && (matchingFieldsChanged || evidenceChanged))
+      || (needsOps && ['DRAFT', 'CHANGES_REQUIRED'].includes(req.status)) ? 'UNDER_REVIEW' : req.status;
     const updated = {
       ...req,
       ...updates,
@@ -959,14 +963,15 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       baselinePickupCostVnd: finalBaseline,
       bookingFileName: finalBookingFileName,
       bookingFileMimeType: updates.bookingFileMimeType ?? req.bookingFileMimeType,
-      bookingAiCheck: updates.bookingAiCheck ?? req.bookingAiCheck,
+      bookingAiCheck,
       version: req.version + 1,
       updatedAt: new Date().toISOString(),
     };
     persistRequests(requests.map(r => r.id === requestId ? updated : r));
     addAudit('REQUEST_UPDATED', 'ContainerRequest', requestId, 'Cập nhật nhu cầu');
-    return { success: true, message: newStatus === 'UNDER_REVIEW' ? 'Đã cập nhật. Request được gửi lại Ops xác minh do thay đổi điều kiện matching.' : 'Đã cập nhật nhu cầu.' };
-  }, [requests, currentCompany, currentRole, persistRequests, addAudit]);
+    if (newStatus === 'UNDER_REVIEW') addNotification('COMP-OPS', 'OPS_ALERT', getBookingAiReviewTitle(bookingAiCheck), getBookingAiEvidence(bookingAiCheck).join(' ') || 'Booking đã thay đổi, cần Ops xác minh lại.', requestId);
+    return { success: true, message: newStatus === 'UNDER_REVIEW' ? 'Đã cập nhật và gửi Ops xác minh lại Booking.' : 'Đã cập nhật nhu cầu.' };
+  }, [requests, currentCompany, currentRole, persistRequests, addAudit, addNotification]);
 
   const submitRequestForReview = useCallback((requestId: string): ActionResult => {
     if (currentRole !== 'ENTERPRISE_B' && currentRole !== 'ENTERPRISE_BOTH') {
@@ -989,7 +994,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       'COMP-OPS',
       'OPS_ALERT',
       `Booking mới cần thẩm định: ${requestId}`,
-      `Đơn vị cần vỏ đã gửi Booking để Ops xác minh trước khi matching.`,
+      [getBookingAiReviewTitle(req.bookingAiCheck), ...getBookingAiEvidence(req.bookingAiCheck)].join(' '),
       requestId
     );
     return { success: true, message: 'Đã gửi nhu cầu để Ops xác minh booking.' };
