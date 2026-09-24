@@ -45,7 +45,7 @@ function AppContent() {
   // Strict role-based navigation guard
   useEffect(() => {
     if (currentRole === "ENTERPRISE_A") {
-      if (["ops", "database"].includes(currentTab)) {
+      if (["assets", "ops", "database"].includes(currentTab)) {
         setCurrentTab("dashboard");
       }
     } else if (currentRole === "ENTERPRISE_B") {
@@ -53,7 +53,7 @@ function AppContent() {
         setCurrentTab("dashboard");
       }
     } else if (currentRole === "ENTERPRISE_BOTH") {
-      if (["ops", "database"].includes(currentTab)) {
+      if (["assets", "ops", "database"].includes(currentTab)) {
         setCurrentTab("dashboard");
       }
     }

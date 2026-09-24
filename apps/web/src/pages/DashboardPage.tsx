@@ -335,16 +335,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 Đăng nguồn vỏ cont
               </button>
             )}
-            {isSupplierRole && (
-              <button
-                type="button"
-                onClick={() => setCurrentTab("assets")}
-                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 border border-white/20 transition-all"
-              >
-                <Package className="w-4 h-4" />
-                Kho vỏ container
-              </button>
-            )}
             {isRequesterRole && (
               <button
                 type="button"
@@ -402,29 +392,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           <div
             className={`grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 ${
               currentRole === "ENTERPRISE_BOTH"
-                ? "lg:grid-cols-7"
-                : currentRole === "ENTERPRISE_A"
-                  ? "lg:grid-cols-6"
-                  : "lg:grid-cols-5"
+                ? "lg:grid-cols-6"
+                : "lg:grid-cols-5"
             }`}
           >
             {isSupplierRole && (
               <KpiCard
-                icon={Box}
-                label="Container trong kho"
-                value={stats.myAssets}
-                sub="Tại các depot & bãi"
-                color="blue"
-                onClick={() => setCurrentTab("assets")}
-              />
-            )}
-            {isSupplierRole && (
-              <KpiCard
                 icon={Package}
-                label="Offer đang mở"
+                label="Nguồn vỏ đang mở"
                 value={stats.myActiveOffers}
                 sub="Chờ ghép đôi"
-                color="emerald"
+                color="blue"
                 onClick={() => setCurrentTab("offers")}
               />
             )}

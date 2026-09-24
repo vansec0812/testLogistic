@@ -114,17 +114,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       groupName: "NGHIỆP VỤ VỎ CONT",
       items: [
         {
-          id: "assets",
-          label: "Kho vỏ Container",
-          icon: Boxes,
-          roles: ["ENTERPRISE_A", "ENTERPRISE_BOTH", "OPS"],
-        },
-        {
           id: "offers",
           label:
             currentRole === "OPS"
               ? "Thẩm định Nguồn vỏ"
-              : "Đăng & Quản lý Nguồn vỏ",
+              : "Nguồn cung vỏ Container",
           icon: PackageOpen,
           roles: ["ENTERPRISE_A", "ENTERPRISE_BOTH", "OPS"],
           badge:
@@ -173,6 +167,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: HeadphonesIcon,
           roles: ["OPS"],
           badge: openCases > 0 ? openCases : undefined,
+        },
+        {
+          id: "assets",
+          label: "Kho Dữ liệu Vỏ Cont",
+          icon: Boxes,
+          roles: ["OPS"],
         },
         {
           id: "cases",
@@ -393,7 +393,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           // Reset currentTab to dashboard if current tab is unauthorized
                           if (
                             opt.value === "ENTERPRISE_A" &&
-                            (currentTab === "ops" || currentTab === "database")
+                            (currentTab === "assets" || currentTab === "ops" || currentTab === "database")
                           ) {
                             setCurrentTab("dashboard");
                           } else if (
