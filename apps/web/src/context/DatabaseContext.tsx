@@ -32,7 +32,6 @@ import {
   isWithinDisputeWindow,
 } from '../services/qaRules';
 import { inferNotificationEntityType } from '../services/notificationRouting';
-import { bookingNeedsOpsReview, getBookingAiEvidence, getBookingAiReviewTitle } from '../services/bookingReview';
 
 // ==================== CONTEXT TYPE ====================
 
@@ -182,20 +181,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     catch { return INITIAL_OFFERS; }
   });
   const [requests, setRequests] = useState<ContainerRequest[]>(() => {
-    try {
-      const stored = localStorage.getItem('econt_v2_requests');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const hasOldMessyData = parsed.some((r: any) =>
-            r?.bookingAiCheck?.summary?.includes('cần Ops đối chiếu thêm thời hạn') ||
-            r?.bookingAiCheck?.details?.some((d: string) => typeof d === 'string' && d.includes('trên cổng hãng tàu'))
-          );
-          if (!hasOldMessyData) return parsed;
-        }
-      }
-      return INITIAL_REQUESTS;
-    }
+    try { return JSON.parse(localStorage.getItem('econt_v2_requests') || '') || INITIAL_REQUESTS; }
     catch { return INITIAL_REQUESTS; }
   });
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
@@ -878,10 +864,6 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (requesterCompany.verificationStatus !== 'VERIFIED') {
       return { success: false, message: 'Doanh nghiệp chưa được Ops xác minh. Chưa thể tạo Request.' };
     }
-    // Giống Offer, Booking có kết quả AI lỗi/không hợp lệ/không khớp dữ liệu
-    // nhập tay vẫn được lưu để không mất hồ sơ, nhưng phải vào ngay hàng đợi
-    // Ops thay vì chờ người dùng gửi lại một lần nữa.
-    const requiresImmediateOpsReview = bookingNeedsOpsReview(form.bookingAiCheck);
     const newReq: ContainerRequest = {
       id: genId('REQ'),
       companyId: currentCompany.id,
@@ -890,7 +872,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       carrierCode: form.carrierId.replace('CARR-', ''),
       containerType: form.containerType,
       bookingNumber,
-      status: requiresImmediateOpsReview ? 'UNDER_REVIEW' : 'DRAFT',
+      status: 'DRAFT',
       version: 1,
       deliveryLocationName: form.deliveryLocationName,
       deliveryLatitude: form.deliveryLatitude,
@@ -910,24 +892,8 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     persistRequests([...requests, newReq]);
     addAudit('REQUEST_CREATED', 'ContainerRequest', newReq.id, `Tạo nhu cầu booking ${form.bookingNumber}`);
-    if (requiresImmediateOpsReview) {
-      const aiTitle = getBookingAiReviewTitle(newReq.bookingAiCheck);
-      const aiEvidence = getBookingAiEvidence(newReq.bookingAiCheck)[0] || newReq.bookingAiCheck?.summary || '';
-      addNotification(
-        'COMP-OPS',
-        'OPS_ALERT',
-        `Booking mới cần thẩm định: ${newReq.id}`,
-        `Đơn vị cần vỏ (${requesterCompany.shortName}) đã đăng Booking ${newReq.bookingNumber}. AI cảnh báo: ${aiTitle}${aiEvidence ? ` ${aiEvidence}` : ''}`,
-        newReq.id,
-      );
-      return {
-        success: true,
-        message: 'Đã tạo nhu cầu. File Booking có cảnh báo hoặc chưa đủ kết quả đối chiếu nên đã chuyển ngay Ops kiểm tra.',
-        data: newReq,
-      };
-    }
     return { success: true, message: 'Đã tạo nhu cầu thành công. Hãy gửi Ops xác minh; sau khi được OPEN, hệ thống sẽ tự động tìm Offer phù hợp.', data: newReq };
-  }, [requests, companies, currentRole, currentCompany, persistRequests, addAudit, addNotification]);
+  }, [requests, companies, currentRole, currentCompany, persistRequests, addAudit]);
 
   const updateRequest = useCallback((requestId: string, updates: Partial<ContainerRequest>): ActionResult => {
     if (currentRole !== 'ENTERPRISE_B' && currentRole !== 'ENTERPRISE_BOTH') {
@@ -951,7 +917,6 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const finalDistance = Number(updates.maxDistanceKm ?? req.maxDistanceKm);
     const finalBaseline = Number(updates.baselinePickupCostVnd ?? req.baselinePickupCostVnd);
     const finalBookingFileName = String(updates.bookingFileName ?? req.bookingFileName ?? '').trim();
-    const finalBookingAiCheck = updates.bookingAiCheck ?? req.bookingAiCheck;
     if (!finalBooking || !/^[A-Z0-9][A-Z0-9-]{4,}$/.test(finalBooking)) {
       return { success: false, message: 'Số Booking phải có ít nhất 5 ký tự, chỉ gồm chữ, số và dấu gạch ngang.' };
     }
@@ -977,13 +942,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       || finalPickupWindowEnd !== req.pickupWindowEnd
       || finalCutOffTime !== req.cutOffTime
       || finalDistance !== req.maxDistanceKm;
-    const bookingEvidenceChanged = finalBookingFileName !== String(req.bookingFileName || '').trim()
-      || Object.prototype.hasOwnProperty.call(updates, 'bookingAiCheck');
-    const hasBookingAiIssue = bookingNeedsOpsReview(finalBookingAiCheck);
-    const canQueueForReview = ['DRAFT', 'CHANGES_REQUIRED', 'OPEN', 'UNDER_REVIEW'].includes(req.status);
-    const queueForAiIssue = canQueueForReview && hasBookingAiIssue;
-    const queueOpenRequestForChangedMatching = req.status === 'OPEN' && (matchingFieldsChanged || bookingEvidenceChanged);
-    const newStatus = queueForAiIssue || queueOpenRequestForChangedMatching ? 'UNDER_REVIEW' : req.status;
+    const newStatus = req.status === 'OPEN' && matchingFieldsChanged ? 'UNDER_REVIEW' : req.status;
     const updated = {
       ...req,
       ...updates,
@@ -1000,32 +959,14 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       baselinePickupCostVnd: finalBaseline,
       bookingFileName: finalBookingFileName,
       bookingFileMimeType: updates.bookingFileMimeType ?? req.bookingFileMimeType,
-      bookingAiCheck: finalBookingAiCheck,
+      bookingAiCheck: updates.bookingAiCheck ?? req.bookingAiCheck,
       version: req.version + 1,
       updatedAt: new Date().toISOString(),
     };
     persistRequests(requests.map(r => r.id === requestId ? updated : r));
     addAudit('REQUEST_UPDATED', 'ContainerRequest', requestId, 'Cập nhật nhu cầu');
-    if (queueForAiIssue && req.status !== 'UNDER_REVIEW') {
-      const aiTitle = getBookingAiReviewTitle(finalBookingAiCheck);
-      const aiEvidence = getBookingAiEvidence(finalBookingAiCheck)[0] || finalBookingAiCheck?.summary || '';
-      addNotification(
-        'COMP-OPS',
-        'OPS_ALERT',
-        `Booking cần thẩm định lại: ${requestId}`,
-        `Booking ${finalBooking} có cảnh báo AI sau khi cập nhật: ${aiTitle}${aiEvidence ? ` ${aiEvidence}` : ''}`,
-        requestId,
-      );
-    }
-    return {
-      success: true,
-      message: queueForAiIssue
-        ? 'Đã cập nhật. File Booking có cảnh báo hoặc sai lệch nên đã chuyển ngay Ops xác minh.'
-        : newStatus === 'UNDER_REVIEW'
-          ? 'Đã cập nhật. Request được gửi lại Ops xác minh do thay đổi điều kiện matching.'
-          : 'Đã cập nhật nhu cầu.',
-    };
-  }, [requests, currentCompany, currentRole, persistRequests, addAudit, addNotification]);
+    return { success: true, message: newStatus === 'UNDER_REVIEW' ? 'Đã cập nhật. Request được gửi lại Ops xác minh do thay đổi điều kiện matching.' : 'Đã cập nhật nhu cầu.' };
+  }, [requests, currentCompany, currentRole, persistRequests, addAudit]);
 
   const submitRequestForReview = useCallback((requestId: string): ActionResult => {
     if (currentRole !== 'ENTERPRISE_B' && currentRole !== 'ENTERPRISE_BOTH') {
@@ -1048,7 +989,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       'COMP-OPS',
       'OPS_ALERT',
       `Booking mới cần thẩm định: ${requestId}`,
-      `Đơn vị cần vỏ đã gửi Booking để Ops xác minh trước khi matching. Kết quả AI: ${getBookingAiReviewTitle(req.bookingAiCheck)}.`,
+      `Đơn vị cần vỏ đã gửi Booking để Ops xác minh trước khi matching.`,
       requestId
     );
     return { success: true, message: 'Đã gửi nhu cầu để Ops xác minh booking.' };

@@ -291,16 +291,6 @@ export interface BookingAiCheckResult {
   summary: string;
   details: string[];
   requiresOpsReview: boolean;
-  /** Kết quả AI đối chiếu file Booking với các trường người dùng đã nhập. */
-  matchesRegistration?: boolean;
-  comparisonStatus?: 'MATCHED' | 'MISMATCH' | 'PENDING';
-  actualBookingNumber?: string;
-  actualCarrierCode?: string;
-  actualContainerType?: ContainerType;
-  actualCutOffDate?: string;
-  mismatchDetails?: string[];
-  mismatchedFields?: Array<'BOOKING_NUMBER' | 'CARRIER_CODE' | 'CONTAINER_TYPE' | 'CUT_OFF_TIME'>;
-  anomalyReason?: string;
   error?: string;
 }
 

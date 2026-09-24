@@ -41,7 +41,6 @@ import {
 import { Company, CompanyStatus, Offer } from '../types';
 import { DateTimeInput } from '../components/DateInput';
 import { getOfferAiConditionTitle as getSharedOfferAiConditionTitle, sortOffersForOps } from '../services/offerReview';
-import { sortRequestsForOps } from '../services/bookingReview';
 
 interface OpsPortalPageProps {
   setCurrentTab?: (tab: string) => void;
@@ -179,10 +178,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
   const underReviewOffers = sortOffersForOps(
     offers.filter(o => o.status === 'UNDER_REVIEW' || o.status === 'AVAILABLE')
   );
-  const pendingRequests = requests.filter(r => r.status === 'UNDER_REVIEW');
-  const underReviewRequests = sortRequestsForOps(
-    requests.filter(r => r.status === 'UNDER_REVIEW' || r.status === 'OPEN')
-  );
+  const underReviewRequests = requests.filter(r => r.status === 'UNDER_REVIEW');
   const openCases = cases.filter(c => c.status === 'OPEN' || c.status === 'IN_REVIEW');
   const aiReviewAssets = assets.filter(a =>
     (a.aiInspection?.requiresOpsReview && ['ANOMALY', 'ERROR'].includes(a.aiInspection.status)) ||
@@ -379,7 +375,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
         <div className="flex items-center gap-2">
           <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5" />
-            <span>{carrierPendingTxns.length + pendingOffers.length + pendingRequests.length + aiReviewAssets.length + openCases.length} tác vụ</span>
+            <span>{carrierPendingTxns.length + pendingOffers.length + underReviewRequests.length + aiReviewAssets.length + openCases.length} tác vụ</span>
           </span>
         </div>
       </div>
@@ -419,7 +415,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
           <div className="text-2xl sm:text-3xl font-bold font-mono text-slate-900 mt-2">
             {pendingOffers.length}
           </div>
-          <p className="text-xs text-emerald-700 font-medium mt-1">Thẩm định nguồn vỏ</p>
+          <p className="text-xs text-emerald-700 font-medium mt-1">Kiểm tra ảnh & vị trí vỏ</p>
         </button>
 
         <button
@@ -431,13 +427,13 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">BOOKING CHỜ OPS DUYỆT</span>
+            <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">BOOKING CHỜ XÁC MINH</span>
             <Search className="w-5 h-5 text-cyan-600" />
           </div>
           <div className="text-2xl sm:text-3xl font-bold font-mono text-slate-900 mt-2">
-            {pendingRequests.length}
+            {underReviewRequests.length}
           </div>
-          <p className="text-xs text-cyan-700 font-medium mt-1">Thẩm định nhu cầu vỏ</p>
+          <p className="text-xs text-cyan-700 font-medium mt-1">Kiểm tra booking của đơn vị cần vỏ</p>
         </button>
 
         <button
@@ -507,7 +503,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Thẩm định Nhu cầu vỏ ({pendingRequests.length})
+            Xác minh Booking ({underReviewRequests.length})
           </button>
           <button
             onClick={() => setActiveTab('ai-inspection')}
@@ -791,7 +787,7 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
           <div className="p-5 space-y-4">
             {underReviewRequests.length === 0 ? (
               <div className="py-12 text-center text-slate-400 text-xs">
-                Không có Booking nào trong hàng đợi thẩm định nhu cầu vỏ.
+                Không có Booking nào đang chờ xác minh.
               </div>
             ) : (
               <div className="space-y-4">
@@ -822,46 +818,39 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                       {r.bookingAiCheck?.summary && <p className="mt-1">{r.bookingAiCheck.summary}</p>}
                     </div>
 
-                    {r.status === 'UNDER_REVIEW' && (
-                      <div className="pt-2 border-t border-slate-200 space-y-2">
-                        <label htmlFor={`requestReviewNote-${r.id}`} className="text-xs font-bold text-slate-800 block">
-                          Kết luận xác minh Booking <RequiredMark />
-                        </label>
-                        <textarea
-                          id={`requestReviewNote-${r.id}`}
-                          data-field={`requestReviewNote-${r.id}`}
-                          rows={2}
-                          value={requestReviewNotes[r.id] || ''}
-                          onChange={event => {
-                            setRequestReviewNotes(previous => ({ ...previous, [r.id]: event.target.value }));
-                            setRequestReviewErrors(previous => ({ ...previous, [r.id]: '' }));
-                          }}
-                          placeholder="Nhập kết quả đối chiếu Booking với hãng tàu..."
-                          aria-invalid={Boolean(requestReviewErrors[r.id])}
-                          className={getFieldErrorClass(Boolean(requestReviewErrors[r.id]), 'w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
-                        />
-                        <FieldError message={requestReviewErrors[r.id]} />
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => handleRequestReview(r.id, 'REJECT')}
-                            className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 text-xs font-semibold"
-                          >
-                            Từ chối
-                          </button>
-                          <button
-                            onClick={() => handleRequestReview(r.id, 'APPROVE')}
-                            className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm"
-                          >
-                            Xác nhận Booking (OPEN)
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    {r.status === 'OPEN' && (
-                      <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-xs text-emerald-800">
-                        Booking đã được Ops xác minh và đang ở trạng thái OPEN sẵn sàng nhận đề xuất ghép vỏ. Thông tin này chỉ hiển thị trong hàng đợi để Ops tra cứu.
-                      </div>
-                    )}
+                    <div className="pt-2 border-t border-slate-200 space-y-2">
+                      <label htmlFor={`requestReviewNote-${r.id}`} className="text-xs font-bold text-slate-800 block">
+                        Kết luận xác minh Booking <RequiredMark />
+                      </label>
+                      <textarea
+                        id={`requestReviewNote-${r.id}`}
+                        data-field={`requestReviewNote-${r.id}`}
+                        rows={2}
+                        value={requestReviewNotes[r.id] || ''}
+                        onChange={event => {
+                          setRequestReviewNotes(previous => ({ ...previous, [r.id]: event.target.value }));
+                          setRequestReviewErrors(previous => ({ ...previous, [r.id]: '' }));
+                        }}
+                        placeholder="Nhập kết quả đối chiếu Booking với hãng tàu..."
+                        aria-invalid={Boolean(requestReviewErrors[r.id])}
+                        className={getFieldErrorClass(Boolean(requestReviewErrors[r.id]), 'w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
+                      />
+                      <FieldError message={requestReviewErrors[r.id]} />
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => handleRequestReview(r.id, 'REJECT')}
+                        className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 text-xs font-semibold"
+                      >
+                        Từ chối
+                      </button>
+                      <button
+                        onClick={() => handleRequestReview(r.id, 'APPROVE')}
+                        className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm"
+                      >
+                        Xác nhận Booking (OPEN)
+                      </button>
+                    </div>
+                    </div>
                   </div>
                 ))}
               </div>

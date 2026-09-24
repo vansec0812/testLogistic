@@ -59,61 +59,6 @@ test('provider anomaly remains visible', async () => {
   respond({ status: 'ANOMALY', isLegal: false, hasAnomaly: true, summary: 'Có dấu hiệu sửa', requiresOpsReview: true });
   assert.equal((await ai.verifyEdoWithAI(file)).status, 'ANOMALY');
 });
-test('Booking is compared with manual registration fields and mismatches stay visible for Ops', async () => {
-  globalThis.fetch = async (url, init) => {
-    assert.equal(url, 'http://local.test/api/ai/edo/verify');
-    const sent = JSON.parse(init.body);
-    assert.equal(sent.task, 'BOOKING_LEGALITY_AND_REGISTRATION_MATCH');
-    assert.deepEqual(sent.expectedBooking, {
-      bookingNumber: 'MSK-VN-984210',
-      carrierCode: 'MSK',
-      containerType: '40HC',
-      cutOffDate: '30/09/2026',
-    });
-    return new Response(JSON.stringify({
-      status: 'VALID',
-      isLegal: true,
-      hasAnomaly: false,
-      summary: 'File Booking đọc rõ.',
-      actualBookingNumber: 'MSK-VN-111111',
-      actualCarrierCode: 'CMA CGM',
-      actualContainerType: '20GP',
-      actualCutOffDate: '29/09/2026',
-      matchesRegistration: false,
-      mismatchDetails: ['Thông tin Booking khác dữ liệu đăng ký.'],
-      requiresOpsReview: true,
-    }), { headers: { 'Content-Type': 'application/json' } });
-  };
-  const result = await ai.verifyBookingWithAI(file, {
-    bookingNumber: 'MSK-VN-984210', carrierCode: 'MSK', containerType: '40HC', cutOffTime: '2026-09-30T23:59:59',
-  });
-  assert.equal(result.status, 'ANOMALY');
-  assert.equal(result.matchesRegistration, false);
-  assert.deepEqual(result.mismatchedFields, ['BOOKING_NUMBER', 'CARRIER_CODE', 'CONTAINER_TYPE', 'CUT_OFF_TIME']);
-  assert.match(result.mismatchDetails.join(' '), /Số Booking/);
-});
-test('Booking aliases and a file uploaded before form completion can be reconciled without re-uploading', async () => {
-  respond({
-    status: 'VALID',
-    isLegal: true,
-    hasAnomaly: false,
-    summary: 'File Booking hợp lệ.',
-    actualBookingNumber: 'MSK VN 984210',
-    actualCarrierCode: 'Maersk Line',
-    actualContainerType: '40HQ',
-    actualCutOffDate: '30/09/2026',
-    matchesRegistration: true,
-    requiresOpsReview: false,
-  });
-  const pending = await ai.verifyBookingWithAI(file, {});
-  assert.equal(pending.comparisonStatus, 'PENDING');
-  const result = ai.reconcileBookingAiResult(pending, {
-    bookingNumber: 'MSK-VN-984210', carrierCode: 'MSK', containerType: '40HC', cutOffTime: '2026-09-30T23:59:59',
-  });
-  assert.equal(result.status, 'VALID');
-  assert.equal(result.comparisonStatus, 'MATCHED');
-  assert.equal(result.matchesRegistration, true);
-});
 test('confirmed photo mismatch is not hidden by requiresOpsReview', async () => {
   respond({ status: 'MISMATCH', matchesRegistration: false, actualCondition: 'MINOR_DAMAGE', actualConditionNotes: 'Vách bị xước.', mismatchDetails: ['Tình trạng khác khai báo'], summary: 'Có vết xước', requiresOpsReview: true });
   const result = await ai.verifyContainerPhotosWithAI(photos, expected);

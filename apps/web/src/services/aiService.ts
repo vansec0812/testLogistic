@@ -34,35 +34,6 @@ export interface EdoVerificationResult {
   error?: string;
 }
 
-export interface BookingRegistrationData {
-  bookingNumber?: string;
-  carrierCode?: CarrierCode;
-  containerType?: ContainerType;
-  cutOffTime?: string;
-}
-
-export type BookingComparisonField = 'BOOKING_NUMBER' | 'CARRIER_CODE' | 'CONTAINER_TYPE' | 'CUT_OFF_TIME';
-
-/**
- * Kết quả xác minh Booking gồm cả tính hợp lệ của file và đối chiếu với dữ
- * liệu người dùng đã nhập. Các trường actual* chỉ được giữ khi AI đọc được
- * trực tiếp từ file, không tự suy diễn từ dữ liệu form.
- */
-export interface BookingVerificationResult extends EdoVerificationResult {
-  /** Raw document verdict retained only in UI state so manual fields can be re-compared without re-uploading. */
-  documentVerification: EdoVerificationResult;
-  sourceReportedMismatch?: boolean;
-  sourceMismatchDetails: string[];
-  matchesRegistration: boolean;
-  comparisonStatus: 'MATCHED' | 'MISMATCH' | 'PENDING';
-  actualBookingNumber?: string;
-  actualCarrierCode?: string;
-  actualContainerType?: ContainerType;
-  actualCutOffDate?: string;
-  mismatchDetails: string[];
-  mismatchedFields: BookingComparisonField[];
-}
-
 export interface ContainerPhotoVerificationResult {
   success: boolean;
   status: 'MATCHED' | 'MISMATCH' | 'MANUAL_REVIEW' | 'ERROR';
@@ -358,217 +329,6 @@ function fallbackApiMessage(error: unknown): string {
   return message;
 }
 
-function mapDocumentVerificationResponse(response: any): EdoVerificationResult {
-  const statusValue = String(response.status || '').toUpperCase();
-  if (statusValue === 'MANUAL_REVIEW') {
-    return {
-      success: true,
-      status: 'MANUAL_REVIEW',
-      isLegal: false,
-      hasAnomaly: asBoolean(response.hasAnomaly ?? response.anomaly ?? response.suspicious),
-      summary: vietnameseText(response.summary, 'AI chưa đủ cơ sở kết luận; cần Ops kiểm tra.'),
-      details: vietnameseTextArray(response.details || response.findings),
-      requiresOpsReview: true,
-    };
-  }
-
-  const hasLegalValue = typeof response.isLegal === 'boolean'
-    || typeof response.isValid === 'boolean'
-    || typeof response.legal === 'boolean'
-    || typeof response.valid === 'boolean'
-    || typeof response.isValidEdo === 'boolean'
-    || ['VALID', 'LEGAL', 'APPROVED', 'INVALID', 'ILLEGAL', 'REJECTED'].includes(statusValue);
-  if (!hasLegalValue) {
-    return {
-      success: true,
-      status: 'MANUAL_REVIEW',
-      isLegal: false,
-      hasAnomaly: true,
-      summary: 'API chưa trả về kết quả pháp lý rõ ràng; cần Ops xác minh thủ công.',
-      details: ['Thiếu trường isLegal/isValid trong phản hồi API.'],
-      requiresOpsReview: true,
-    };
-  }
-
-  const statusImpliesLegal = ['VALID', 'LEGAL', 'APPROVED'].includes(statusValue);
-  const statusImpliesInvalid = ['INVALID', 'ILLEGAL', 'REJECTED'].includes(statusValue);
-  const isLegal = asBoolean(
-    response.isLegal ?? response.isValid ?? response.legal ?? response.valid ?? response.isValidEdo,
-    statusImpliesLegal ? true : statusImpliesInvalid ? false : false,
-  );
-  const hasAnomaly = asBoolean(response.hasAnomaly ?? response.anomaly ?? response.suspicious);
-  const details = vietnameseTextArray(response.details || response.findings || response.anomalies);
-  const status = statusValue === 'ANOMALY' ? 'ANOMALY' : !isLegal ? 'INVALID' : hasAnomaly ? 'ANOMALY' : 'VALID';
-  return {
-    success: true,
-    status,
-    isLegal,
-    hasAnomaly,
-    score: Number(response.score ?? response.confidence ?? 0) || undefined,
-    summary: vietnameseText(response.summary || response.message, isLegal ? 'eDO hợp lệ theo kết quả AI.' : 'eDO không hợp lệ theo kết quả AI.'),
-    details,
-    anomalyReason: vietnameseText(response.anomalyReason || response.reason) || undefined,
-    requiresOpsReview: asBoolean(response.requiresOpsReview, hasAnomaly || !isLegal),
-  };
-}
-
-function normalizeBookingNumber(value: unknown): string {
-  return asString(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
-}
-
-function normalizeBookingCarrier(value: unknown): string {
-  const normalized = asString(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
-  if (!normalized) return '';
-  if (['MSK', 'MAERSK', 'MAERSKLINE'].includes(normalized)) return 'MSK';
-  if (['CMA', 'CMACGM', 'CMACGMGROUP'].includes(normalized)) return 'CMA';
-  if (['ONE', 'OCEANNETWORKEXPRESS'].includes(normalized)) return 'ONE';
-  if (['EMC', 'EVERGREEN', 'EVERGREENMARINE', 'EVERGREENMARINECORP'].includes(normalized)) return 'EMC';
-  if (['COSCO', 'COSCOSHIPPING', 'COSCOSHIPPINGLINES'].includes(normalized)) return 'COSCO';
-  return normalized;
-}
-
-function normalizeBookingContainerType(value: unknown): ContainerType | undefined {
-  const normalized = asString(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
-  if (['20GP', '20DC', '20DV', '20STD', '20FT'].includes(normalized)) return '20GP';
-  if (['40HC', '40HQ', '40H', '40HIGHCUBE', '40FT'].includes(normalized)) return '40HC';
-  return undefined;
-}
-
-function normalizeBookingDate(value: unknown): string {
-  const source = asString(value);
-  if (!source) return '';
-  const iso = source.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}${iso[2]}${iso[3]}`;
-  const ddMm = source.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (ddMm) return `${ddMm[3]}${ddMm[2]}${ddMm[1]}`;
-  const yyyyMm = source.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
-  if (yyyyMm) return `${yyyyMm[1]}${yyyyMm[2]}${yyyyMm[3]}`;
-  return source.replace(/[^0-9]/g, '');
-}
-
-function displayBookingDate(value: unknown): string {
-  const normalized = normalizeBookingDate(value);
-  if (/^\d{8}$/.test(normalized)) return `${normalized.slice(6, 8)}/${normalized.slice(4, 6)}/${normalized.slice(0, 4)}`;
-  return asString(value);
-}
-
-function uniqueText(items: string[]): string[] {
-  return [...new Set(items.map(item => item.trim()).filter(Boolean))];
-}
-
-function compareBookingRegistration(
-  base: EdoVerificationResult,
-  response: any,
-  expected: BookingRegistrationData = {},
-): BookingVerificationResult {
-  const actualBookingNumber = asString(response.actualBookingNumber ?? response.bookingNumber ?? response.bookingNo) || undefined;
-  const actualCarrierCode = asString(response.actualCarrierCode ?? response.carrierCode ?? response.carrier) || undefined;
-  const actualContainerType = normalizeBookingContainerType(response.actualContainerType ?? response.containerType);
-  const actualCutOffDate = displayBookingDate(response.actualCutOffDate ?? response.cutOffDate ?? response.cutoffDate ?? response.cutOffTime) || undefined;
-
-  const expectedBookingNumber = normalizeBookingNumber(expected.bookingNumber);
-  const expectedCarrierCode = normalizeBookingCarrier(expected.carrierCode);
-  const expectedContainerType = normalizeBookingContainerType(expected.containerType);
-  const expectedCutOffDate = normalizeBookingDate(expected.cutOffTime);
-
-  const actualBookingKey = normalizeBookingNumber(actualBookingNumber);
-  const actualCarrierKey = normalizeBookingCarrier(actualCarrierCode);
-  const actualCutOffKey = normalizeBookingDate(actualCutOffDate);
-  const mismatchedFields: BookingComparisonField[] = [];
-  const sourceMismatchDetails = vietnameseTextArray(response.mismatchDetails || response.comparisonDetails || response.mismatches);
-  const mismatchDetails = [...sourceMismatchDetails];
-
-  const addMismatch = (field: BookingComparisonField, detail: string) => {
-    if (!mismatchedFields.includes(field)) mismatchedFields.push(field);
-    mismatchDetails.push(detail);
-  };
-
-  if (expectedBookingNumber && actualBookingKey && expectedBookingNumber !== actualBookingKey) {
-    addMismatch('BOOKING_NUMBER', `Số Booking trên file (${actualBookingNumber}) không khớp số Booking đã nhập (${expected.bookingNumber}).`);
-  }
-  if (expectedCarrierCode && actualCarrierKey && expectedCarrierCode !== actualCarrierKey) {
-    addMismatch('CARRIER_CODE', `Hãng tàu trên file (${actualCarrierCode}) không khớp hãng tàu đã chọn (${expected.carrierCode}).`);
-  }
-  if (expectedContainerType && actualContainerType && expectedContainerType !== actualContainerType) {
-    addMismatch('CONTAINER_TYPE', `Loại container trên file (${actualContainerType}) không khớp loại đã chọn (${expected.containerType}).`);
-  }
-  // Ngày cut-off chỉ đối chiếu khi AI nhìn thấy rõ ngày này trên file. Nhiều
-  // Booking không có cut-off nên không xem việc thiếu trường là sai lệch.
-  if (expectedCutOffDate && actualCutOffKey && expectedCutOffDate !== actualCutOffKey) {
-    addMismatch('CUT_OFF_TIME', `Ngày cut-off trên file (${actualCutOffDate}) không khớp ngày đã nhập (${displayBookingDate(expected.cutOffTime)}).`);
-  }
-
-  const aiReportedMismatch = response.matchesRegistration === false;
-  if (aiReportedMismatch && mismatchedFields.length === 0) {
-    mismatchDetails.push('AI phát hiện thông tin trên file Booking không khớp dữ liệu đăng ký; Ops cần kiểm tra chứng từ gốc.');
-  }
-
-  const expectedFieldsMissing = !expectedBookingNumber || !expectedCarrierCode || !expectedContainerType;
-  const actualFieldsMissing = !actualBookingKey || !actualCarrierKey || !actualContainerType;
-  const hasMismatch = mismatchedFields.length > 0 || aiReportedMismatch;
-  const comparisonPending = !hasMismatch && (expectedFieldsMissing || actualFieldsMissing);
-  const normalizedMismatchDetails = uniqueText(mismatchDetails);
-  const missingReadFields = [
-    !actualBookingKey ? 'số Booking' : '',
-    !actualCarrierKey ? 'hãng tàu' : '',
-    !actualContainerType ? 'loại container' : '',
-  ].filter(Boolean);
-
-  let status = base.status;
-  let summary = base.summary;
-  if (hasMismatch) {
-    status = 'ANOMALY';
-    summary = `Thông tin trên file Booking không khớp dữ liệu đã nhập. ${normalizedMismatchDetails[0] || 'Cần Ops kiểm tra.'}`;
-  } else if (comparisonPending && status === 'VALID') {
-    status = 'MANUAL_REVIEW';
-    summary = `AI chưa đọc đủ ${missingReadFields.join(', ') || 'thông tin'} trên file để đối chiếu với dữ liệu đã nhập; cần Ops kiểm tra.`;
-  } else if (!comparisonPending && !hasMismatch && status === 'VALID') {
-    summary = 'File Booking hợp lệ và khớp thông tin đã nhập.';
-  }
-
-  const details = uniqueText([
-    ...base.details,
-    ...normalizedMismatchDetails,
-    comparisonPending ? `AI chưa đọc đủ ${missingReadFields.join(', ') || 'thông tin'} để đối chiếu tự động.` : '',
-  ]);
-
-  return {
-    ...base,
-    documentVerification: base,
-    sourceReportedMismatch: aiReportedMismatch || undefined,
-    sourceMismatchDetails,
-    status,
-    isLegal: hasMismatch ? false : base.isLegal,
-    hasAnomaly: base.hasAnomaly || hasMismatch,
-    summary,
-    details,
-    requiresOpsReview: base.requiresOpsReview || hasMismatch || comparisonPending,
-    matchesRegistration: !hasMismatch && !comparisonPending,
-    comparisonStatus: hasMismatch ? 'MISMATCH' : comparisonPending ? 'PENDING' : 'MATCHED',
-    actualBookingNumber,
-    actualCarrierCode,
-    actualContainerType,
-    actualCutOffDate,
-    mismatchDetails: normalizedMismatchDetails,
-    mismatchedFields,
-  };
-}
-
-/** Re-evaluate a completed AI read when the requester corrects manual fields. */
-export function reconcileBookingAiResult(
-  result: BookingVerificationResult,
-  expected: BookingRegistrationData,
-): BookingVerificationResult {
-  return compareBookingRegistration(result.documentVerification, {
-    matchesRegistration: result.sourceReportedMismatch === true ? false : undefined,
-    actualBookingNumber: result.actualBookingNumber,
-    actualCarrierCode: result.actualCarrierCode,
-    actualContainerType: result.actualContainerType,
-    actualCutOffDate: result.actualCutOffDate,
-    mismatchDetails: result.sourceMismatchDetails,
-  }, expected);
-}
-
 /** OCR eDO. API thật trả dữ liệu trích xuất; secret chỉ nằm ở backend. */
 export async function extractEdoWithAI(file: File): Promise<{ success: boolean; data?: ExtractedEdoData; error?: string }> {
   try {
@@ -635,7 +395,53 @@ export async function verifyEdoWithAI(
       document: { fileName: file.name, ...document },
       extracted,
     }));
-    return mapDocumentVerificationResponse(response);
+    const statusValue = String(response.status || '').toUpperCase();
+    if (statusValue === 'MANUAL_REVIEW') {
+      return {
+        success: true, status: 'MANUAL_REVIEW', isLegal: false,
+        hasAnomaly: asBoolean(response.hasAnomaly ?? response.anomaly ?? response.suspicious),
+        summary: vietnameseText(response.summary, 'AI chưa đủ cơ sở kết luận; cần Ops kiểm tra.'),
+        details: vietnameseTextArray(response.details || response.findings),
+        requiresOpsReview: true,
+      };
+    }
+    const hasLegalValue = typeof response.isLegal === 'boolean'
+      || typeof response.isValid === 'boolean'
+      || typeof response.legal === 'boolean'
+      || typeof response.valid === 'boolean'
+      || typeof response.isValidEdo === 'boolean'
+      || ['VALID', 'LEGAL', 'APPROVED', 'INVALID', 'ILLEGAL', 'REJECTED'].includes(String(response.status || '').toUpperCase());
+    if (!hasLegalValue) {
+      return {
+        success: true,
+        status: 'MANUAL_REVIEW',
+        isLegal: false,
+        hasAnomaly: true,
+        summary: 'API chưa trả về kết quả pháp lý rõ ràng; cần Ops xác minh thủ công.',
+        details: ['Thiếu trường isLegal/isValid trong phản hồi API.'],
+        requiresOpsReview: true,
+      };
+    }
+    const statusImpliesLegal = ['VALID', 'LEGAL', 'APPROVED'].includes(statusValue);
+    const statusImpliesInvalid = ['INVALID', 'ILLEGAL', 'REJECTED'].includes(statusValue);
+    const isLegal = asBoolean(
+      response.isLegal ?? response.isValid ?? response.legal ?? response.valid ?? response.isValidEdo,
+      statusImpliesLegal ? true : statusImpliesInvalid ? false : false,
+    );
+    const hasAnomaly = asBoolean(response.hasAnomaly ?? response.anomaly ?? response.suspicious);
+    const details = vietnameseTextArray(response.details || response.findings || response.anomalies);
+    const status = statusValue === 'ANOMALY' ? 'ANOMALY' : !isLegal ? 'INVALID' : hasAnomaly ? 'ANOMALY' : 'VALID';
+    return {
+      success: true,
+      status,
+      isLegal,
+      hasAnomaly,
+      score: Number(response.score ?? response.confidence ?? 0) || undefined,
+      summary: vietnameseText(response.summary || response.message, isLegal ? 'eDO hợp lệ theo kết quả AI.' : 'eDO không hợp lệ theo kết quả AI.'),
+      details,
+      anomalyReason: vietnameseText(response.anomalyReason || response.reason) || undefined,
+      requiresOpsReview: asBoolean(response.requiresOpsReview, hasAnomaly || !isLegal),
+    };
   } catch (error) {
     return {
       success: true,
@@ -650,47 +456,9 @@ export async function verifyEdoWithAI(
   }
 }
 
-/**
- * Xác minh file Booking và đối chiếu số Booking, hãng tàu, loại cont (và
- * cut-off nếu file có thể đọc được) với dữ liệu người dùng đã nhập. Ops vẫn
- * là người quyết định cuối khi có cảnh báo hoặc AI không đọc đủ chứng từ.
- */
-export async function verifyBookingWithAI(
-  file: File,
-  expected: BookingRegistrationData = {},
-): Promise<BookingVerificationResult> {
-  const fallback = (message: string): BookingVerificationResult => compareBookingRegistration({
-    success: true,
-    status: 'MANUAL_REVIEW',
-    isLegal: false,
-    hasAnomaly: true,
-    summary: 'AI chưa thể kiểm tra file Booking; cần Ops kiểm tra thủ công.',
-    details: [message],
-    requiresOpsReview: true,
-    error: message,
-  }, {}, expected);
-
-  if (!isApiConfigured) {
-    return fallback('Chưa cấu hình máy chủ ECont AI.');
-  }
-
-  try {
-    const document = await fileToAiDocument(file);
-    const response = unwrapApiPayload(await postApi<any>('/api/ai/edo/verify', {
-      task: 'BOOKING_LEGALITY_AND_REGISTRATION_MATCH',
-      documentType: 'BOOKING',
-      document: { fileName: file.name, ...document },
-      expectedBooking: {
-        bookingNumber: asString(expected.bookingNumber),
-        carrierCode: asString(expected.carrierCode),
-        containerType: expected.containerType || '',
-        cutOffDate: displayBookingDate(expected.cutOffTime),
-      },
-    }));
-    return compareBookingRegistration(mapDocumentVerificationResponse(response), response, expected);
-  } catch (error) {
-    return fallback(fallbackApiMessage(error));
-  }
+/** Xác minh file Booking ảnh/PDF; AI chỉ hỗ trợ cảnh báo, Ops là người quyết định cuối. */
+export function verifyBookingWithAI(file: File): Promise<EdoVerificationResult> {
+  return verifyEdoWithAI(file, undefined, 'BOOKING');
 }
 
 /** Giám định tình trạng ảnh container. Kết quả API phải trả tình trạng thực tế và chi tiết phát hiện. */

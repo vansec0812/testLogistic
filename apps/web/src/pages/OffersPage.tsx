@@ -1346,32 +1346,32 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
               {/* Khối AI xác minh eDO và tình trạng thực tế */}
               <div data-field="aiCheck" className={getFieldErrorClass(Boolean(formErrors.aiCheck), 'p-3 rounded-xl bg-white border border-teal-200 space-y-2')}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-teal-600" />
-                    <span className="text-xs font-bold text-teal-900">
-                      AI xác minh eDO & đối chiếu tình trạng 6 ảnh:
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-teal-600" />
+                  <span className="text-xs font-bold text-teal-900">
+                    AI xác minh eDO & đối chiếu tình trạng 6 ảnh:
+                  </span>
+                  {aiCheckResult ? (
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                      aiCheckResult.hasAnomaly 
+                        ? 'bg-amber-100 text-amber-800 border border-amber-300' 
+                        : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    }`}>
+                      {aiCheckResult.hasAnomaly ? '⚠️ Có điểm nghi vấn' : `✓ Đạt chuẩn ${aiCheckResult.score}/100`}
                     </span>
-                    {aiCheckResult ? (
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                        aiCheckResult.hasAnomaly 
-                          ? 'bg-amber-100 text-amber-800 border border-amber-300' 
-                          : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                      }`}>
-                        {aiCheckResult.hasAnomaly ? '⚠️ Có điểm nghi vấn' : `✓ Đạt chuẩn ${aiCheckResult.score}/100`}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-amber-700">Chưa có kết quả — Offer sẽ được Ops kiểm tra thủ công</span>
-                    )}
-                  </div>
+                  ) : (
+                    <span className="text-xs text-amber-700">Chưa có kết quả — Offer sẽ được Ops kiểm tra thủ công</span>
+                  )}
+                </div>
 
-                  <button
-                    type="button"
-                    disabled={isAiChecking}
-                    onClick={handleRunAiPreCheck}
-                    className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all disabled:opacity-50"
-                  >
-                    {isAiChecking ? 'Đang phân tích AI...' : 'Chạy AI kiểm tra trước'}
-                  </button>
+                <button
+                  type="button"
+                  disabled={isAiChecking}
+                  onClick={handleRunAiPreCheck}
+                  className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all disabled:opacity-50"
+                >
+                  {isAiChecking ? 'Đang phân tích AI...' : 'Chạy AI kiểm tra trước'}
+                </button>
                 </div>
                 {aiCheckResult && (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-slate-600">
@@ -1628,7 +1628,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                     {offer.requiresOpsManualReview && (
                       <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
                         <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                        {currentRole === 'OPS' ? 'Cần Ops kiểm tra thủ công' : 'Đang chờ Ops duyệt'}
+                        Cần Ops kiểm tra thủ công
                       </span>
                     )}
                     {offer.status === 'UNDER_REVIEW' && !offer.requiresOpsManualReview && (
@@ -1908,7 +1908,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({ setCurrentTab, setSelect
                       return next;
                     });
                   }}
-                  placeholder="Nhập mô tả chi tiết tình trạng vỏ: sàn, vách, trần, gioăng cửa, xước, móp, rỉ..."
+                  placeholder="AI sẽ tự điền mô tả thực tế: sàn, vách, trần, gioăng cửa, xước, móp, rỉ..."
                   aria-invalid={Boolean(editOfferErrors.editConditionNotes)}
                   className={getFieldErrorClass(Boolean(editOfferErrors.editConditionNotes), 'w-full border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-emerald-500 bg-white')}
                 />

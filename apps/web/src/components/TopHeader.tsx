@@ -2,10 +2,17 @@
 // ECont TopHeader - Thanh Tiêu Đề & Thanh Tác Vụ Nhanh Trên Cùng
 // ==============================================================================
 
-import React from 'react';
-import { Menu } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-import { NotificationCenter } from './NotificationCenter';
+import React from "react";
+import {
+  Menu,
+  ShieldCheck,
+  ChevronRight,
+  Sparkles,
+  Building2,
+  UserCircle2,
+} from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { NotificationCenter } from "./NotificationCenter";
 
 interface TopHeaderProps {
   currentTab: string;
@@ -14,50 +21,74 @@ interface TopHeaderProps {
   setIsMobileOpen: (open: boolean) => void;
 }
 
-const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
+const PAGE_METADATA: Record<
+  string,
+  { title: string; subtitle: string; category: string }
+> = {
   dashboard: {
-    title: 'Bàn làm việc & Tổng quan',
-    subtitle: 'Theo dõi chỉ số, radar tự động ghép đôi và cảnh báo vòng đời',
+    category: "Tổng quan",
+    title: "Bàn làm việc & Chỉ số",
+    subtitle:
+      "Theo dõi chỉ số luân chuyển, radar ghép đôi vỏ cont và cảnh báo deadline",
   },
   assets: {
-    title: 'Quản lý Vỏ Container',
-    subtitle: 'Danh mục tài sản vỏ cont, tải ảnh 6 góc và thẩm định chất lượng IICL',
+    category: "Nghiệp vụ Vỏ Cont",
+    title: "Quản lý Kho Vỏ Container",
+    subtitle:
+      "Danh mục tài sản vỏ cont rỗng, thẩm định chất lượng IICL và kiểm tra 6 góc",
   },
   offers: {
-    title: 'Nguồn cung vỏ container',
-    subtitle: 'Đăng Offer nguồn vỏ cont rỗng và điều phối giao dịch',
+    category: "Nghiệp vụ Vỏ Cont",
+    title: "Nguồn cung Vỏ Container",
+    subtitle:
+      "Đăng Offer nguồn vỏ cont rỗng, tối ưu hóa điểm trả vỏ và tạo giao dịch",
   },
   requests: {
-    title: 'Nhu cầu tìm vỏ container',
-    subtitle: 'Đăng nhu cầu đóng hàng, công cụ ghép đôi tự động và giữ chỗ tức thời',
+    category: "Kết nối & Giao dịch",
+    title: "Nhu cầu Tìm Vỏ Container",
+    subtitle:
+      "Đăng nhu cầu đóng hàng, công cụ ghép đôi tự động và giữ chỗ tức thời",
   },
   transactions: {
-    title: 'Vòng đời giao dịch 7 bước',
-    subtitle: 'Quy trình chuẩn hóa từ Thỏa thuận, Duyệt hãng tàu, Ký quỹ đến Bàn giao EIR',
+    category: "Kết nối & Giao dịch",
+    title: "Vòng đời Giao dịch 7 Bước",
+    subtitle:
+      "Quy trình chuẩn hóa từ Thỏa thuận, Duyệt hãng tàu, Ký quỹ đến Bàn giao EIR",
   },
   chat: {
-    title: 'Tin nhắn trao đổi trực tiếp',
-    subtitle: 'Trao đổi nghiệp vụ giữa nhà cung cấp, đơn vị cần vỏ và Đội ngũ Vận hành Ops',
+    category: "Kết nối & Giao dịch",
+    title: "Tin nhắn Trao đổi Trực tiếp",
+    subtitle:
+      "Kênh liên lạc thời gian thực giữa hai bên giao dịch và Điều phối viên Ops",
   },
   ops: {
-    title: 'Cổng Vận Hành ECont',
-    subtitle: 'Thẩm định Doanh nghiệp, Quản lý Hãng tàu & Đối soát RU',
+    category: "Điều hành & Hỗ trợ",
+    title: "Cổng Vận Hành ECont Ops",
+    subtitle:
+      "Thẩm định Doanh nghiệp, Phê duyệt Hãng tàu & Giám sát Đối soát Street-turn",
   },
   cases: {
-    title: 'Quản lý Sự cố & Khiếu nại',
-    subtitle: 'Ghi nhận, điều tra và kết luận giải quyết tranh chấp giao dịch',
+    category: "Điều hành & Hỗ trợ",
+    title: "Quản lý Sự cố & Khiếu nại",
+    subtitle:
+      "Ghi nhận hư hỏng, điều tra nguyên nhân và kết luận giải quyết đền bù",
   },
   database: {
-    title: 'Cơ sở Dữ liệu & Đồng bộ Trực tuyến',
-    subtitle: 'Cấu hình Supabase, sao lưu và đồng bộ dữ liệu thời gian thực',
+    category: "Điều hành & Hỗ trợ",
+    title: "Cơ sở Dữ liệu & Đồng bộ",
+    subtitle:
+      "Cấu hình đồng bộ dữ liệu thời gian thực và quản lý tài nguyên hệ thống",
   },
   profile: {
-    title: 'Hồ sơ tài khoản',
-    subtitle: 'Cập nhật thông tin cá nhân và doanh nghiệp với xác nhận OTP',
+    category: "Tài khoản",
+    title: "Hồ sơ Doanh nghiệp & Tài khoản",
+    subtitle:
+      "Cập nhật thông tin định danh, giấy phép kinh doanh và người đại diện",
   },
-  'change-password': {
-    title: 'Đổi mật khẩu',
-    subtitle: 'Xác nhận OTP bằng thông tin đã đăng ký trước khi cập nhật mật khẩu',
+  "change-password": {
+    category: "Tài khoản",
+    title: "Bảo mật & Đổi mật khẩu",
+    subtitle: "Xác thực OTP và thiết lập mật khẩu bảo vệ tài khoản",
   },
 };
 
@@ -67,40 +98,79 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   setSelectedTxnId,
   setIsMobileOpen,
 }) => {
-  const pageInfo = PAGE_TITLES[currentTab] || {
-    title: 'Hệ thống ECont',
-    subtitle: 'Nền tảng kết nối và tái sử dụng container rỗng thông minh',
+  const { currentCompany, currentRole, roleBadge, currentUserName } = useAuth();
+
+  const pageInfo = PAGE_METADATA[currentTab] || {
+    category: "Hệ thống",
+    title: "ECont Logistics",
+    subtitle: "Nền tảng kết nối và tái sử dụng container rỗng thông minh",
   };
 
   return (
-    <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4 shadow-sm">
-      {/* Left: Mobile Toggle & Page Title */}
+    <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/90 px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-4 shadow-2xs">
+      {/* Left: Mobile Toggle & Breadcrumbs / Title */}
       <div className="flex items-center gap-3 min-w-0">
         <button
           type="button"
           onClick={() => setIsMobileOpen(true)}
-          className="p-2 rounded-xl text-slate-600 hover:bg-slate-100 lg:hidden focus:outline-none"
+          className="p-2 -ml-1 rounded-xl text-slate-600 hover:bg-slate-100 lg:hidden focus:outline-none transition-colors"
           aria-label="Mở menu"
         >
           <Menu className="w-5 h-5" />
         </button>
 
         <div className="min-w-0">
-          <h1 className="text-base sm:text-xl font-bold text-slate-900 truncate flex items-center gap-2">
-            {pageInfo.title}
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 hidden sm:block truncate mt-0.5 font-normal">
+          {/* Breadcrumb path */}
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400">
+            <span
+              className="hover:text-slate-600 cursor-pointer"
+              onClick={() => setCurrentTab("dashboard")}
+            >
+              ECont
+            </span>
+            <ChevronRight className="w-3 h-3 text-slate-300" />
+            <span className="text-slate-500">{pageInfo.category}</span>
+          </div>
+
+          {/* Page title & Subtitle */}
+          <div className="flex items-center gap-2 mt-0.5">
+            <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate tracking-tight">
+              {pageInfo.title}
+            </h1>
+          </div>
+          <p className="text-xs text-slate-500 hidden md:block truncate mt-0.5">
             {pageInfo.subtitle}
           </p>
         </div>
       </div>
 
-      {/* Right: Notifications & System Status */}
-      <div className="flex items-center gap-2.5 shrink-0">
-        {/* Online system badge */}
-        <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-          <span>Hệ thống trực tuyến</span>
+      {/* Right: Enterprise Badge, Status & Notification Center */}
+      <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+        {/* Active Company Verification Pill */}
+        <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-700">
+          <Building2 className="w-3.5 h-3.5 text-slate-400" />
+          <span
+            className="font-semibold text-slate-800 max-w-[140px] truncate"
+            title={currentCompany.companyName}
+          >
+            {currentCompany.shortName}
+          </span>
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+            <ShieldCheck className="w-3 h-3" />
+            Xác thực
+          </span>
+        </div>
+
+        {/* Current Role Tag */}
+        <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-50/70 border border-blue-200/60 text-xs font-semibold text-blue-800">
+          <span>{roleBadge.icon}</span>
+          <span className="truncate max-w-[150px]">{roleBadge.label}</span>
+        </div>
+
+        {/* Online Pulse Status */}
+        <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50/80 text-emerald-700 border border-emerald-200/60 text-[11px] font-semibold">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Trực tuyến</span>
         </div>
 
         {/* Notification Center */}
@@ -108,6 +178,16 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           setCurrentTab={setCurrentTab}
           setSelectedTxnId={setSelectedTxnId}
         />
+
+        {/* Profile Avatar / Quick Link */}
+        <button
+          type="button"
+          onClick={() => setCurrentTab("profile")}
+          className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors border border-transparent hover:border-slate-200"
+          title={`Hồ sơ cá nhân: ${currentUserName}`}
+        >
+          <UserCircle2 className="w-6 h-6 text-slate-700" />
+        </button>
       </div>
     </header>
   );
