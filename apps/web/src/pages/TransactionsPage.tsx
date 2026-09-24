@@ -35,6 +35,7 @@ import {
   ShieldAlert,
   Send,
   X,
+  Loader2,
 } from "lucide-react";
 import {
   FieldErrors,
@@ -837,108 +838,123 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                   chứng PDF để chuyển giao dịch sang bước Thanh toán.
                 </p>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-slate-700 font-semibold block mb-1">
-                      Số văn bản RU của Hãng tàu <RequiredMark />
-                    </label>
-                    <input
-                      id="carrierRef"
-                      data-field="carrierRef"
-                      type="text"
-                      value={carrierRef}
-                      onChange={(e) => {
-                        setCarrierErrors({});
-                        setCarrierRef(e.target.value);
-                      }}
-                      aria-invalid={Boolean(carrierErrors.carrierRef)}
-                      className={getFieldErrorClass(
-                        Boolean(carrierErrors.carrierRef),
-                        "w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none uppercase focus:ring-2 focus:ring-brand-500",
-                      )}
-                      required
-                    />
-                    <FieldError message={carrierErrors.carrierRef} />
-                  </div>
-                  <div>
-                    <label className="text-slate-700 font-semibold block mb-1">
-                      Tên file công văn đính kèm <RequiredMark />
-                    </label>
-                    <input
-                      id="evidenceName"
-                      data-field="evidenceName"
-                      type="text"
-                      value={evidenceName}
-                      onChange={(e) => {
-                        setCarrierErrors({});
-                        setEvidenceName(e.target.value);
-                      }}
-                      aria-invalid={Boolean(carrierErrors.evidenceName)}
-                      className={getFieldErrorClass(
-                        Boolean(carrierErrors.evidenceName),
-                        "w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus:ring-2 focus:ring-brand-500",
-                      )}
-                      required
-                    />
-                    <FieldError message={carrierErrors.evidenceName} />
-                  </div>
-                  <div>
-                    <label className="text-slate-700 font-semibold block mb-1">
-                      Hiệu lực đến <RequiredMark />
-                    </label>
-                    <DateTimeInput
-                      id="carrierExpiry"
-                      data-field="carrierExpiry"
-                      value={carrierExpiry}
-                      onChange={(v) => {
-                        setCarrierErrors({});
-                        setCarrierExpiry(v);
-                      }}
-                      aria-invalid={Boolean(carrierErrors.carrierExpiry)}
-                      className={getFieldErrorClass(
-                        Boolean(carrierErrors.carrierExpiry),
-                        "w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus:ring-2 focus:ring-brand-500",
-                      )}
-                      required
-                    />
-                    <FieldError message={carrierErrors.carrierExpiry} />
-                  </div>
-                </div>
-
-                <div className="pt-2 flex flex-wrap justify-between items-center gap-3">
-                  <span className="text-xs text-slate-500">
-                    Quyền thao tác:{" "}
-                    <strong className="text-slate-700">
-                      Điều phối viên (Ops)
-                    </strong>
-                  </span>
-                  {canOperate ? (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          const reason = prompt("Nhập lý do hãng tàu từ chối:");
-                          if (reason) opsRejectCarrier(activeTxn.id, reason);
-                        }}
-                        className="px-3.5 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 font-semibold text-xs"
-                      >
-                        Hãng tàu Từ chối
-                      </button>
-                      <button
-                        onClick={() => {
-                          handleCarrierApproval();
-                        }}
-                        className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold flex items-center gap-2 shadow-sm text-xs"
-                      >
-                        <Ship className="w-4 h-4" />
-                        <span>Xác nhận Hãng Tàu Đã Duyệt RU</span>
-                      </button>
+                {!canOperate ? (
+                  <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/70 flex items-start sm:items-center gap-3">
+                    <Loader2 className="w-5 h-5 text-blue-600 animate-spin shrink-0 mt-0.5 sm:mt-0" />
+                    <div>
+                      <p className="text-xs sm:text-sm font-semibold text-blue-900 leading-snug">
+                        Ops đang làm việc với hãng tàu{" "}
+                        {activeTxn.asset.carrierCode || "MSK"} để xin duyệt RU.
+                        Vui lòng chờ thông báo mới.
+                      </p>
+                      <p className="text-xs text-blue-700/80 mt-1">
+                        Khi hãng tàu phản hồi chấp thuận, hệ thống sẽ tự động
+                        cập nhật tiến trình và chuyển sang bước tiếp theo.
+                      </p>
                     </div>
-                  ) : (
-                    <span className="text-xs text-amber-600 font-medium">
-                      Chờ Ops xác thực công văn từ Hãng tàu
-                    </span>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-slate-700 font-semibold block mb-1">
+                          Số văn bản RU của Hãng tàu <RequiredMark />
+                        </label>
+                        <input
+                          id="carrierRef"
+                          data-field="carrierRef"
+                          type="text"
+                          value={carrierRef}
+                          onChange={(e) => {
+                            setCarrierErrors({});
+                            setCarrierRef(e.target.value);
+                          }}
+                          aria-invalid={Boolean(carrierErrors.carrierRef)}
+                          className={getFieldErrorClass(
+                            Boolean(carrierErrors.carrierRef),
+                            "w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none uppercase focus:ring-2 focus:ring-brand-500",
+                          )}
+                          required
+                        />
+                        <FieldError message={carrierErrors.carrierRef} />
+                      </div>
+                      <div>
+                        <label className="text-slate-700 font-semibold block mb-1">
+                          Tên file công văn đính kèm <RequiredMark />
+                        </label>
+                        <input
+                          id="evidenceName"
+                          data-field="evidenceName"
+                          type="text"
+                          value={evidenceName}
+                          onChange={(e) => {
+                            setCarrierErrors({});
+                            setEvidenceName(e.target.value);
+                          }}
+                          aria-invalid={Boolean(carrierErrors.evidenceName)}
+                          className={getFieldErrorClass(
+                            Boolean(carrierErrors.evidenceName),
+                            "w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus:ring-2 focus:ring-brand-500",
+                          )}
+                          required
+                        />
+                        <FieldError message={carrierErrors.evidenceName} />
+                      </div>
+                      <div>
+                        <label className="text-slate-700 font-semibold block mb-1">
+                          Hiệu lực đến <RequiredMark />
+                        </label>
+                        <DateTimeInput
+                          id="carrierExpiry"
+                          data-field="carrierExpiry"
+                          value={carrierExpiry}
+                          onChange={(v) => {
+                            setCarrierErrors({});
+                            setCarrierExpiry(v);
+                          }}
+                          aria-invalid={Boolean(carrierErrors.carrierExpiry)}
+                          className={getFieldErrorClass(
+                            Boolean(carrierErrors.carrierExpiry),
+                            "w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus:ring-2 focus:ring-brand-500",
+                          )}
+                          required
+                        />
+                        <FieldError message={carrierErrors.carrierExpiry} />
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex flex-wrap justify-between items-center gap-3">
+                      <span className="text-xs text-slate-500">
+                        Quyền thao tác:{" "}
+                        <strong className="text-slate-700">
+                          Điều phối viên (Ops)
+                        </strong>
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            const reason = prompt(
+                              "Nhập lý do hãng tàu từ chối:",
+                            );
+                            if (reason) opsRejectCarrier(activeTxn.id, reason);
+                          }}
+                          className="px-3.5 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 font-semibold text-xs"
+                        >
+                          Hãng tàu Từ chối
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleCarrierApproval();
+                          }}
+                          className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold flex items-center gap-2 shadow-sm text-xs"
+                        >
+                          <Ship className="w-4 h-4" />
+                          <span>Xác nhận Hãng Tàu Đã Duyệt RU</span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -1693,8 +1709,8 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
           )}
 
           {/* Công cụ can thiệp Ops (Hold / Dispute) */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm text-xs space-y-3">
-            <h4 className="font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-2.5 flex items-center gap-1.5">
+          <div className="bg-white border-2 border-amber-300 rounded-2xl p-5 shadow-sm text-xs space-y-3">
+            <h4 className="font-bold text-amber-900 uppercase tracking-wider border-b border-amber-100 pb-2.5 flex items-center gap-1.5">
               <AlertTriangle className="w-4 h-4 text-amber-500" />
               <span>KIỂM SOÁT SỰ CỐ & TẠM DỪNG (HOLD)</span>
             </h4>

@@ -628,12 +628,14 @@ export const CasesPage: React.FC<CasesPageProps> = ({
                 : s === "OPEN"
                   ? `Đang mở (${visibleCases.filter((c) => c.status === "OPEN").length})`
                   : s === "IN_REVIEW"
-                    ? `Đang xem (${visibleCases.filter((c) => c.status === "IN_REVIEW").length})`
-                    : s === "RESOLVED"
-                      ? `Đã giải quyết (${visibleCases.filter((c) => c.status === "RESOLVED").length})`
-                      : s === "CLOSED"
-                        ? `Đã đóng (${visibleCases.filter((c) => c.status === "CLOSED").length})`
-                        : s}
+                    ? `Đang xử lý (${visibleCases.filter((c) => c.status === "IN_REVIEW").length})`
+                    : s === "NEEDS_INFO"
+                      ? `Cần bổ sung TT (${visibleCases.filter((c) => c.status === "NEEDS_INFO").length})`
+                      : s === "RESOLVED"
+                        ? `Đã giải quyết (${visibleCases.filter((c) => c.status === "RESOLVED").length})`
+                        : s === "CLOSED"
+                          ? `Đã đóng (${visibleCases.filter((c) => c.status === "CLOSED").length})`
+                          : s}
             </button>
           ),
         )}
@@ -849,11 +851,11 @@ export const CasesPage: React.FC<CasesPageProps> = ({
 
         {/* Case statistics */}
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-            <h3 className="text-sm font-semibold text-slate-700 mb-3">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+            <h3 className="text-sm font-semibold text-slate-800 mb-3.5">
               Thống kê Case
             </h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 gap-y-3">
               {[
                 {
                   label: "Đang mở",
@@ -861,7 +863,7 @@ export const CasesPage: React.FC<CasesPageProps> = ({
                   color: "text-red-600",
                 },
                 {
-                  label: "Đang xem xét",
+                  label: "Đang xử lý",
                   value: visibleCases.filter((c) => c.status === "IN_REVIEW")
                     .length,
                   color: "text-amber-600",
@@ -879,11 +881,16 @@ export const CasesPage: React.FC<CasesPageProps> = ({
                   color: "text-slate-400",
                 },
               ].map((s) => (
-                <div key={s.label} className="bg-slate-50 rounded-lg p-3">
+                <div
+                  key={s.label}
+                  className="bg-slate-50/80 rounded-xl p-3.5 border border-slate-100"
+                >
                   <p className={`text-2xl font-bold font-mono ${s.color}`}>
                     {s.value}
                   </p>
-                  <p className="text-xs text-slate-500 mt-0.5">{s.label}</p>
+                  <p className="text-xs font-medium text-slate-600 mt-1">
+                    {s.label}
+                  </p>
                 </div>
               ))}
             </div>

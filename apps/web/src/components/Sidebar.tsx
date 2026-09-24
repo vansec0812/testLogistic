@@ -116,9 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {
           id: "offers",
           label:
-            currentRole === "OPS"
-              ? "Thẩm định Nguồn vỏ"
-              : "Nguồn cung vỏ Container",
+            currentRole === "OPS" ? "Thẩm định Nguồn vỏ" : "Nguồn cung vỏ Cont",
           icon: PackageOpen,
           roles: ["ENTERPRISE_A", "ENTERPRISE_BOTH", "OPS"],
           badge:
@@ -131,7 +129,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label:
             currentRole === "OPS"
               ? "Thẩm định Nhu cầu vỏ"
-              : "Nhu cầu tìm vỏ cont",
+              : "Nhu cầu tìm vỏ Cont",
           icon: Search,
           roles: ["ENTERPRISE_A", "ENTERPRISE_B", "ENTERPRISE_BOTH", "OPS"],
           badge:
@@ -207,7 +205,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Main Vertical Sidebar */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-40 w-64 bg-white text-slate-800 flex flex-col transition-transform duration-300 ease-in-out border-r border-slate-200/90 shadow-sm ${
+        className={`fixed top-0 bottom-0 left-0 z-40 w-72 bg-white text-slate-800 flex flex-col transition-transform duration-300 ease-in-out border-r border-slate-200/90 shadow-sm ${
           isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
@@ -303,7 +301,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             : "text-slate-500 group-hover:text-slate-700"
                         }`}
                       />
-                      <span className="truncate flex-1 text-left">
+                      <span className="flex-1 text-left whitespace-nowrap font-medium">
                         {item.label}
                       </span>
 
@@ -393,7 +391,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           // Reset currentTab to dashboard if current tab is unauthorized
                           if (
                             opt.value === "ENTERPRISE_A" &&
-                            (currentTab === "assets" || currentTab === "ops" || currentTab === "database")
+                            (currentTab === "assets" ||
+                              currentTab === "ops" ||
+                              currentTab === "database")
                           ) {
                             setCurrentTab("dashboard");
                           } else if (

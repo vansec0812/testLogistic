@@ -50,6 +50,7 @@ function KpiCard({
   sub,
   color = "blue",
   onClick,
+  className = "",
 }: {
   icon: React.ElementType;
   label: string;
@@ -57,6 +58,7 @@ function KpiCard({
   sub?: string;
   color?: "blue" | "emerald" | "amber" | "violet" | "red";
   onClick?: () => void;
+  className?: string;
 }) {
   const colorMap = {
     blue: {
@@ -91,30 +93,32 @@ function KpiCard({
     <button
       onClick={onClick}
       disabled={!onClick}
-      className={`w-full min-w-0 text-left rounded-2xl border bg-white p-4 sm:p-5 shadow-xs hover:shadow-md transition-all group relative overflow-hidden ${
+      className={`w-full min-w-0 text-left rounded-2xl border bg-white shadow-xs hover:shadow-md transition-all group relative ${
         onClick ? "hover:-translate-y-0.5 cursor-pointer" : "cursor-default"
-      } ${c.border} ${c.glow}`}
+      } ${c.border} ${c.glow} ${className || "p-4 sm:p-5"}`}
     >
-      <div className="flex items-start justify-between">
-        <div
-          className={`p-2.5 rounded-xl border ${c.icon} transition-transform group-hover:scale-105`}
-        >
-          <Icon className="w-5 h-5" />
+      <div className="w-full">
+        <div className="flex items-start justify-between">
+          <div
+            className={`p-2.5 rounded-xl border ${c.icon} transition-transform group-hover:scale-105`}
+          >
+            <Icon className="w-5 h-5" />
+          </div>
+          {onClick && (
+            <span className="p-1 rounded-lg text-slate-400 group-hover:text-blue-600 group-hover:bg-blue-50 transition-colors">
+              <ArrowUpRight className="w-4 h-4" />
+            </span>
+          )}
         </div>
-        {onClick && (
-          <span className="p-1 rounded-lg text-slate-400 group-hover:text-blue-600 group-hover:bg-blue-50 transition-colors">
-            <ArrowUpRight className="w-4 h-4" />
-          </span>
-        )}
+        <p className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-3 font-mono whitespace-nowrap tracking-tight">
+          {value}
+        </p>
+        <p className="text-xs sm:text-sm text-slate-600 mt-1 font-semibold leading-snug">
+          {label}
+        </p>
       </div>
-      <p className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-3.5 font-mono whitespace-nowrap truncate tracking-tight">
-        {value}
-      </p>
-      <p className="text-xs sm:text-sm text-slate-600 mt-1 font-semibold truncate">
-        {label}
-      </p>
       {sub && (
-        <p className="text-[11px] text-slate-400 mt-0.5 truncate">{sub}</p>
+        <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">{sub}</p>
       )}
     </button>
   );
@@ -270,17 +274,24 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         <div className="absolute top-0 right-0 -mr-16 -mt-16 w-80 h-80 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 right-1/4 -mb-16 w-60 h-60 rounded-full bg-teal-500/10 blur-3xl pointer-events-none" />
 
-        <div className="relative z-10 flex flex-wrap items-start justify-between gap-6">
-          <div className="max-w-2xl">
+        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="flex-1 max-w-3xl">
             <div className="flex items-center gap-2 mb-3">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/10 text-blue-200 border border-white/15 backdrop-blur-md">
                 <span>{roleBadge.icon}</span>
                 <span>{roleBadge.label}</span>
               </span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Đã định danh IICL
-              </span>
+              {currentRole === "OPS" ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-800/60 text-blue-200 border border-blue-500/30">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Ban Điều Phối Trung Tâm
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Đã định danh IICL
+                </span>
+              )}
             </div>
 
             <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
@@ -324,35 +335,35 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           </div>
 
           {/* Quick Action CTA Buttons */}
-          <div className="flex flex-wrap sm:flex-col gap-2.5 shrink-0">
+          <div className="flex flex-col sm:flex-row md:flex-col lg:flex-row items-stretch sm:items-center gap-3 shrink-0 w-full md:w-auto">
             {isSupplierRole && (
               <button
                 type="button"
                 onClick={() => setCurrentTab("offers")}
-                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition-all hover:scale-[1.02]"
+                className="px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold flex items-center justify-center gap-2.5 shadow-lg shadow-blue-600/30 transition-all hover:scale-[1.02] whitespace-nowrap"
               >
                 <Box className="w-4 h-4" />
-                Đăng nguồn vỏ cont
+                <span>Đăng nguồn vỏ cont</span>
               </button>
             )}
             {isRequesterRole && (
               <button
                 type="button"
                 onClick={() => setCurrentTab("requests")}
-                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition-all hover:scale-[1.02]"
+                className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-600/30 transition-all hover:scale-[1.02] whitespace-nowrap"
               >
                 <Sparkles className="w-4 h-4" />
-                Tìm vỏ ghép đôi
+                <span>Tìm vỏ ghép đôi</span>
               </button>
             )}
             {currentRole === "OPS" && (
               <button
                 type="button"
                 onClick={() => setCurrentTab("ops")}
-                className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-amber-600/30 transition-all hover:scale-[1.02]"
+                className="px-5 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold flex items-center justify-center gap-2.5 shadow-lg shadow-amber-600/30 transition-all hover:scale-[1.02] whitespace-nowrap"
               >
                 <Activity className="w-4 h-4" />
-                Cổng Điều phối Ops
+                <span>Cổng Điều phối Ops</span>
               </button>
             )}
           </div>
@@ -390,7 +401,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
         {(isSupplierRole || isRequesterRole) && (
           <div
-            className={`grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 ${
+            className={`grid grid-cols-2 md:grid-cols-3 gap-4 ${
               currentRole === "ENTERPRISE_BOTH"
                 ? "lg:grid-cols-6"
                 : "lg:grid-cols-5"
@@ -418,9 +429,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             )}
             <KpiCard
               icon={Handshake}
-              label="Giao dịch đang chạy"
+              label="Đang diễn ra"
               value={stats.activeTxns}
-              sub="Đang thực hiện"
+              sub="Giao dịch đang chạy"
               color="amber"
               onClick={() => setCurrentTab("transactions")}
             />
@@ -435,7 +446,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             <KpiCard
               icon={TrendingUp}
               label="Tổng tiết kiệm ròng"
-              value={formatVnd(stats.totalSaving)}
+              value={
+                stats.totalSaving === 0
+                  ? "0 VNĐ"
+                  : `${new Intl.NumberFormat("vi-VN").format(Math.round(stats.totalSaving))} VNĐ`
+              }
               sub="Tối ưu chi phí kéo rỗng"
               color="emerald"
             />
@@ -451,7 +466,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         )}
 
         {currentRole === "OPS" && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
             <KpiCard
               icon={FileText}
               label="Offer chờ thẩm định"
@@ -459,6 +474,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               sub="Cần phê duyệt ảnh 6 góc"
               color={stats.pendingOpsOffers > 0 ? "amber" : "blue"}
               onClick={() => setCurrentTab("offers")}
+              className="min-h-[140px] flex flex-col justify-between p-4"
             />
             <KpiCard
               icon={FileText}
@@ -467,6 +483,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               sub="Xác minh booking đóng hàng"
               color={stats.pendingOpsRequests > 0 ? "amber" : "blue"}
               onClick={() => setCurrentTab("requests")}
+              className="min-h-[140px] flex flex-col justify-between p-4"
             />
             <KpiCard
               icon={Ship}
@@ -475,6 +492,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               sub="Thẩm tra chấp thuận Reuse"
               color={stats.pendingCarrier > 0 ? "amber" : "blue"}
               onClick={() => setCurrentTab("ops")}
+              className="min-h-[140px] flex flex-col justify-between p-4"
             />
             <KpiCard
               icon={Handshake}
@@ -490,6 +508,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               sub="Đang giám sát tiến độ"
               color="violet"
               onClick={() => setCurrentTab("transactions")}
+              className="min-h-[140px] flex flex-col justify-between p-4"
             />
             <KpiCard
               icon={CreditCard}
@@ -498,6 +517,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               sub="Xác nhận tiền đặt cọc"
               color={stats.pendingPayments > 0 ? "amber" : "blue"}
               onClick={() => setCurrentTab("transactions")}
+              className="min-h-[140px] flex flex-col justify-between p-4"
             />
             <KpiCard
               icon={AlertCircle}
@@ -506,6 +526,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               sub="Tranh chấp giám định"
               color={stats.openCases > 0 ? "red" : "blue"}
               onClick={() => setCurrentTab("cases")}
+              className="min-h-[140px] flex flex-col justify-between p-4"
             />
           </div>
         )}
@@ -514,7 +535,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       {/* Main 2-Column Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Recent Transactions Table (2 cols) */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col">
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col min-h-[420px]">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
             <div>
               <h3 className="text-sm sm:text-base font-bold text-slate-900">
@@ -533,7 +554,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             </button>
           </div>
 
-          <div className="divide-y divide-slate-100 flex-1">
+          <div className="divide-y divide-slate-100 flex-1 pb-3">
             {transactions.length === 0 ? (
               <div className="px-5 py-12 text-center">
                 <Box className="w-10 h-10 text-slate-300 mx-auto mb-2" />
@@ -550,7 +571,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   key={txn.id}
                   type="button"
                   onClick={() => setCurrentTab("transactions")}
-                  className="w-full px-5 py-3.5 flex items-start gap-4 hover:bg-slate-50/80 text-left transition-colors group"
+                  className="w-full px-5 py-4 flex items-start gap-4 hover:bg-slate-50/80 text-left transition-colors group"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -565,19 +586,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 text-xs text-slate-600 mt-1 truncate">
+                    <div className="flex items-center gap-2 text-xs text-slate-600 mt-1.5 flex-wrap">
                       <span className="font-mono font-semibold text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded">
                         {txn.asset.containerNumber}
                       </span>
                       <span>·</span>
-                      <span className="truncate">{txn.companyAName}</span>
+                      <span className="font-medium text-slate-700">
+                        {txn.companyAName}
+                      </span>
                       <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
-                      <span className="truncate">{txn.companyBName}</span>
+                      <span className="font-medium text-slate-700">
+                        {txn.companyBName}
+                      </span>
                     </div>
 
-                    <p className="text-xs text-slate-400 mt-1 truncate">
-                      Tiếp theo:{" "}
-                      <span className="text-slate-600 font-medium">
+                    <p className="text-xs text-slate-500 mt-1.5 leading-relaxed break-words">
+                      <span className="text-slate-400">Tiếp theo:</span>{" "}
+                      <span className="text-slate-700 font-medium">
                         {txn.nextAction}
                       </span>
                     </p>
@@ -636,16 +661,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                       {!notif.isRead && (
                         <span className="w-2 h-2 rounded-full bg-blue-600 mt-1.5 shrink-0" />
                       )}
-                      <div className={!notif.isRead ? "" : "pl-2"}>
+                      <div
+                        className={`flex-1 min-w-0 ${!notif.isRead ? "" : "pl-1.5"}`}
+                      >
                         <p
-                          className={`text-xs font-bold leading-snug ${notif.isRead ? "text-slate-700" : "text-slate-900"}`}
+                          className={`text-xs font-bold leading-snug break-words ${notif.isRead ? "text-slate-700" : "text-slate-900"}`}
                         >
                           {notif.title}
                         </p>
-                        <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2 leading-relaxed">
+                        <p className="text-[11px] text-slate-500 mt-1 leading-relaxed break-words">
                           {notif.body}
                         </p>
-                        <p className="text-[10px] text-slate-400 mt-1">
+                        <p className="text-[10px] text-slate-400 mt-1.5">
                           {formatRelativeTime(notif.createdAt)}
                         </p>
                       </div>
