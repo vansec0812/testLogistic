@@ -1532,11 +1532,11 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
         };
       }
       if (decision === "APPROVE") {
-        if (offer.photoUrls.length < 6 || !offer.photoChecklistComplete) {
+        if (offer.photoUrls.length < 7 || !offer.photoChecklistComplete) {
           return {
             success: false,
             message:
-              "Chưa thể duyệt: Offer phải có đủ tối thiểu 6 ảnh container.",
+              "Chưa thể duyệt: Offer phải có đủ tối thiểu 7 ảnh container.",
           };
         }
         if (offer.edoDocumentIds.length !== 1 || !offer.edoFileName?.trim()) {

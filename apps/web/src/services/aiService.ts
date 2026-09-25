@@ -1115,13 +1115,13 @@ export async function verifyBookingWithAI(
 export async function inspectContainerWithAI(
   photos: string[],
 ): Promise<AiInspectionResult> {
-  if (photos.length < 6) {
-    const missingCount = 6 - photos.length;
+  if (photos.length < 7) {
+    const missingCount = 7 - photos.length;
     return {
       success: false,
       status: "INSPECTION_INCOMPLETE",
       requiresOpsReview: true,
-      error: `INSPECTION_INCOMPLETE: Thiếu ${missingCount}/6 góc ảnh bắt buộc. Yêu cầu tải đủ 6 góc: 1. Mặt trước container, 2. Cửa sau container, 3. Vách trái, 4. Vách phải, 5. Bên trong container, 6. Tem số container/CSC plate.`,
+      error: `INSPECTION_INCOMPLETE: Thiếu ${missingCount}/7 góc ảnh bắt buộc. Yêu cầu tải đủ 7 góc: 1. Mặt trước container, 2. Cửa sau container, 3. Vách trái container, 4. Vách phải container, 5. Bên trong container, 6. Sàn container, 7. Tem số container / CSC plate.`,
       details: [
         `Thiếu ${missingCount} góc ảnh container bắt buộc theo chuẩn IICL`,
       ],
@@ -1130,7 +1130,8 @@ export async function inspectContainerWithAI(
         "back_door",
         "left_side",
         "right_side",
-        "inside_floor_vach",
+        "inside",
+        "floor",
         "container_number_plate",
       ].slice(photos.length),
     };
@@ -1155,10 +1156,11 @@ export async function inspectContainerWithAI(
           "back_door",
           "left_side",
           "right_side",
-          "inside_floor_vach",
+          "inside",
+          "floor",
           "container_number_plate",
         ],
-        requiredPhotoCount: 6,
+        requiredPhotoCount: 7,
       }),
     );
     const statusValue = String(response.status || "").toUpperCase();
@@ -1215,27 +1217,28 @@ export async function verifyContainerPhotosWithAI(
     declaredCondition: PhysicalCondition;
   },
 ): Promise<ContainerPhotoVerificationResult> {
-  if (photos.length < 6) {
-    const missingCount = 6 - photos.length;
+  if (photos.length < 7) {
+    const missingCount = 7 - photos.length;
     return {
       success: false,
       status: "INSPECTION_INCOMPLETE",
       matchesRegistration: false,
       mismatchDetails: [
-        `INSPECTION_INCOMPLETE: Bộ ảnh chụp thiếu ${missingCount}/6 góc bắt buộc theo chuẩn IICL. Yêu cầu chụp bổ sung đầy đủ trước khi chuyển giao dịch sang trạng thái tiếp theo.`,
+        `INSPECTION_INCOMPLETE: Bộ ảnh chụp thiếu ${missingCount}/7 góc bắt buộc theo chuẩn IICL. Yêu cầu chụp bổ sung đầy đủ trước khi chuyển giao dịch sang trạng thái tiếp theo.`,
       ],
-      summary: `INSPECTION_INCOMPLETE: Thiếu ${missingCount}/6 góc ảnh bắt buộc.`,
+      summary: `INSPECTION_INCOMPLETE: Thiếu ${missingCount}/7 góc ảnh bắt buộc.`,
       requiresOpsReview: true,
       missingAngles: [
         "front",
         "back_door",
         "left_side",
         "right_side",
-        "inside_floor_vach",
+        "inside",
+        "floor",
         "container_number_plate",
       ].slice(photos.length),
       error:
-        "INSPECTION_INCOMPLETE: Cần tải đủ 6 góc ảnh container chuẩn trước khi đối chiếu.",
+        "INSPECTION_INCOMPLETE: Cần tải đủ 7 góc ảnh container chuẩn trước khi đối chiếu.",
     };
   }
 

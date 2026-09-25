@@ -349,7 +349,7 @@ export interface OfferAiCheckResult {
   edoValid?: boolean;
   edoAnomaly?: boolean;
   edoMatchesRegistration?: boolean;
-  edoDocumentType?: 'EDO' | 'BOOKING' | 'OTHER' | 'UNKNOWN';
+  edoDocumentType?: "EDO" | "BOOKING" | "OTHER" | "UNKNOWN";
   edoActualContainerNumber?: string;
   edoActualCarrierCode?: string;
   edoActualContainerType?: string;
@@ -363,7 +363,7 @@ export interface OfferAiCheckResult {
 
 export interface DocumentAiVerdict {
   success: boolean;
-  status: 'VALID' | 'INVALID' | 'ANOMALY' | 'MANUAL_REVIEW' | 'ERROR';
+  status: "VALID" | "INVALID" | "ANOMALY" | "MANUAL_REVIEW" | "ERROR";
   isLegal: boolean;
   hasAnomaly: boolean;
   score?: number;
@@ -384,16 +384,18 @@ export interface BookingAiCheckResult {
   requiresOpsReview: boolean;
   error?: string;
   documentVerification?: DocumentAiVerdict;
-  documentType?: 'EDO' | 'BOOKING' | 'OTHER' | 'UNKNOWN';
+  documentType?: "EDO" | "BOOKING" | "OTHER" | "UNKNOWN";
   matchesRegistration?: boolean;
-  comparisonStatus?: 'MATCHED' | 'MISMATCH' | 'PENDING';
+  comparisonStatus?: "MATCHED" | "MISMATCH" | "PENDING";
   actualBookingNumber?: string;
   actualCarrierCode?: string;
   actualContainerType?: string;
   actualCutOffDate?: string;
   anomalyReason?: string;
   mismatchDetails?: string[];
-  mismatchedFields?: Array<'BOOKING_NUMBER' | 'CARRIER_CODE' | 'CONTAINER_TYPE' | 'CUT_OFF_TIME'>;
+  mismatchedFields?: Array<
+    "BOOKING_NUMBER" | "CARRIER_CODE" | "CONTAINER_TYPE" | "CUT_OFF_TIME"
+  >;
   sourceReportedMismatch?: boolean;
   sourceMismatchDetails?: string[];
 }
@@ -418,8 +420,8 @@ export interface Offer {
   expectedDepotName?: string;
   baselineDepotCostVnd: number; // T_A (chi phí baseline về depot)
   vehicleRequirements?: string; // Yêu cầu xe vận chuyển
-  photoUrls: string[]; // 6+ ảnh theo checklist
-  photoChecklistComplete: boolean; // Đã đủ 6 góc ảnh
+  photoUrls: string[]; // 7+ ảnh theo checklist
+  photoChecklistComplete: boolean; // Đã đủ 7 góc ảnh
   edoDocumentIds: string[]; // IDs của e-DO/hồ sơ đính kèm
   edoFileName?: string; // Tên file e-DO (chỉ Ops xem, không public cho B)
   edoNumber?: string; // Số lệnh e-DO (chỉ Ops xem, không public cho B)

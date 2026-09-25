@@ -10,7 +10,7 @@ export const QA_RULES = {
     defaultBaselinePickupCostVnd: 3400000,
   },
   offer: {
-    minPhotoCount: 6,
+    minPhotoCount: 7,
     availableWindowRequired: true,
     edoRequired: true,
     oneAvailableOfferPerAsset: true,
@@ -62,7 +62,8 @@ export const OFFER_PHOTO_ANGLES = [
   "back_door",
   "left_side",
   "right_side",
-  "inside_floor_vach",
+  "inside",
+  "floor",
   "container_number_plate",
 ] as const;
 
@@ -71,10 +72,11 @@ export type OfferPhotoAngle = (typeof OFFER_PHOTO_ANGLES)[number];
 export const OFFER_PHOTO_ANGLE_LABELS = [
   "Mặt trước container",
   "Cửa sau container",
-  "Vách trái",
-  "Vách phải",
+  "Vách trái container",
+  "Vách phải container",
   "Bên trong container",
-  "Tem số container/CSC plate",
+  "Sàn container",
+  "Tem số container / CSC plate",
 ] as const;
 
 export const OFFER_PHOTO_ANGLE_SHORT_LABELS = [
@@ -83,6 +85,7 @@ export const OFFER_PHOTO_ANGLE_SHORT_LABELS = [
   "Vách trái",
   "Vách phải",
   "Bên trong",
+  "Sàn cont",
   "Tem số/CSC",
 ] as const;
 

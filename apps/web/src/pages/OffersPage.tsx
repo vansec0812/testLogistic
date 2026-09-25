@@ -408,7 +408,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
     photos: string[],
     snapshot = form,
   ): Promise<ContainerPhotoVerificationResult | null> => {
-    if (photos.length < 6) return null;
+    if (photos.length < 7) return null;
     if (
       !snapshot.containerNumber.trim() ||
       !snapshot.containerType ||
@@ -416,7 +416,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
       !snapshot.declaredCondition
     ) {
       showMsg(
-        "Đã đủ 6 ảnh. Nhập đủ số cont, loại, hãng tàu và tình trạng khai báo để AI đối chiếu.",
+        "Đã đủ 7 góc ảnh. Nhập đủ số cont, loại, hãng tàu và tình trạng khai báo để AI đối chiếu.",
         true,
       );
       return null;
@@ -450,7 +450,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
       scrollToFirstFieldError(nextErrors);
     } else if (result.status === "MANUAL_REVIEW") {
       showMsg(
-        "AI đã nhận đủ 6 ảnh nhưng chưa kết luận tự động; ảnh được chuyển Ops kiểm tra thủ công.",
+        "AI đã nhận đủ 7 góc ảnh nhưng chưa kết luận tự động; ảnh được chuyển Ops kiểm tra thủ công.",
       );
     } else if (result.status === "MATCHED") {
       showMsg(
@@ -476,7 +476,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
     if (form.photos.length < REQUIRED_OFFER_PHOTO_COUNT && files.length > 1) {
       e.target.value = "";
       showMsg(
-        "Mỗi bước chỉ được tải 1 ảnh. Hãy hoàn tất ảnh theo đúng thứ tự trước khi sang bước tiếp theo.",
+        "Mỗi bước chỉ được tải 1 ảnh. Hãy hoàn tất 7 ảnh theo đúng thứ tự trước khi tải ảnh chi tiết bổ sung.",
         true,
       );
       return;
@@ -520,11 +520,11 @@ export const OffersPage: React.FC<OffersPageProps> = ({
         const nextForm = { ...currentForm, photos: nextPhotos };
         latestForm.current = nextForm;
         setForm(nextForm);
-        if (nextPhotos.length >= 6)
+        if (nextPhotos.length >= 7)
           await runOfferPhotoAiCheck(nextPhotos, nextForm);
         else
           showMsg(
-            `Đã thêm ảnh. Còn thiếu ${6 - nextPhotos.length} ảnh để AI tự quét.`,
+            `Đã thêm ảnh. Còn thiếu ${7 - nextPhotos.length} ảnh để đủ 7 góc bắt buộc.`,
           );
       })
       .catch(() =>
@@ -533,9 +533,12 @@ export const OffersPage: React.FC<OffersPageProps> = ({
   };
 
   const handleRemoveOfferPhoto = (index: number) => {
-    if (index !== form.photos.length - 1) {
+    if (
+      form.photos.length <= REQUIRED_OFFER_PHOTO_COUNT &&
+      index !== form.photos.length - 1
+    ) {
       showMsg(
-        "Để giữ đúng thứ tự ảnh, chỉ được xóa ảnh vừa tải gần nhất.",
+        "Để giữ đúng thứ tự 7 góc bắt buộc, chỉ được xóa ảnh vừa tải gần nhất.",
         true,
       );
       return;
@@ -547,12 +550,12 @@ export const OffersPage: React.FC<OffersPageProps> = ({
     }));
   };
 
-  // AI kiểm tra eDO hợp pháp/bất thường và đối chiếu tình trạng thực tế của 6 ảnh
+  // AI kiểm tra eDO hợp pháp/bất thường và đối chiếu tình trạng thực tế của 7 ảnh
   const handleRunAiPreCheck = async () => {
     const precheckErrors: FieldErrors = {};
-    if (form.photos.length < 6) {
+    if (form.photos.length < 7) {
       precheckErrors.photos =
-        "Vui lòng tải đủ tối thiểu 6 ảnh container trước khi chạy AI.";
+        "Vui lòng tải đủ tối thiểu 7 ảnh container trước khi chạy AI.";
     }
     if (!edoFile) {
       precheckErrors.edoEvidence =
@@ -676,7 +679,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
         };
         setFormErrors((previous) => ({ ...previous, ...nextErrors }));
         showMsg(
-          "Bộ ảnh chưa đủ 6 góc bắt buộc (INSPECTION_INCOMPLETE). Vui lòng chụp bổ sung.",
+          "Bộ ảnh chưa đủ 7 góc bắt buộc (INSPECTION_INCOMPLETE). Vui lòng chụp bổ sung.",
           true,
         );
         scrollToFirstFieldError(nextErrors);
@@ -766,11 +769,11 @@ export const OffersPage: React.FC<OffersPageProps> = ({
       ),
     );
     if (
-      form.photos.length < 6 ||
+      form.photos.length < 7 ||
       photoAiResult?.status === "INSPECTION_INCOMPLETE"
     )
       errors.photos =
-        "INSPECTION_INCOMPLETE: Vui lòng tải đủ tối thiểu 6 ảnh container theo 6 góc bắt buộc (Mặt trước container, Cửa sau container, Vách trái, Vách phải, Bên trong container, Tem số container/CSC plate).";
+        "INSPECTION_INCOMPLETE: Vui lòng tải đủ tối thiểu 7 ảnh container theo 7 góc bắt buộc (Mặt trước container, Cửa sau container, Vách trái container, Vách phải container, Bên trong container, Sàn container, Tem số container / CSC plate).";
     setError(
       errors,
       "edoEvidence",
@@ -990,7 +993,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
   const runEditPhotoAiCheck = async (
     photos: string[],
   ): Promise<ContainerPhotoVerificationResult | null> => {
-    if (!editingOffer || photos.length < 6) return null;
+    if (!editingOffer || photos.length < 7) return null;
     const scanId = ++editPhotoScanId.current;
     setEditPhotoAiChecking(true);
     setEditPhotoAiResult(null);
@@ -1118,12 +1121,12 @@ export const OffersPage: React.FC<OffersPageProps> = ({
         const nextPhotos = [...currentPhotos, ...urls];
         const nextForm = { ...editForm, photoUrls: nextPhotos };
         setEditForm(nextForm);
-        if (nextPhotos.length >= 6) {
+        if (nextPhotos.length >= 7) {
           await runEditPhotoAiCheck(nextPhotos);
         } else {
           setEditPhotoAiChecking(false);
           showMsg(
-            `Đã thêm ảnh. Còn thiếu ${6 - nextPhotos.length} ảnh để AI tự quét.`,
+            `Đã thêm ảnh. Còn thiếu ${7 - nextPhotos.length} ảnh để AI tự quét.`,
           );
         }
       })
@@ -1143,7 +1146,10 @@ export const OffersPage: React.FC<OffersPageProps> = ({
     const nextPhotos = (editForm.photoUrls || []).filter(
       (_, photoIndex) => photoIndex !== index,
     );
-    if (index !== (editForm.photoUrls || []).length - 1) {
+    if (
+      (editForm.photoUrls || []).length <= REQUIRED_OFFER_PHOTO_COUNT &&
+      index !== (editForm.photoUrls || []).length - 1
+    ) {
       showMsg(
         "Để giữ đúng thứ tự ảnh, chỉ được xóa ảnh vừa tải gần nhất.",
         true,
@@ -1154,10 +1160,10 @@ export const OffersPage: React.FC<OffersPageProps> = ({
     setEditPhotoAiChecking(false);
     setEditForm((previous) => ({ ...previous, photoUrls: nextPhotos }));
     setEditPhotoAiResult(null);
-    if (nextPhotos.length < 6) {
+    if (nextPhotos.length < 7) {
       setEditOfferErrors((previous) => ({
         ...previous,
-        editPhotoUrls: "Offer phải giữ tối thiểu 6 ảnh container.",
+        editPhotoUrls: "Offer phải giữ tối thiểu 7 ảnh container.",
       }));
     }
   };
@@ -1170,9 +1176,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({
     }
     const photos = editForm.photoUrls || [];
     const errors: FieldErrors = {};
-    if (photos.length < 6)
+    if (photos.length < 7)
       errors.editPhotoUrls =
-        "INSPECTION_INCOMPLETE: Offer phải giữ tối thiểu 6 ảnh: Mặt trước container, Cửa sau container, Vách trái, Vách phải, Bên trong container, Tem số container/CSC plate.";
+        "INSPECTION_INCOMPLETE: Offer phải giữ tối thiểu 7 ảnh: Mặt trước container, Cửa sau container, Vách trái container, Vách phải container, Bên trong container, Sàn container, Tem số container / CSC plate.";
     setError(
       errors,
       "editConditionNotes",
@@ -1978,13 +1984,13 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                 <div>
                   <span className="font-bold text-slate-800 flex items-center gap-2 text-xs sm:text-sm">
                     <Camera className="w-4 h-4 text-emerald-600" />
-                    Bộ ảnh container ({form.photos.length}/6 tối thiểu){" "}
+                    Bộ ảnh container ({form.photos.length}/7 tối thiểu){" "}
                     <RequiredMark />
                   </span>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Bắt buộc tối thiểu 6 ảnh theo thứ tự:{" "}
-                    {OFFER_PHOTO_ANGLE_LABELS.join(", ")}. Có thể thêm ảnh chi
-                    tiết để Ops đối chiếu.
+                    Bắt buộc tối thiểu 7 ảnh theo thứ tự: Mặt trước, Cửa sau,
+                    Vách trái, Vách phải, Bên trong, Sàn cont, Tem số cont/CSC
+                    plate. Có thể thêm ảnh chi tiết để Ops đối chiếu.
                   </p>
                 </div>
 
@@ -1992,13 +1998,14 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                   <label className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm">
                     <UploadCloud className="w-3.5 h-3.5" />
                     <span>
-                      {form.photos.length < 6
-                        ? "Tải ảnh để đủ 6 góc"
-                        : "Thêm ảnh chi tiết"}
+                      {form.photos.length < 7
+                        ? "Tải ảnh để đủ 7 góc bắt buộc"
+                        : "+ Thêm ảnh chi tiết khác (tùy chọn)"}
                     </span>
                     <input
                       type="file"
                       accept="image/*"
+                      multiple={form.photos.length >= 7}
                       className="hidden"
                       capture="environment"
                       onChange={handlePhotoUpload}
@@ -2009,21 +2016,53 @@ export const OffersPage: React.FC<OffersPageProps> = ({
 
               <FieldError message={formErrors.photos} />
 
-              {form.photos.length < REQUIRED_OFFER_PHOTO_COUNT && (
+              {form.photos.length < REQUIRED_OFFER_PHOTO_COUNT ? (
                 <div className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50/60 p-3 text-xs text-slate-700">
-                  <p className="text-sm font-bold text-emerald-800">
-                    Ảnh tiếp theo:{" "}
-                    {OFFER_PHOTO_ANGLE_LABELS[form.photos.length]}
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-bold text-emerald-800">
+                      Ảnh tiếp theo ({form.photos.length + 1}/7):{" "}
+                      {OFFER_PHOTO_ANGLE_LABELS[form.photos.length]}
+                    </p>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                      Góc {form.photos.length + 1}/7
+                    </span>
+                  </div>
+                  <p className="mt-1 text-slate-600">
+                    {form.photos.length === 5
+                      ? "Mới bổ sung: kiểm tra độ sạch, thủng, vết dầu, tình trạng ván sàn."
+                      : form.photos.length === 6
+                        ? "Chụp rõ tem số container và bảng thông số CSC plate."
+                        : "Tải đúng thứ tự từng mặt; hoàn tất ảnh hiện tại mới chuyển sang mặt tiếp theo."}
                   </p>
-                  <p className="mt-1">
-                    Tải đúng thứ tự từng mặt; hoàn tất ảnh hiện tại mới chuyển
-                    sang mặt tiếp theo.
-                  </p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-blue-300 bg-blue-50/70 p-3 text-xs text-slate-700 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-bold text-blue-900 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                      Đã hoàn thành 7 ảnh góc bắt buộc
+                    </p>
+                    <p className="mt-0.5 text-slate-600">
+                      Đã mở khóa: Bạn có thể tải thêm ảnh cận cảnh vết móp méo,
+                      rỉ sét, gioăng cửa nếu muốn để Ops đối chiếu.
+                    </p>
+                  </div>
+                  <label className="px-3 py-1.5 rounded-lg border border-blue-300 bg-white hover:bg-blue-50 text-blue-700 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs">
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>+ Thêm ảnh chi tiết khác (tùy chọn)</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handlePhotoUpload}
+                    />
+                  </label>
                 </div>
               )}
 
               {/* Thumbnails */}
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
                 {form.photos.map((url, idx) => (
                   <div
                     key={idx}
@@ -2044,9 +2083,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                     >
                       ×
                     </button>
-                    <span className="absolute bottom-1 left-1 text-[10px] bg-slate-900/70 text-white px-1.5 py-0.2 rounded">
+                    <span className="absolute bottom-1 left-1 text-[9px] bg-slate-900/70 text-white px-1.5 py-0.5 rounded truncate max-w-[95%]">
                       {OFFER_PHOTO_ANGLE_LABELS[idx] ||
-                        `Ảnh bổ sung ${idx - 5}`}
+                        `Ảnh chi tiết ${idx - 6}`}
                     </span>
                   </div>
                 ))}
@@ -2456,7 +2495,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                   {/* Badge số lượng ảnh */}
                   <span className="absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-900/70 text-white backdrop-blur-xs flex items-center gap-1 shadow-xs">
                     <Camera className="w-3 h-3" />
-                    {offer.photoUrls.length}/6 ảnh
+                    {offer.photoUrls.length}/7 ảnh
                   </span>
                 </div>
 
@@ -2785,24 +2824,27 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                 <div>
                   <p className="text-sm font-bold text-slate-800 flex items-center gap-2">
                     <Camera className="w-4 h-4 text-emerald-600" />
-                    Ảnh container ({(editForm.photoUrls || []).length}/6 tối
+                    Bộ ảnh container ({(editForm.photoUrls || []).length}/7 tối
                     thiểu)
                     <RequiredMark />
                   </p>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Bắt buộc tối thiểu 6 ảnh theo thứ tự:{" "}
-                    {OFFER_PHOTO_ANGLE_LABELS.join(", ")}. Có thể thêm ảnh chi
-                    tiết.
+                    Bắt buộc tối thiểu 7 ảnh theo thứ tự: Mặt trước, Cửa sau,
+                    Vách trái, Vách phải, Bên trong, Sàn cont, Tem số cont/CSC
+                    plate. Có thể thêm ảnh chi tiết để Ops đối chiếu.
                   </p>
                 </div>
                 <label className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer shadow-sm">
                   <UploadCloud className="w-3.5 h-3.5" />
-                  {(editForm.photoUrls || []).length < 6
-                    ? "Thêm ảnh để đủ 6 góc"
-                    : "Thêm ảnh mới"}
+                  <span>
+                    {(editForm.photoUrls || []).length < 7
+                      ? "Tải ảnh để đủ 7 góc bắt buộc"
+                      : "+ Thêm ảnh chi tiết khác (tùy chọn)"}
+                  </span>
                   <input
                     type="file"
                     accept="image/*"
+                    multiple={(editForm.photoUrls || []).length >= 7}
                     className="hidden"
                     onChange={handleEditPhotoUpload}
                   />
@@ -2810,24 +2852,56 @@ export const OffersPage: React.FC<OffersPageProps> = ({
               </div>
 
               {(editForm.photoUrls || []).length <
-                REQUIRED_OFFER_PHOTO_COUNT && (
+              REQUIRED_OFFER_PHOTO_COUNT ? (
                 <div className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50/60 p-3 text-xs text-slate-700">
-                  <p className="font-bold text-emerald-800">
-                    Ảnh tiếp theo:{" "}
-                    {
-                      OFFER_PHOTO_ANGLE_LABELS[
-                        (editForm.photoUrls || []).length
-                      ]
-                    }
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-bold text-emerald-800">
+                      Ảnh tiếp theo ({(editForm.photoUrls || []).length + 1}/7):{" "}
+                      {
+                        OFFER_PHOTO_ANGLE_LABELS[
+                          (editForm.photoUrls || []).length
+                        ]
+                      }
+                    </p>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                      Góc {(editForm.photoUrls || []).length + 1}/7
+                    </span>
+                  </div>
+                  <p className="mt-1 text-slate-600">
+                    {(editForm.photoUrls || []).length === 5
+                      ? "Mới bổ sung: kiểm tra độ sạch, thủng, vết dầu, tình trạng ván sàn."
+                      : (editForm.photoUrls || []).length === 6
+                        ? "Chụp rõ tem số container và bảng thông số CSC plate."
+                        : "Tải đúng thứ tự từng mặt; hoàn tất ảnh hiện tại mới chuyển sang mặt tiếp theo."}
                   </p>
-                  <p className="mt-1">
-                    Tải đúng thứ tự từng mặt; hoàn tất ảnh hiện tại mới chuyển
-                    sang mặt tiếp theo.
-                  </p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-blue-300 bg-blue-50/70 p-3 text-xs text-slate-700 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-bold text-blue-900 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                      Đã hoàn thành 7 ảnh góc bắt buộc
+                    </p>
+                    <p className="mt-0.5 text-slate-600">
+                      Đã mở khóa: Bạn có thể tải thêm ảnh cận cảnh vết móp méo,
+                      rỉ sét, gioăng cửa nếu muốn để Ops đối chiếu.
+                    </p>
+                  </div>
+                  <label className="px-3 py-1.5 rounded-lg border border-blue-300 bg-white hover:bg-blue-50 text-blue-700 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs">
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>+ Thêm ảnh chi tiết khác (tùy chọn)</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handleEditPhotoUpload}
+                    />
+                  </label>
                 </div>
               )}
 
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
                 {(editForm.photoUrls || []).map((url, index) => (
                   <div
                     key={`${url}-${index}`}
@@ -2846,15 +2920,15 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                     >
                       ×
                     </button>
-                    <span className="absolute bottom-1 left-1 text-[10px] bg-slate-900/70 text-white px-1.5 py-0.5 rounded">
+                    <span className="absolute bottom-1 left-1 text-[9px] bg-slate-900/70 text-white px-1.5 py-0.5 rounded truncate max-w-[95%]">
                       {OFFER_PHOTO_ANGLE_LABELS[index] ||
-                        `Ảnh bổ sung ${index - 5}`}
+                        `Ảnh chi tiết ${index - 6}`}
                     </span>
                   </div>
                 ))}
                 {(editForm.photoUrls || []).length === 0 && (
                   <div className="col-span-full py-6 text-center text-slate-400 border border-dashed border-slate-200 rounded-xl text-xs">
-                    Chưa có ảnh. Hãy tải tối thiểu 6 ảnh theo checklist.
+                    Chưa có ảnh. Hãy tải tối thiểu 7 ảnh theo checklist.
                   </div>
                 )}
               </div>
@@ -3246,12 +3320,11 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                 </div>
               </div>
 
-              {/* Bộ ảnh 6 góc container */}
+              {/* Bộ ảnh container */}
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-slate-900 flex items-center justify-between">
                   <span>
-                    Bộ ảnh 6 góc container ({selectedOffer.photoUrls.length}{" "}
-                    ảnh)
+                    Bộ ảnh container ({selectedOffer.photoUrls.length} ảnh)
                   </span>
                   <span className="text-slate-400 font-normal">
                     Tiêu chuẩn kiểm định IICL
