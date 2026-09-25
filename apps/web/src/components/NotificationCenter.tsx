@@ -2,16 +2,29 @@
 // ECont NotificationCenter - Trung tâm Thông báo Hoạt động Thời gian thực
 // ==============================================================================
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from "react";
 import {
-  Bell, CheckCheck, Trash2, ArrowRight, ExternalLink, AlertTriangle,
-  Clock, ShieldAlert, CheckCircle, Package, Search, X
-} from 'lucide-react';
-import { useDatabase } from '../context/DatabaseContext';
-import { useAuth } from '../context/AuthContext';
-import { Notification } from '../types';
-import { formatRelativeTime } from '../lib/utils';
-import { getNotificationTab, resolveNotificationEntityType } from '../services/notificationRouting';
+  Bell,
+  CheckCheck,
+  Trash2,
+  ArrowRight,
+  ExternalLink,
+  AlertTriangle,
+  Clock,
+  ShieldAlert,
+  CheckCircle,
+  Package,
+  Search,
+  X,
+} from "lucide-react";
+import { useDatabase } from "../context/DatabaseContext";
+import { useAuth } from "../context/AuthContext";
+import { Notification } from "../types";
+import { formatRelativeTime } from "../lib/utils";
+import {
+  getNotificationTab,
+  resolveNotificationEntityType,
+} from "../services/notificationRouting";
 
 interface NotificationCenterProps {
   setCurrentTab: (tab: string) => void;
@@ -32,24 +45,27 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   const { currentRole } = useAuth();
 
   const [isOpen, setIsOpen] = useState(false);
-  const [filterTab, setFilterTab] = useState<'ALL' | 'UNREAD'>('ALL');
+  const [filterTab, setFilterTab] = useState<"ALL" | "UNREAD">("ALL");
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setIsOpen(false);
       }
     };
     if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener("mousedown", handleClickOutside);
     }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
-  const displayedNotifications = myNotifications.filter(n => {
-    if (filterTab === 'UNREAD') return !n.isRead;
+  const displayedNotifications = myNotifications.filter((n) => {
+    if (filterTab === "UNREAD") return !n.isRead;
     return true;
   });
 
@@ -58,7 +74,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
     const entityType = resolveNotificationEntityType(n);
     const targetTab = getNotificationTab(n, currentRole);
-    if (entityType === 'Transaction' && n.relatedEntityId) {
+    if (entityType === "Transaction" && n.relatedEntityId) {
       setSelectedTxnId?.(n.relatedEntityId);
     }
     if (targetTab) {
@@ -68,17 +84,23 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     setIsOpen(false);
   };
 
-  const getNotificationIcon = (type: Notification['type']) => {
+  const getNotificationIcon = (type: Notification["type"]) => {
     switch (type) {
-      case 'DEADLINE_ALERT':
-        return <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />;
-      case 'PAYMENT_REQUIRED':
+      case "DEADLINE_ALERT":
+        return (
+          <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+        );
+      case "PAYMENT_REQUIRED":
         return <Clock className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />;
-      case 'OPS_ALERT':
-        return <ShieldAlert className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />;
-      case 'TRANSACTION_UPDATE':
+      case "OPS_ALERT":
+        return (
+          <ShieldAlert className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
+        );
+      case "TRANSACTION_UPDATE":
       default:
-        return <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />;
+        return (
+          <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+        );
     }
   };
 
@@ -89,14 +111,16 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={`relative h-10 w-10 flex items-center justify-center rounded-xl transition-colors ${
-          isOpen ? 'bg-slate-200 text-slate-900' : 'hover:bg-slate-100 text-slate-600'
+          isOpen
+            ? "bg-slate-200 text-slate-900"
+            : "hover:bg-slate-100 text-slate-600"
         }`}
         title="Trung tâm thông báo"
       >
         <Bell className="w-5 h-5" />
         {unreadNotificationCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full bg-red-600 text-white text-xs font-bold flex items-center justify-center px-1 shadow-sm animate-pulse">
-            {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-rose-600 text-white text-[10px] font-extrabold flex items-center justify-center px-1 shadow-xs border-2 border-white leading-none">
+            {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
           </span>
         )}
       </button>
@@ -107,7 +131,9 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
           {/* Header */}
           <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h4 className="font-bold text-slate-900 text-sm sm:text-base">Thông Báo</h4>
+              <h4 className="font-bold text-slate-900 text-sm sm:text-base">
+                Thông Báo
+              </h4>
               {unreadNotificationCount > 0 && (
                 <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-red-100 text-red-700">
                   {unreadNotificationCount} mới
@@ -140,22 +166,22 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
           <div className="flex border-b border-slate-100 px-3 bg-white text-xs sm:text-sm">
             <button
               type="button"
-              onClick={() => setFilterTab('ALL')}
+              onClick={() => setFilterTab("ALL")}
               className={`py-2 px-3 font-semibold border-b-2 transition-colors ${
-                filterTab === 'ALL'
-                  ? 'border-blue-600 text-blue-700 font-bold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                filterTab === "ALL"
+                  ? "border-blue-600 text-blue-700 font-bold"
+                  : "border-transparent text-slate-500 hover:text-slate-800"
               }`}
             >
               Tất cả ({myNotifications.length})
             </button>
             <button
               type="button"
-              onClick={() => setFilterTab('UNREAD')}
+              onClick={() => setFilterTab("UNREAD")}
               className={`py-2 px-3 font-semibold border-b-2 transition-colors ${
-                filterTab === 'UNREAD'
-                  ? 'border-blue-600 text-blue-700 font-bold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                filterTab === "UNREAD"
+                  ? "border-blue-600 text-blue-700 font-bold"
+                  : "border-transparent text-slate-500 hover:text-slate-800"
               }`}
             >
               Chưa đọc ({unreadNotificationCount})
@@ -168,18 +194,18 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
               <div className="p-8 text-center text-slate-400">
                 <Bell className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                 <p className="text-xs sm:text-sm">
-                  {filterTab === 'UNREAD'
-                    ? 'Bạn không có thông báo chưa đọc nào'
-                    : 'Chưa có thông báo nào'}
+                  {filterTab === "UNREAD"
+                    ? "Bạn không có thông báo chưa đọc nào"
+                    : "Chưa có thông báo nào"}
                 </p>
               </div>
             ) : (
-              displayedNotifications.map(n => (
+              displayedNotifications.map((n) => (
                 <div
                   key={n.id}
                   onClick={() => handleNotificationClick(n)}
                   className={`p-3.5 flex items-start gap-3 text-left transition-colors cursor-pointer hover:bg-slate-50 ${
-                    !n.isRead ? 'bg-blue-50/30' : 'bg-white'
+                    !n.isRead ? "bg-blue-50/30" : "bg-white"
                   }`}
                 >
                   {getNotificationIcon(n.type)}
@@ -187,7 +213,9 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                     <div className="flex items-center justify-between gap-1">
                       <p
                         className={`text-xs sm:text-sm leading-snug truncate ${
-                          !n.isRead ? 'font-bold text-slate-900' : 'font-medium text-slate-700'
+                          !n.isRead
+                            ? "font-bold text-slate-900"
+                            : "font-medium text-slate-700"
                         }`}
                       >
                         {n.title}

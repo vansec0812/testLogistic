@@ -301,19 +301,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             : "text-slate-500 group-hover:text-slate-700"
                         }`}
                       />
-                      <span className="flex-1 text-left whitespace-nowrap font-medium">
+                      <span className="flex-1 text-left truncate font-medium">
                         {item.label}
                       </span>
 
                       {item.badge !== undefined && item.badge > 0 && (
                         <span
-                          className={`min-w-[20px] h-5 rounded-full text-[11px] font-bold px-1.5 flex items-center justify-center transition-colors ${
+                          className={`shrink-0 min-w-[20px] h-5 rounded-full text-[10px] font-extrabold px-1.5 flex items-center justify-center leading-none tracking-tight transition-colors ${
                             isActive
                               ? "bg-white/25 text-white"
-                              : "bg-rose-500 text-white shadow-sm"
+                              : "bg-rose-600 text-white shadow-xs border border-white/20"
                           }`}
                         >
-                          {item.badge}
+                          {item.badge > 99 ? "99+" : item.badge}
                         </span>
                       )}
                     </button>

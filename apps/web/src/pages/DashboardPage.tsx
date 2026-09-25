@@ -43,6 +43,47 @@ interface DashboardPageProps {
   setCurrentTab: (tab: string) => void;
 }
 
+const semanticColorMap: Record<
+  string,
+  {
+    iconBox: string;
+    arrow: string;
+  }
+> = {
+  blue: {
+    iconBox: "bg-blue-50 text-blue-600 border-blue-200",
+    arrow: "group-hover:text-blue-600 group-hover:bg-blue-50",
+  },
+  sky: {
+    iconBox: "bg-sky-50 text-sky-600 border-sky-200",
+    arrow: "group-hover:text-sky-600 group-hover:bg-sky-50",
+  },
+  amber: {
+    iconBox: "bg-amber-50 text-amber-600 border-amber-200",
+    arrow: "group-hover:text-amber-600 group-hover:bg-amber-50",
+  },
+  emerald: {
+    iconBox: "bg-emerald-50 text-emerald-600 border-emerald-200",
+    arrow: "group-hover:text-emerald-600 group-hover:bg-emerald-50",
+  },
+  violet: {
+    iconBox: "bg-violet-50 text-violet-600 border-violet-200",
+    arrow: "group-hover:text-violet-600 group-hover:bg-violet-50",
+  },
+  teal: {
+    iconBox: "bg-teal-50 text-teal-600 border-teal-200",
+    arrow: "group-hover:text-teal-600 group-hover:bg-teal-50",
+  },
+  red: {
+    iconBox: "bg-red-50 text-red-600 border-red-200",
+    arrow: "group-hover:text-red-600 group-hover:bg-red-50",
+  },
+  slate: {
+    iconBox: "bg-slate-100 text-slate-600 border-slate-200",
+    arrow: "group-hover:text-slate-600 group-hover:bg-slate-100",
+  },
+};
+
 function KpiCard({
   icon: Icon,
   label,
@@ -51,74 +92,81 @@ function KpiCard({
   color = "blue",
   onClick,
   className = "",
+  isAlert = false,
+  tier,
+  badge,
 }: {
   icon: React.ElementType;
   label: string;
   value: string | number;
   sub?: string;
-  color?: "blue" | "emerald" | "amber" | "violet" | "red";
+  color?: "blue" | "sky" | "amber" | "emerald" | "violet" | "teal" | "red" | "slate";
   onClick?: () => void;
   className?: string;
+  isAlert?: boolean;
+  tier?: "active" | "neutral" | "alert";
+  badge?: string;
 }) {
-  const colorMap = {
-    blue: {
-      icon: "text-blue-600 bg-blue-50/80 border-blue-100",
-      border: "border-slate-200/90 hover:border-blue-300",
-      glow: "group-hover:shadow-blue-500/10",
-    },
-    emerald: {
-      icon: "text-emerald-600 bg-emerald-50/80 border-emerald-100",
-      border: "border-slate-200/90 hover:border-emerald-300",
-      glow: "group-hover:shadow-emerald-500/10",
-    },
-    amber: {
-      icon: "text-amber-600 bg-amber-50/80 border-amber-100",
-      border: "border-slate-200/90 hover:border-amber-300",
-      glow: "group-hover:shadow-amber-500/10",
-    },
-    violet: {
-      icon: "text-violet-600 bg-violet-50/80 border-violet-100",
-      border: "border-slate-200/90 hover:border-violet-300",
-      glow: "group-hover:shadow-violet-500/10",
-    },
-    red: {
-      icon: "text-rose-600 bg-rose-50/80 border-rose-100",
-      border: "border-slate-200/90 hover:border-rose-300",
-      glow: "group-hover:shadow-rose-500/10",
-    },
-  };
-  const c = colorMap[color];
+  const alertActive = isAlert || tier === "alert";
+  const colorConf = semanticColorMap[color] || semanticColorMap.blue;
 
   return (
     <button
       onClick={onClick}
       disabled={!onClick}
-      className={`w-full min-w-0 text-left rounded-2xl border bg-white shadow-xs hover:shadow-md transition-all group relative ${
+      className={`w-full min-w-0 text-left rounded-2xl transition-all group relative flex flex-col justify-between h-full ${
         onClick ? "hover:-translate-y-0.5 cursor-pointer" : "cursor-default"
-      } ${c.border} ${c.glow} ${className || "p-4 sm:p-5"}`}
+      } border border-slate-200/90 bg-white hover:border-slate-300 shadow-2xs hover:shadow-xs ${className || "p-4 sm:p-5"}`}
     >
-      <div className="w-full">
+      <div className="w-full flex-1 flex flex-col">
         <div className="flex items-start justify-between">
+          {/* Uniform 44x44px icon container with semantic color formula */}
           <div
-            className={`p-2.5 rounded-xl border ${c.icon} transition-transform group-hover:scale-105`}
+            className={`w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${colorConf.iconBox}`}
           >
             <Icon className="w-5 h-5" />
           </div>
+
           {onClick && (
-            <span className="p-1 rounded-lg text-slate-400 group-hover:text-blue-600 group-hover:bg-blue-50 transition-colors">
+            <span
+              className={`p-1.5 rounded-lg text-slate-400 transition-all ${colorConf.arrow} group-hover:translate-x-0.5 group-hover:-translate-y-0.5`}
+              title="Nhấn để mở danh sách chi tiết"
+            >
               <ArrowUpRight className="w-4 h-4" />
             </span>
           )}
         </div>
-        <p className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-3 font-mono whitespace-nowrap tracking-tight">
-          {value}
-        </p>
-        <p className="text-xs sm:text-sm text-slate-600 mt-1 font-semibold leading-snug">
-          {label}
-        </p>
+
+        {badge && (
+          <div className="mt-2.5">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide bg-red-100 text-red-700 border border-red-200 shadow-2xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse shrink-0" />
+              {badge}
+            </span>
+          </div>
+        )}
+
+        <div className="mt-auto pt-3">
+          <p
+            className={`text-2xl sm:text-3xl font-extrabold font-mono whitespace-nowrap tracking-tight ${
+              alertActive ? "text-red-700" : "text-slate-900"
+            }`}
+          >
+            {value}
+          </p>
+          <p className="text-xs sm:text-sm mt-1 font-semibold text-slate-600 leading-snug">
+            {label}
+          </p>
+        </div>
       </div>
       {sub && (
-        <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">{sub}</p>
+        <p
+          className={`text-[11px] mt-2 leading-snug font-medium ${
+            alertActive ? "text-red-600 font-semibold" : "text-slate-400"
+          }`}
+        >
+          {sub}
+        </p>
       )}
     </button>
   );
@@ -298,40 +346,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               Xin chào, {currentUserName.split("(")[0].trim()} 👋
             </h2>
 
-            <p className="text-slate-300 text-sm sm:text-base mt-2 leading-relaxed">
-              {currentRole === "ENTERPRISE_A" && (
-                <>
-                  Quản lý kho cont rỗng tại bãi và đăng tải Offer để kết nối
-                  street-turn trực tiếp với đơn vị xuất khẩu, cắt giảm chi phí
-                  nâng hạ bãi.
-                </>
-              )}
-              {currentRole === "ENTERPRISE_B" && (
-                <>
-                  Tìm kiếm nguồn cont rỗng chất lượng cao, đúng hãng tàu chỉ
-                  định ngay trên tuyến đường xe chạy, tiết kiệm phí kéo rỗng.
-                </>
-              )}
-              {currentRole === "ENTERPRISE_BOTH" && (
-                <>
-                  Nền tảng kết nối 2 chiều: linh hoạt luân chuyển vỏ cont nhập
-                  khẩu sang đóng hàng xuất khẩu với quy trình kiểm soát IICL.
-                </>
-              )}
-              {currentRole === "OPS" && (
-                <>
-                  Trung tâm giám sát điều hành: kiểm duyệt nguồn vỏ, phê duyệt
-                  Reuse RU từ hãng tàu và quản lý quỹ ký quỹ giao dịch.
-                </>
-              )}
+            <p className="text-slate-300 text-xs sm:text-sm mt-1.5 leading-relaxed line-clamp-2 sm:line-clamp-1">
+              {currentRole === "ENTERPRISE_A" &&
+                "Kết nối street-turn trực tiếp nguồn cont rỗng tại bãi với các đơn vị xuất khẩu."}
+              {currentRole === "ENTERPRISE_B" &&
+                "Tìm kiếm và tái sử dụng vỏ cont rỗng đúng hãng tàu chỉ định ngay trên tuyến đường xe chạy."}
+              {currentRole === "ENTERPRISE_BOTH" &&
+                "Linh hoạt luân chuyển vỏ cont 2 chiều xuất nhập khẩu với quy trình kiểm soát IICL."}
+              {currentRole === "OPS" &&
+                "Trung tâm điều hành: kiểm duyệt nguồn vỏ, duyệt Reuse RU và quản lý quỹ ký quỹ."}
             </p>
-
-            <div className="mt-3 text-xs text-blue-200/80 font-medium">
-              Đơn vị:{" "}
-              <span className="font-bold text-white">
-                {currentCompany.companyName}
-              </span>
-            </div>
           </div>
 
           {/* Quick Action CTA Buttons */}
@@ -401,7 +425,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
         {(isSupplierRole || isRequesterRole) && (
           <div
-            className={`grid grid-cols-2 md:grid-cols-3 gap-4 ${
+            className={`grid grid-cols-2 md:grid-cols-3 gap-4 items-stretch ${
               currentRole === "ENTERPRISE_BOTH"
                 ? "lg:grid-cols-6"
                 : "lg:grid-cols-5"
@@ -412,7 +436,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 icon={Package}
                 label="Nguồn vỏ đang mở"
                 value={stats.myActiveOffers}
-                sub="Chờ ghép đôi"
+                sub={
+                  stats.myActiveOffers > 0 ? "Chờ ghép đôi" : "Chưa có nguồn vỏ"
+                }
                 color="blue"
                 onClick={() => setCurrentTab("offers")}
               />
@@ -422,8 +448,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 icon={Sparkles}
                 label="Nhu cầu đang tìm"
                 value={stats.myActiveRequests}
-                sub="Hệ thống quét radar"
-                color="emerald"
+                sub={
+                  stats.myActiveRequests > 0
+                    ? "Hệ thống quét radar"
+                    : "Chưa có nhu cầu"
+                }
+                color="sky"
                 onClick={() => setCurrentTab("requests")}
               />
             )}
@@ -431,7 +461,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               icon={Handshake}
               label="Đang diễn ra"
               value={stats.activeTxns}
-              sub="Giao dịch đang chạy"
+              sub={
+                stats.activeTxns > 0
+                  ? "Giao dịch đang chạy"
+                  : "Chưa có giao dịch"
+              }
               color="amber"
               onClick={() => setCurrentTab("transactions")}
             />
@@ -439,40 +473,58 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               icon={CheckCircle2}
               label="Giao dịch hoàn tất"
               value={stats.completedTxns}
-              sub="Đã quyết toán EIR"
-              color="violet"
+              sub={
+                stats.completedTxns > 0
+                  ? "Đã quyết toán EIR"
+                  : "Chưa có giao dịch"
+              }
+              color="emerald"
               onClick={() => setCurrentTab("transactions")}
             />
             <KpiCard
-              icon={TrendingUp}
+              icon={stats.totalSaving > 0 ? TrendingUp : BarChart3}
               label="Tổng tiết kiệm ròng"
               value={
                 stats.totalSaving === 0
                   ? "0 VNĐ"
                   : `${new Intl.NumberFormat("vi-VN").format(Math.round(stats.totalSaving))} VNĐ`
               }
-              sub="Tối ưu chi phí kéo rỗng"
-              color="emerald"
+              sub={
+                stats.totalSaving > 0
+                  ? "Tối ưu chi phí kéo rỗng"
+                  : "Chưa có dữ liệu"
+              }
+              color="violet"
             />
             <KpiCard
               icon={AlertCircle}
               label="Sự cố & Khiếu nại"
               value={stats.openCases}
-              sub={stats.openCases > 0 ? "Cần giải quyết" : "Không có"}
-              color={stats.openCases > 0 ? "red" : "blue"}
+              sub={
+                stats.openCases > 0
+                  ? "Cần giải quyết ngay"
+                  : "An toàn · 0 sự cố"
+              }
+              color="red"
+              isAlert={stats.openCases > 0}
+              badge={stats.openCases > 0 ? "Cần xử lý" : undefined}
               onClick={() => setCurrentTab("cases")}
             />
           </div>
         )}
 
         {currentRole === "OPS" && (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5 items-stretch">
             <KpiCard
               icon={FileText}
               label="Offer chờ thẩm định"
               value={stats.pendingOpsOffers}
-              sub="Cần phê duyệt ảnh 6 góc"
-              color={stats.pendingOpsOffers > 0 ? "amber" : "blue"}
+              sub={
+                stats.pendingOpsOffers > 0
+                  ? "Cần phê duyệt ảnh 6 góc"
+                  : "Đã duyệt hết"
+              }
+              color="blue"
               onClick={() => setCurrentTab("offers")}
               className="min-h-[140px] flex flex-col justify-between p-4"
             />
@@ -480,8 +532,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               icon={FileText}
               label="Nhu cầu chờ xác minh"
               value={stats.pendingOpsRequests}
-              sub="Xác minh booking đóng hàng"
-              color={stats.pendingOpsRequests > 0 ? "amber" : "blue"}
+              sub={
+                stats.pendingOpsRequests > 0
+                  ? "Xác minh booking đóng hàng"
+                  : "Đã duyệt hết"
+              }
+              color="sky"
               onClick={() => setCurrentTab("requests")}
               className="min-h-[140px] flex flex-col justify-between p-4"
             />
@@ -489,8 +545,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               icon={Ship}
               label="Chờ hãng tàu duyệt RU"
               value={stats.pendingCarrier}
-              sub="Thẩm tra chấp thuận Reuse"
-              color={stats.pendingCarrier > 0 ? "amber" : "blue"}
+              sub={
+                stats.pendingCarrier > 0
+                  ? "Thẩm tra chấp thuận Reuse"
+                  : "Không có"
+              }
+              color="amber"
               onClick={() => setCurrentTab("ops")}
               className="min-h-[140px] flex flex-col justify-between p-4"
             />
@@ -506,7 +566,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 ).length
               }
               sub="Đang giám sát tiến độ"
-              color="violet"
+              color="emerald"
               onClick={() => setCurrentTab("transactions")}
               className="min-h-[140px] flex flex-col justify-between p-4"
             />
@@ -514,8 +574,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               icon={CreditCard}
               label="Chờ duyệt ký quỹ"
               value={stats.pendingPayments}
-              sub="Xác nhận tiền đặt cọc"
-              color={stats.pendingPayments > 0 ? "amber" : "blue"}
+              sub={
+                stats.pendingPayments > 0 ? "Xác nhận tiền đặt cọc" : "Không có"
+              }
+              color="violet"
               onClick={() => setCurrentTab("transactions")}
               className="min-h-[140px] flex flex-col justify-between p-4"
             />
@@ -523,8 +585,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               icon={AlertCircle}
               label="Sự cố cần giải quyết"
               value={stats.openCases}
-              sub="Tranh chấp giám định"
-              color={stats.openCases > 0 ? "red" : "blue"}
+              sub={
+                stats.openCases > 0
+                  ? "Tranh chấp giám định"
+                  : "An toàn · 0 sự cố"
+              }
+              color="red"
+              isAlert={stats.openCases > 0}
+              badge={stats.openCases > 0 ? "Cần xử lý" : undefined}
               onClick={() => setCurrentTab("cases")}
               className="min-h-[140px] flex flex-col justify-between p-4"
             />
@@ -556,14 +624,37 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
           <div className="divide-y divide-slate-100 flex-1 pb-3">
             {transactions.length === 0 ? (
-              <div className="px-5 py-12 text-center">
-                <Box className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm font-semibold text-slate-700">
+              <div className="px-5 py-12 text-center flex flex-col items-center justify-center">
+                <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200/80 flex items-center justify-center text-slate-400 mb-3 shadow-2xs">
+                  <Handshake className="w-7 h-7 text-slate-400" />
+                </div>
+                <p className="text-sm font-bold text-slate-800">
                   Chưa có giao dịch nào
                 </p>
-                <p className="text-xs text-slate-400 mt-1">
-                  Các giao dịch phát sinh từ ghép đôi sẽ hiển thị ở đây.
+                <p className="text-xs text-slate-500 mt-1 max-w-sm leading-relaxed">
+                  {isSupplierRole
+                    ? "Đăng nguồn vỏ cont để bắt đầu kết nối street-turn và ghép đôi tự động."
+                    : "Tạo nhu cầu tìm vỏ cont để bắt đầu kết nối street-turn và ghép đôi tự động."}
                 </p>
+                {isSupplierRole ? (
+                  <button
+                    type="button"
+                    onClick={() => setCurrentTab("offers")}
+                    className="mt-4 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-2 shadow-sm transition-all hover:scale-105 cursor-pointer"
+                  >
+                    <Box className="w-4 h-4" />
+                    <span>Đăng nguồn vỏ cont</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setCurrentTab("requests")}
+                    className="mt-4 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-2 shadow-sm transition-all hover:scale-105 cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Tìm vỏ cont ngay</span>
+                  </button>
+                )}
               </div>
             ) : (
               transactions.slice(0, 5).map((txn) => (
