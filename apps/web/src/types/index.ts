@@ -4,143 +4,151 @@
 // ==============================================================================
 
 export type UserRole =
-  | 'ENTERPRISE_A'   // Nhà cung cấp Container
-  | 'ENTERPRISE_B'   // Đơn vị Cần vỏ Container
-  | 'OPS'            // Vận hành nền tảng ECont
-  | 'ENTERPRISE_BOTH' // Có cả quyền cung cấp và cần vỏ
-  | 'OPS';            // Vận hành nền tảng ECont
+  | "ENTERPRISE_A" // Nhà cung cấp Container
+  | "ENTERPRISE_B" // Đơn vị Cần vỏ Container
+  | "OPS" // Vận hành nền tảng ECont
+  | "ENTERPRISE_BOTH" // Có cả quyền cung cấp và cần vỏ
+  | "OPS"; // Vận hành nền tảng ECont
 
 // ISO 6346: chỉ 20GP và 40HC; alias 20DC->20GP, 40HQ->40HC qua mapping
-export type ContainerType = '20GP' | '40HC';
+export type ContainerType = "20GP" | "40HC";
 export type CarrierCode = string;
 
 // SRS §4.4: Tình trạng vật lý (physical status)
 export type PhysicalStatus =
-  | 'AT_CUSTOMER'      // Đang tại khách hàng/đang sử dụng
-  | 'EMPTY_AT_YARD'    // Rỗng tại bãi (eligible cho Offer)
-  | 'IN_TRANSIT'       // Đang trên đường vận chuyển
-  | 'EMPTY_AT_DEPOT';  // Rỗng tại depot của hãng
+  | "AT_CUSTOMER" // Đang tại khách hàng/đang sử dụng
+  | "EMPTY_AT_YARD" // Rỗng tại bãi (eligible cho Offer)
+  | "IN_TRANSIT" // Đang trên đường vận chuyển
+  | "EMPTY_AT_DEPOT"; // Rỗng tại depot của hãng
 
 // SRS §4.4: Tình trạng tình trạng vỏ
-export type PhysicalCondition = 'GOOD' | 'MINOR_DAMAGE' | 'MAJOR_DAMAGE';
+export type PhysicalCondition = "GOOD" | "MINOR_DAMAGE" | "MAJOR_DAMAGE";
 
 // SRS §4.4 + plan.md §6.2: Trạng thái Offer đầy đủ
 export type OfferStatus =
-  | 'AI_CHECK_PENDING'
-  | 'DRAFT'              // Nháp, chưa gửi review
-  | 'UNDER_REVIEW'       // Đã gửi, Ops đang xem xét
-  | 'CHANGES_REQUIRED'   // Ops yêu cầu bổ sung/sửa đổi
-  | 'REJECTED'           // Ops từ chối dứt khoát
-  | 'AVAILABLE'          // Đã duyệt, đang hiển thị
-  | 'HELD'               // Đang bị giữ chỗ (NEGOTIATING)
-  | 'ALLOCATED'          // Đã phân bổ vào giao dịch chính thức
-  | 'FULFILLED'          // Giao nhận hoàn tất, cont đã sang đơn vị Cần vỏ Container
-  | 'WITHDRAWN'          // A chủ động rút tin
-  | 'EXPIRED';           // Hết available_until hoặc hạn chứng từ
+  | "AI_CHECK_PENDING"
+  | "DRAFT" // Nháp, chưa gửi review
+  | "UNDER_REVIEW" // Đã gửi, Ops đang xem xét
+  | "CHANGES_REQUIRED" // Ops yêu cầu bổ sung/sửa đổi
+  | "REJECTED" // Ops từ chối dứt khoát
+  | "AVAILABLE" // Đã duyệt, đang hiển thị
+  | "HELD" // Đang bị giữ chỗ (NEGOTIATING)
+  | "ALLOCATED" // Đã phân bổ vào giao dịch chính thức
+  | "FULFILLED" // Giao nhận hoàn tất, cont đã sang đơn vị Cần vỏ Container
+  | "WITHDRAWN" // A chủ động rút tin
+  | "EXPIRED"; // Hết available_until hoặc hạn chứng từ
 
 // SRS §4.4 + plan.md §6.2: Trạng thái Request đầy đủ
 export type RequestStatus =
-  | 'DRAFT'
-  | 'UNDER_REVIEW'
-  | 'CHANGES_REQUIRED'
-  | 'REJECTED'
-  | 'OPEN'               // Đã review, đang tìm matching
-  | 'HELD'
-  | 'ALLOCATED'
-  | 'FULFILLED'
-  | 'WITHDRAWN'
-  | 'EXPIRED';
+  | "DRAFT"
+  | "UNDER_REVIEW"
+  | "CHANGES_REQUIRED"
+  | "REJECTED"
+  | "OPEN" // Đã review, đang tìm matching
+  | "HELD"
+  | "ALLOCATED"
+  | "FULFILLED"
+  | "WITHDRAWN"
+  | "EXPIRED";
 
 // SRS §4.4: Trạng thái giao dịch chính
 export type TransactionStatus =
-  | 'MATCH_REQUESTED'
-  | 'MATCH_ACCEPTED'
-  | 'NEGOTIATING'         // Bước 1: Giữ chỗ & thảo luận thỏa thuận
-  | 'PENDING_CARRIER'     // Bước 2: Chờ hãng tàu duyệt RU
-  | 'AWAITING_PAYMENT'    // Bước 3: Chờ nộp tiền & đối soát
-  | 'READY_FOR_PICKUP'    // Bước 4: Phát phiếu điều phối
-  | 'INSPECTION'          // Bước 5: Kiểm tra cont tại bãi A
-  | 'HANDOVER_PENDING'    // Bước 6: Chờ 2 bên xác nhận bàn giao
-  | 'COMPLETED'           // Bước 7: Hoàn tất giao nhận, custody A→B
-  | 'DISPUTED'
-  | 'PICKUP_REFUSED'
-  | 'CARRIER_REJECTED'
-  | 'PAYMENT_EXPIRED'
-  | 'CANCELLED'           // Hủy giao dịch
-  | 'REJECTED'            // Carrier từ chối RU
-  | 'EXPIRED';            // Hết deadline tự động
+  | "MATCH_REQUESTED"
+  | "MATCH_ACCEPTED"
+  | "NEGOTIATING" // Bước 1: Giữ chỗ & thảo luận thỏa thuận
+  | "PENDING_CARRIER" // Bước 2: Chờ hãng tàu duyệt RU
+  | "AWAITING_PAYMENT" // Bước 3: Chờ nộp tiền & đối soát
+  | "READY_FOR_PICKUP" // Bước 4: Phát phiếu điều phối
+  | "INSPECTION" // Bước 5: Kiểm tra cont tại bãi A
+  | "HANDOVER_PENDING" // Bước 6: Chờ 2 bên xác nhận bàn giao
+  | "COMPLETED" // Bước 7: Hoàn tất giao nhận, custody A→B
+  | "DISPUTED"
+  | "PICKUP_REFUSED"
+  | "CARRIER_REJECTED"
+  | "PAYMENT_EXPIRED"
+  | "CANCELLED" // Hủy giao dịch
+  | "REJECTED" // Carrier từ chối RU
+  | "EXPIRED"; // Hết deadline tự động
 
 // plan.md §6.2: CarrierApproval status
 export type CarrierApprovalStatus =
-  | 'DRAFT'
-  | 'SUBMITTED'
-  | 'NEEDS_INFO'
-  | 'APPROVED'
-  | 'REJECTED'
-  | 'EXPIRED'
-  | 'REVOKED';
+  | "DRAFT"
+  | "SUBMITTED"
+  | "NEEDS_INFO"
+  | "APPROVED"
+  | "REJECTED"
+  | "EXPIRED"
+  | "REVOKED";
 
 // plan.md §6.2: Payment order status
 export type PaymentOrderStatus =
-  | 'OPEN'
-  | 'PARTIAL'
-  | 'PAID'
-  | 'EXPIRED'
-  | 'CANCELLED';
+  | "OPEN"
+  | "PARTIAL"
+  | "PAID"
+  | "EXPIRED"
+  | "CANCELLED";
 
 // plan.md §6.2: Refund order status
 export type RefundOrderStatus =
-  | 'REQUESTED'
-  | 'APPROVED'
-  | 'REFUND_PENDING'
-  | 'REFUNDED'
-  | 'FAILED'
-  | 'REJECTED';
+  | "REQUESTED"
+  | "APPROVED"
+  | "REFUND_PENDING"
+  | "REFUNDED"
+  | "FAILED"
+  | "REJECTED";
 
 // plan.md §6.2: Handover record status
 export type HandoverRecordStatus =
-  | 'DRAFT'
-  | 'PENDING_CONFIRMATION'
-  | 'COMPLETED'
-  | 'SUPERSEDED';
+  | "DRAFT"
+  | "PENDING_CONFIRMATION"
+  | "COMPLETED"
+  | "SUPERSEDED";
 
 // plan.md §6.2: Case status
 export type CaseStatus =
-  | 'OPEN'
-  | 'IN_REVIEW'
-  | 'NEEDS_INFO'
-  | 'RESOLVED'
-  | 'CLOSED';
+  | "OPEN"
+  | "IN_REVIEW"
+  | "NEEDS_INFO"
+  | "APPEAL_PENDING"
+  | "RESOLVED"
+  | "CLOSED";
 
 // plan.md §6.2: Company verification status
 export type CompanyStatus =
-  | 'BLOCKED'
-  | 'PENDING_VERIFICATION'
-  | 'NEEDS_INFO'
-  | 'VERIFIED'
-  | 'REJECTED'
-  | 'SUSPENDED';
+  | "BLOCKED"
+  | "PENDING_VERIFICATION"
+  | "NEEDS_INFO"
+  | "VERIFIED"
+  | "REJECTED"
+  | "SUSPENDED";
 
 // plan.md §6.2: Dispatch permit status
 export type PermitStatus =
-  | 'GENERATING'
-  | 'ACTIVE'
-  | 'USED'
-  | 'EXPIRED'
-  | 'REVOKED'
-  | 'FAILED';
+  | "GENERATING"
+  | "ACTIVE"
+  | "USED"
+  | "EXPIRED"
+  | "REVOKED"
+  | "FAILED";
 
 // plan.md §6.2: Document verification status
 export type DocumentVerificationStatus =
-  | 'UNVERIFIED'
-  | 'NEEDS_INFO'
-  | 'VERIFIED'
-  | 'REJECTED'
-  | 'EXPIRED'
-  | 'REVOKED'
-  | 'SUPERSEDED';
+  | "UNVERIFIED"
+  | "NEEDS_INFO"
+  | "VERIFIED"
+  | "REJECTED"
+  | "EXPIRED"
+  | "REVOKED"
+  | "SUPERSEDED";
 
-export type AiInspectionStatus = 'NOT_RUN' | 'CLEAN' | 'ANOMALY' | 'ERROR' | 'OPS_VERIFIED' | 'OPS_REJECTED';
+export type AiInspectionStatus =
+  | "NOT_RUN"
+  | "CLEAN"
+  | "ANOMALY"
+  | "ERROR"
+  | "OPS_VERIFIED"
+  | "OPS_REJECTED"
+  | "INSPECTION_INCOMPLETE";
 
 export interface AiInspectionResult {
   success: boolean;
@@ -150,6 +158,7 @@ export interface AiInspectionResult {
   summary?: string;
   details?: string[];
   requiresOpsReview: boolean;
+  missingAngles?: string[];
   error?: string;
 }
 
@@ -167,7 +176,51 @@ export interface AssetAiInspection {
 }
 
 // Allocation state cho giữ chỗ
-export type AllocationState = 'HELD' | 'ALLOCATED' | 'RELEASED';
+export type AllocationState = "HELD" | "ALLOCATED" | "RELEASED";
+
+// ==================== PENALTY & SANCTION MATRIX (Câu 46) ====================
+export type PenaltyLevel =
+  | "LEVEL_1" // Nhẹ: Trừ 1–2 điểm Trust Score
+  | "LEVEL_2" // Vận hành: Trừ 5–10 điểm Trust Score + Khóa quyền ưu tiên ghép đôi X ngày
+  | "LEVEL_3" // Tài chính: Khóa chức năng giao dịch mới, cảnh báo đình chỉ tài khoản
+  | "LEVEL_4"; // Gian lận: Blacklist, đình chỉ vĩnh viễn (CompanyStatus: BLOCKED)
+
+export type ViolationType =
+  // Level 1
+  | "LATE_APPOINTMENT_15M" // Trễ hẹn >15 phút
+  | "SLOW_CHAT_RESPONSE_24H" // Phản hồi chat chậm >24h
+  // Level 2
+  | "NO_SHOW" // No-show không nhận/giao cont
+  | "LATE_CANCELLATION" // Hủy giao dịch cận giờ
+  | "WRONG_SPECIFICATION" // Khai sai quy cách cont / tình trạng vỏ
+  // Level 3
+  | "PAYMENT_OVERDUE_2H" // Không thanh toán đúng hạn 2 giờ
+  | "RU_FEE_OVERDUE" // Chậm nộp phí RU hãng tàu
+  // Level 4
+  | "AI_INSPECTION_FRAUD" // Làm giả ảnh giám định container
+  | "FAKE_CONTAINER_NUMBER" // Giả mạo số container
+  | "SWAP_DAMAGED_CONTAINER" // Tráo vỏ cont mục nát
+  | "OTHER";
+
+export interface CompanyPenalty {
+  id: string;
+  companyId: string;
+  transactionId?: string;
+  caseId?: string;
+  level: PenaltyLevel;
+  violationType: ViolationType;
+  title: string;
+  description: string;
+  scoreDeduction: number;
+  matchingDeprioritizedDays?: number;
+  matchingDeprioritizedUntil?: string;
+  isTradingBlocked?: boolean;
+  isBlacklisted?: boolean;
+  appliedAt: string;
+  appliedBy: string; // "SYSTEM_AUTO" | "OPS" | string email
+  status: "ACTIVE" | "EXPIRED" | "APPEALED" | "REVOKED";
+  appealNotes?: string;
+}
 
 // ==================== ENTITY INTERFACES ====================
 
@@ -176,7 +229,7 @@ export interface Company {
   taxCode: string;
   companyName: string;
   shortName: string;
-  businessType: 'FORWARDER' | 'FACTORY' | 'TRUCKER' | 'SHIPPING_LINE';
+  businessType: "FORWARDER" | "FACTORY" | "TRUCKER" | "SHIPPING_LINE";
   address: string;
   representativeName: string;
   representativePhone: string;
@@ -184,16 +237,22 @@ export interface Company {
   verificationStatus: CompanyStatus;
   verificationNotes?: string;
   verifiedAt?: string;
-  trustScoreA?: number;  // 0..100 (Trust của nhà cung cấp)
-  trustScoreB?: number;  // 0..100 (Trust của đơn vị cần vỏ)
+  trustScoreA?: number; // 0..100 (Trust của nhà cung cấp)
+  trustScoreB?: number; // 0..100 (Trust của đơn vị cần vỏ)
   totalCompletedAsA: number;
   totalCompletedAsB: number;
-  isOnHold?: boolean;    // Tài khoản tạm dừng
+  isOnHold?: boolean; // Tài khoản tạm dừng
+  // Penalty Matrix fields (Câu 46)
+  penalties?: CompanyPenalty[];
+  matchingDeprioritizedUntil?: string; // Mốc thời gian hết hạn giảm ưu tiên ghép đôi
+  isTradingBlocked?: boolean; // Khóa tạo giao dịch mới
+  tradingBlockedReason?: string;
+  isBlacklisted?: boolean;
 }
 
 export interface Carrier {
   id: string;
-  code: string;    // MSK, CMA, ONE, EMC, COSCO
+  code: string; // MSK, CMA, ONE, EMC, COSCO
   name: string;
   defaultRuFeeVnd: number;
   ruPolicyNotes?: string;
@@ -208,50 +267,58 @@ export interface Depot {
   latitude: number;
   longitude: number;
   operatingHours: string;
-  supportedCarriers: string[];  // Mảng carrier code
+  supportedCarriers: string[]; // Mảng carrier code
 }
 
 export interface ContainerAsset {
   id: string;
-  containerNumber: string;     // ISO 6346 (MSKU8421093)
+  containerNumber: string; // ISO 6346 (MSKU8421093)
   containerType: ContainerType;
   carrierId: string;
   carrierCode: string;
   currentCustodianId: string;
   currentCustodianName: string;
-  physicalStatus: PhysicalStatus;    // SRS §4.4
-  declaredCondition: PhysicalCondition;    // Condition A khai báo
-  reviewedCondition?: PhysicalCondition;   // Condition Ops xác nhận
+  physicalStatus: PhysicalStatus; // SRS §4.4
+  declaredCondition: PhysicalCondition; // Condition A khai báo
+  reviewedCondition?: PhysicalCondition; // Condition Ops xác nhận
   conditionNotes?: string;
   currentDepotReturnId?: string;
   currentDepotName?: string;
   currentLocationName: string;
   currentLatitude: number;
   currentLongitude: number;
-  locationObservedAt: string;   // Thời điểm vị trí được cập nhật (UTC)
-  locationVerifiedAt?: string;  // Thời điểm Ops xác nhận vị trí (UTC)
+  locationObservedAt: string; // Thời điểm vị trí được cập nhật (UTC)
+  locationVerifiedAt?: string; // Thời điểm Ops xác nhận vị trí (UTC)
   freeTimeDetentionEnd?: string; // ISO UTC timestamp
-  freeTimeSource?: string;       // Nguồn thông tin hạn
-  photos: string[];              // URLs ảnh (ít nhất 6 góc cho Offer)
+  freeTimeSource?: string; // Nguồn thông tin hạn
+  photos: string[]; // URLs ảnh (ít nhất 6 góc cho Offer)
   edoEvidenceName?: string;
   aiInspection?: AssetAiInspection;
-  hasEdoDocument: boolean;       // Đã có e-DO/hồ sơ tương đương
+  hasEdoDocument: boolean; // Đã có e-DO/hồ sơ tương đương
   edoVerificationStatus?: DocumentVerificationStatus;
-  isLocked: boolean;             // Khóa khi đang có giao dịch HELD/ALLOCATED
-  activeAllocationId?: string;   // ID reservation hiện tại nếu có
+  isLocked: boolean; // Khóa khi đang có giao dịch HELD/ALLOCATED
+  activeAllocationId?: string; // ID reservation hiện tại nếu có
   createdAt: string;
   updatedAt: string;
 }
 
 export interface EvidenceFile {
   id: string;
-  documentType: 'E_DO' | 'BOOKING' | 'RU_APPROVAL' | 'PAYMENT_RECEIPT' | 'INSPECTION_PHOTO' | 'HANDOVER_PHOTO' | 'EIR' | 'OTHER';
+  documentType:
+    | "E_DO"
+    | "BOOKING"
+    | "RU_APPROVAL"
+    | "PAYMENT_RECEIPT"
+    | "INSPECTION_PHOTO"
+    | "HANDOVER_PHOTO"
+    | "EIR"
+    | "OTHER";
   objectKey: string;
   originalName: string;
   sha256?: string;
   mimeType: string;
   sizeBytes: number;
-  scanStatus: 'PENDING' | 'CLEAN' | 'INFECTED' | 'ERROR';
+  scanStatus: "PENDING" | "CLEAN" | "INFECTED" | "ERROR";
   uploadedBy: string;
   uploadedAt: string;
   isPrivate: boolean;
@@ -271,7 +338,12 @@ export interface OfferAiCheckResult {
   actualCarrierCode?: string;
   actualConditionNotes?: string;
   mismatchDetails?: string[];
-  photoStatus?: 'MATCHED' | 'MISMATCH' | 'MANUAL_REVIEW' | 'ERROR';
+  photoStatus?:
+    | "MATCHED"
+    | "MISMATCH"
+    | "MANUAL_REVIEW"
+    | "INSPECTION_INCOMPLETE"
+    | "ERROR";
   anomalyReason?: string;
   edoChecked?: boolean;
   edoValid?: boolean;
@@ -285,7 +357,7 @@ export interface OfferAiCheckResult {
   photoChecked?: boolean;
   photoCondition?: PhysicalCondition;
   photoConditionNotes?: string;
-  verificationStatus?: 'VERIFIED' | 'MANUAL_REVIEW' | 'INVALID' | 'ERROR';
+  verificationStatus?: "VERIFIED" | "MANUAL_REVIEW" | "INVALID" | "ERROR";
   details?: string[];
 }
 
@@ -303,7 +375,7 @@ export interface DocumentAiVerdict {
 }
 
 export interface BookingAiCheckResult {
-  status: 'VALID' | 'INVALID' | 'ANOMALY' | 'MANUAL_REVIEW' | 'ERROR';
+  status: "VALID" | "INVALID" | "ANOMALY" | "MANUAL_REVIEW" | "ERROR";
   isValid: boolean;
   hasAnomaly: boolean;
   score?: number;
@@ -333,7 +405,7 @@ export interface Offer {
   companyId: string;
   companyName: string;
   status: OfferStatus;
-  version: number;                 // Row version chống stale write
+  version: number; // Row version chống stale write
   reviewerNotes?: string;
   reviewedBy?: string;
   reviewedAt?: string;
@@ -344,18 +416,18 @@ export interface Offer {
   availableTo: string;
   expectedDepotId?: string;
   expectedDepotName?: string;
-  baselineDepotCostVnd: number;    // T_A (chi phí baseline về depot)
-  vehicleRequirements?: string;    // Yêu cầu xe vận chuyển
-  photoUrls: string[];             // 6+ ảnh theo checklist
+  baselineDepotCostVnd: number; // T_A (chi phí baseline về depot)
+  vehicleRequirements?: string; // Yêu cầu xe vận chuyển
+  photoUrls: string[]; // 6+ ảnh theo checklist
   photoChecklistComplete: boolean; // Đã đủ 6 góc ảnh
-  edoDocumentIds: string[];        // IDs của e-DO/hồ sơ đính kèm
-  edoFileName?: string;            // Tên file e-DO (chỉ Ops xem, không public cho B)
-  edoNumber?: string;              // Số lệnh e-DO (chỉ Ops xem, không public cho B)
-  conditionNotes?: string;         // Mô tả chi tiết tình trạng vỏ
-  aiCheck?: OfferAiCheckResult;    // Kết quả AI OCR & AI Vision kiểm tra
+  edoDocumentIds: string[]; // IDs của e-DO/hồ sơ đính kèm
+  edoFileName?: string; // Tên file e-DO (chỉ Ops xem, không public cho B)
+  edoNumber?: string; // Số lệnh e-DO (chỉ Ops xem, không public cho B)
+  conditionNotes?: string; // Mô tả chi tiết tình trạng vỏ
+  aiCheck?: OfferAiCheckResult; // Kết quả AI OCR & AI Vision kiểm tra
   requiresOpsManualReview?: boolean; // Bất thường cần Ops kiểm tra thủ công
   withdrawReason?: string;
-  changeReason?: string;           // Lý do sửa đổi
+  changeReason?: string; // Lý do sửa đổi
   createdAt: string;
   updatedAt: string;
 }
@@ -367,11 +439,11 @@ export interface Booking {
   carrierId: string;
   carrierCode: string;
   containerType: ContainerType;
-  quantityTotal: number;            // Tổng số cont trong booking
-  quantityUsed: number;             // Đã sử dụng (hold + allocated + fulfilled)
-  cutOffTime: string;               // Deadline gửi hàng xuống tàu
-  validUntil?: string;              // Booking hết hiệu lực
-  status: 'ACTIVE' | 'CANCELLED' | 'EXPIRED' | 'FULFILLED';
+  quantityTotal: number; // Tổng số cont trong booking
+  quantityUsed: number; // Đã sử dụng (hold + allocated + fulfilled)
+  cutOffTime: string; // Deadline gửi hàng xuống tàu
+  validUntil?: string; // Booking hết hiệu lực
+  status: "ACTIVE" | "CANCELLED" | "EXPIRED" | "FULFILLED";
   verificationStatus: DocumentVerificationStatus;
   verifiedBy?: string;
   verifiedAt?: string;
@@ -382,11 +454,11 @@ export interface ContainerRequest {
   id: string;
   companyId: string;
   companyName: string;
-  bookingId?: string;              // Liên kết Booking được xác minh
+  bookingId?: string; // Liên kết Booking được xác minh
   carrierId: string;
   carrierCode: string;
   containerType: ContainerType;
-  bookingNumber: string;           // Hiển thị UI (private trong Matching L0)
+  bookingNumber: string; // Hiển thị UI (private trong Matching L0)
   status: RequestStatus;
   version: number;
   reviewerNotes?: string;
@@ -395,14 +467,14 @@ export interface ContainerRequest {
   deliveryLocationName: string;
   deliveryLatitude: number;
   deliveryLongitude: number;
-  pickupWindowStart: string;       // Sớm nhất bắt đầu kiểm tra tại A
-  pickupWindowEnd: string;         // Muộn nhất bắt đầu
-  cutOffTime: string;              // Cut-off booking (không phải ngày tàu)
-  maxDistanceKm: number;           // Dmax (mặc định 40km)
-  cargoType: string;               // Mô tả loại hàng
-  cargoRequirements?: string;      // Sạch/khô/không mùi/tiêu chuẩn đặc biệt
-  baselinePickupCostVnd: number;   // T_B (chi phí baseline lấy cont từ depot)
-  bookingFileName?: string;        // File Booking ảnh/PDF; chỉ Ops xem
+  pickupWindowStart: string; // Sớm nhất bắt đầu kiểm tra tại A
+  pickupWindowEnd: string; // Muộn nhất bắt đầu
+  cutOffTime: string; // Cut-off booking (không phải ngày tàu)
+  maxDistanceKm: number; // Dmax (mặc định 40km)
+  cargoType: string; // Mô tả loại hàng
+  cargoRequirements?: string; // Sạch/khô/không mùi/tiêu chuẩn đặc biệt
+  baselinePickupCostVnd: number; // T_B (chi phí baseline lấy cont từ depot)
+  bookingFileName?: string; // File Booking ảnh/PDF; chỉ Ops xem
   bookingFileMimeType?: string;
   bookingAiCheck?: BookingAiCheckResult;
   withdrawReason?: string;
@@ -420,7 +492,7 @@ export interface ChatThread {
   requestId?: string;
   transactionId?: string;
   contextLabel: string;
-  contextType: 'PRE_BOOKING' | 'TRANSACTION' | 'CASE' | 'OPS_SUPPORT';
+  contextType: "PRE_BOOKING" | "TRANSACTION" | "CASE" | "OPS_SUPPORT";
   containerNumber?: string;
   carrierCode?: string;
   containerType?: string;
@@ -436,15 +508,15 @@ export interface ChatThread {
 
 export interface ChatMessage {
   id: string;
-  clientId?: string;               // Dedup client-side ID
+  clientId?: string; // Dedup client-side ID
   threadId: string;
   senderCompanyId: string;
   senderCompanyName: string;
-  senderRole: 'A' | 'B' | 'OPS';
+  senderRole: "A" | "B" | "OPS";
   senderName: string;
   body: string;
   attachmentIds?: string[];
-  isHidden?: boolean;             // Moderation ẩn, bản gốc vẫn lưu
+  isHidden?: boolean; // Moderation ẩn, bản gốc vẫn lưu
   hiddenReason?: string;
   createdAt: string;
 }
@@ -453,19 +525,26 @@ export interface MatchCandidate {
   offer: Offer;
   distanceKm: number;
   timeFeasible: boolean;
-  locationAgeHours: number;        // Tuổi vị trí tính theo giờ
+  locationAgeHours: number; // Tuổi vị trí tính theo giờ
   requiresLocationRefresh: boolean; // >24h cần A xác nhận lại
-  scoreD: number;                  // 0..100
-  scoreT: number;                  // 0..100
-  scoreC: number;                  // 100/60
-  scoreM: number;                  // 0.30D + 0.40T + 0.30C
+  scoreD: number; // 0..100
+  scoreT: number; // 0..100
+  scoreC: number; // 100/60
+  scoreM: number; // 0.30D + 0.40T + 0.30C
   quote: Quote;
   estimatedShippingMinutes?: number; // Thời gian vận chuyển ước tính
-  trustScoreA?: number;              // Điểm uy tín nhà cung cấp
+  trustScoreA?: number; // Điểm uy tín nhà cung cấp
   hardConstraintReasons?: string[]; // Lý do loại nếu không pass
+  isDeprioritized?: boolean; // Bị giảm ưu tiên do chế tài Level 2
+  deprioritizationReason?: string;
 }
 
-export type MatchStatus = 'POTENTIAL_MATCH' | 'MATCH_REQUESTED' | 'MATCH_ACCEPTED' | 'MATCH_REJECTED' | 'MATCH_EXPIRED';
+export type MatchStatus =
+  | "POTENTIAL_MATCH"
+  | "MATCH_REQUESTED"
+  | "MATCH_ACCEPTED"
+  | "MATCH_REJECTED"
+  | "MATCH_EXPIRED";
 
 export interface Match {
   id: string;
@@ -491,44 +570,44 @@ export interface Match {
 export interface Quote {
   id: string;
   version: number;
-  snapshotAt: string;              // Thời điểm tạo quote
-  tAVnd: number;                   // 3,000,000 - chi phí baseline A
-  tBVnd: number;                   // 3,400,000 - chi phí baseline B
-  fRuVnd: number;                  // 1,200,000 - phí RU hãng tàu
-  shareAlpha: number;              // 0.50
-  truckingAbVnd: number;           // 800,000 - cước xe A→B (B tự bố trí)
+  snapshotAt: string; // Thời điểm tạo quote
+  tAVnd: number; // 3,000,000 - chi phí baseline A
+  tBVnd: number; // 3,400,000 - chi phí baseline B
+  fRuVnd: number; // 1,200,000 - phí RU hãng tàu
+  shareAlpha: number; // 0.50
+  truckingAbVnd: number; // 800,000 - cước xe A→B (B tự bố trí)
   extrasAVnd: number;
   extrasBVnd: number;
-  rA0Vnd: number;                  // alpha * F_RU + extras_A
-  rB0Vnd: number;                  // trucking_AB + (1-alpha)*F_RU + extras_B
-  gAVnd: number;                   // T_A - R_A0 (tiết kiệm gộp A)
-  gBVnd: number;                   // T_B - R_B0 (tiết kiệm gộp B)
-  fAVnd: number;                   // 0.25 * max(G_A, 0) - phí nền tảng A
-  fBVnd: number;                   // 0.15 * max(G_B, 0) - phí nền tảng B
-  sAVnd: number;                   // G_A - F_A (tiết kiệm ròng A)
-  sBVnd: number;                   // G_B - F_B (tiết kiệm ròng B)
+  rA0Vnd: number; // alpha * F_RU + extras_A
+  rB0Vnd: number; // trucking_AB + (1-alpha)*F_RU + extras_B
+  gAVnd: number; // T_A - R_A0 (tiết kiệm gộp A)
+  gBVnd: number; // T_B - R_B0 (tiết kiệm gộp B)
+  fAVnd: number; // 0.25 * max(G_A, 0) - phí nền tảng A
+  fBVnd: number; // 0.15 * max(G_B, 0) - phí nền tảng B
+  sAVnd: number; // G_A - F_A (tiết kiệm ròng A)
+  sBVnd: number; // G_B - F_B (tiết kiệm ròng B)
   econtCollectedFromA: number;
   econtCollectedFromB: number;
   // Loại dữ liệu quote
-  tAStatus: 'FIRM' | 'ESTIMATE' | 'MISSING';
-  tBStatus: 'FIRM' | 'ESTIMATE' | 'MISSING';
-  fRuStatus: 'FIRM' | 'ESTIMATE' | 'MISSING';
-  truckingStatus: 'FIRM' | 'ESTIMATE' | 'MISSING';
+  tAStatus: "FIRM" | "ESTIMATE" | "MISSING";
+  tBStatus: "FIRM" | "ESTIMATE" | "MISSING";
+  fRuStatus: "FIRM" | "ESTIMATE" | "MISSING";
+  truckingStatus: "FIRM" | "ESTIMATE" | "MISSING";
   // Nếu saving âm
   negativeSavingA: boolean;
   negativeSavingB: boolean;
-  savingRatioAvailable: boolean;   // False nếu T_A + T_B = 0
+  savingRatioAvailable: boolean; // False nếu T_A + T_B = 0
 }
 
 export interface Agreement {
   id: string;
   transactionId: string;
   version: number;
-  contentHash: string;             // Hash của nội dung thỏa thuận
+  contentHash: string; // Hash của nội dung thỏa thuận
   createdAt: string;
   // Acceptance của từng bên
   companyAAcceptedAt?: string;
-  companyAAcceptedBy?: string;     // actor ID/email
+  companyAAcceptedBy?: string; // actor ID/email
   companyACompanyId?: string;
   companyBAcceptedAt?: string;
   companyBAcceptedBy?: string;
@@ -549,16 +628,16 @@ export interface Transaction {
   companyBName: string;
   asset: ContainerAsset;
   status: TransactionStatus;
-  rowVersion: number;              // Chống stale write
+  rowVersion: number; // Chống stale write
   isOnHold: boolean;
   holdReason?: string;
   holdSetAt?: string;
   holdSetBy?: string;
   holdCaseId?: string;
-  dueAt: string;                   // Deadline hiện tại (UTC)
+  dueAt: string; // Deadline hiện tại (UTC)
   nextAction: string;
-  allowedActions: string[];        // Các action được phép theo role hiện tại
-  blockingReasons?: string[];      // Lý do bị chặn nếu có
+  allowedActions: string[]; // Các action được phép theo role hiện tại
+  blockingReasons?: string[]; // Lý do bị chặn nếu có
   // Agreement lifecycle
   currentAgreementVersion: number;
   agreements: Agreement[];
@@ -578,21 +657,46 @@ export interface Transaction {
   dispatchPermit?: DispatchPermit;
   inspection?: Inspection;
   handoverRecord?: HandoverRecord;
+  // Punctuality & Check-in (Câu 48)
+  scheduledPickupTime?: string; // Mốc giờ hẹn giao nhận chuẩn
+  driverArrivedAt?: string; // Thời điểm tài xế thực tế check-in tại kho
+  checkInPunctuality?: "ON_TIME" | "LATE" | "NO_SHOW";
+  checkInPunctualityDeltaMinutes?: number; // Số phút chênh lệch (+ là trễ, - là sớm)
+  checkInNotes?: string;
+  rescheduleRequest?: RescheduleRequest;
+  noShowDetected?: boolean;
   // Metadata
   createdAt: string;
   updatedAt: string;
 }
 
+export interface RescheduleRequest {
+  id: string;
+  transactionId: string;
+  requestedByParty: "PARTY_A" | "PARTY_B";
+  requestedByCompanyId: string;
+  requestedByCompanyName: string;
+  requestedByName: string;
+  currentScheduledTime: string;
+  proposedTime: string;
+  reason: string;
+  status: "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED";
+  requestedAt: string;
+  respondedAt?: string;
+  respondedBy?: string;
+  responseNote?: string;
+}
+
 export interface CarrierSubmission {
   id: string;
   transactionId: string;
-  submittedBy: string;             // Ops email
+  submittedBy: string; // Ops email
   submittedAt: string;
   carrierCode: string;
   referenceNumber?: string;
   notes?: string;
   evidenceFileIds: string[];
-  status: 'SUBMITTED' | 'ACKNOWLEDGED' | 'PENDING_RESPONSE';
+  status: "SUBMITTED" | "ACKNOWLEDGED" | "PENDING_RESPONSE";
 }
 
 export interface CarrierApproval {
@@ -601,7 +705,8 @@ export interface CarrierApproval {
   carrierCode: string;
   approvalReference: string;
   status: CarrierApprovalStatus;
-  scope: {                         // Phạm vi RU (snapshot)
+  scope: {
+    // Phạm vi RU (snapshot)
     containerNumber: string;
     bookingNumber: string;
     companyAId: string;
@@ -626,7 +731,7 @@ export interface PaymentOrder {
   transactionId: string;
   companyId: string;
   companyName: string;
-  payerRole: 'PARTY_A' | 'PARTY_B';
+  payerRole: "PARTY_A" | "PARTY_B";
   amountVnd: number;
   status: PaymentOrderStatus;
   // Reconciliation
@@ -652,12 +757,12 @@ export interface PaymentEvent {
   id: string;
   paymentOrderId: string;
   providerId?: string;
-  providerEventId?: string;        // Dedup
+  providerEventId?: string; // Dedup
   amountVnd: number;
   currency: string;
   reference: string;
   receivedAt: string;
-  reconciliationStatus: 'MATCHED' | 'SUSPENSE' | 'OVERPAID' | 'MISMATCH';
+  reconciliationStatus: "MATCHED" | "SUSPENSE" | "OVERPAID" | "MISMATCH";
   notes?: string;
 }
 
@@ -666,9 +771,9 @@ export interface ExternalObligation {
   transactionId: string;
   description: string;
   amountVnd?: number;
-  collector: string;               // Bên nhận (hãng tàu, depot,...)
-  payer: 'PARTY_A' | 'PARTY_B';
-  status: 'PENDING' | 'SETTLED' | 'WAIVED';
+  collector: string; // Bên nhận (hãng tàu, depot,...)
+  payer: "PARTY_A" | "PARTY_B";
+  status: "PENDING" | "SETTLED" | "WAIVED";
   evidenceFileId?: string;
   notes?: string;
 }
@@ -684,7 +789,7 @@ export interface RefundOrder {
   status: RefundOrderStatus;
   approvedBy?: string;
   approvedAt?: string;
-  providerRef?: string;            // Stable reference cho provider
+  providerRef?: string; // Stable reference cho provider
   settledAt?: string;
   failureReason?: string;
 }
@@ -693,11 +798,11 @@ export interface DispatchPermit {
   id: string;
   transactionId: string;
   permitNumber: string;
-  verificationToken: string;       // Random token cho QR
+  verificationToken: string; // Random token cho QR
   driverName: string;
   truckPlate: string;
   driverIdNumber?: string;
-  delegationBasis?: string;        // Cơ sở ủy quyền người nhận
+  delegationBasis?: string; // Cơ sở ủy quyền người nhận
   validFrom: string;
   validUntil: string;
   status: PermitStatus;
@@ -720,7 +825,7 @@ export interface Inspection {
   checklistUndercarriage: boolean;
   isDiscrepancyFound: boolean;
   discrepancyNotes?: string;
-  discrepancySeverity?: 'MINOR' | 'MAJOR';
+  discrepancySeverity?: "MINOR" | "MAJOR";
   photoIds: string[];
   inspectedAt: string;
   version: number;
@@ -731,12 +836,12 @@ export interface HandoverRecord {
   id: string;
   transactionId: string;
   version: number;
-  contentHash: string;             // Hash biên bản để 2 bên xác nhận cùng version
+  contentHash: string; // Hash biên bản để 2 bên xác nhận cùng version
   status: HandoverRecordStatus;
   // Xác nhận nhà cung cấp (giao)
   confirmationA?: {
     confirmedAt: string;
-    confirmedBy: string;           // Email/actor
+    confirmedBy: string; // Email/actor
     companyId: string;
     recordVersion: number;
     recordHash: string;
@@ -761,21 +866,37 @@ export interface CaseIssue {
   openedByCompanyId: string;
   openedByCompanyName: string;
   assignedToOpsEmail?: string;
-  caseType: 'CONDITION_MISMATCH' | 'NO_SHOW' | 'WRONG_CONTAINER' | 'LATE_HANDOVER' | 'DAMAGE_DISPUTE' | 'PAYMENT_ISSUE' | 'CARRIER_REJECTION' | 'DOCUMENT_FRAUD' | 'RU_SCOPE_MISMATCH' | 'OTHER';
+  caseType:
+    | "CONDITION_MISMATCH"
+    | "NO_SHOW"
+    | "WRONG_CONTAINER"
+    | "LATE_HANDOVER"
+    | "DAMAGE_DISPUTE"
+    | "PAYMENT_ISSUE"
+    | "CARRIER_REJECTION"
+    | "DOCUMENT_FRAUD"
+    | "RU_SCOPE_MISMATCH"
+    | "OTHER";
   title: string;
   description: string;
   status: CaseStatus;
-  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  priority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   evidenceFileIds?: string[];
   attachments?: CaseAttachment[];
-  holdTransactionId?: string;     // Giao dịch bị ON_HOLD vì Case này
+  holdTransactionId?: string; // Giao dịch bị ON_HOLD vì Case này
   resolution?: {
     summary: string;
-    faultParty?: 'PARTY_A' | 'PARTY_B' | 'PLATFORM' | 'CARRIER' | 'NONE';
+    faultParty?: "PARTY_A" | "PARTY_B" | "PLATFORM" | "CARRIER" | "NONE";
     resolvedBy: string;
     resolvedAt: string;
-    refundProposal?: number;      // VND đề xuất hoàn
+    refundProposal?: number; // VND đề xuất hoàn
+    penaltyLevel?: PenaltyLevel;
+    violationType?: ViolationType;
+    penaltyScoreDeduction?: number;
+    matchingDeprioritizedDays?: number;
   };
+  appealWindowExpiresAt?: string; // Hạn chót 48h để kháng nghị sau khi Ops RESOLVED (Câu 47)
+  appeal?: CaseAppeal;
   appealedAt?: string;
   appealReason?: string;
   closedAt?: string;
@@ -783,11 +904,31 @@ export interface CaseIssue {
   updatedAt: string;
 }
 
+export interface CaseAppeal {
+  id: string;
+  caseId: string;
+  appellantParty: "PARTY_A" | "PARTY_B";
+  appellantCompanyId: string;
+  appellantCompanyName: string;
+  appellantName: string;
+  appellantEmail?: string;
+  reason: string;
+  evidenceFiles?: CaseAttachment[];
+  notes?: string;
+  submittedAt: string;
+  seniorReviewerEmail?: string;
+  seniorReviewerName?: string;
+  seniorVerdict?: "UPHELD" | "OVERTURNED" | "MODIFIED";
+  seniorVerdictReason?: string;
+  reviewedAt?: string;
+  waivedOriginalPenalty?: boolean;
+}
+
 export interface CaseAttachment {
   id: string;
   name: string;
   mimeType: string;
-  kind: 'IMAGE' | 'VIDEO';
+  kind: "IMAGE" | "VIDEO";
   size?: number;
   dataUrl: string;
   createdAt: string;
@@ -797,22 +938,22 @@ export interface Rating {
   id: string;
   transactionId: string;
   ratedByCompanyId: string;
-  ratedByRole: 'A' | 'B';
+  ratedByRole: "A" | "B";
   ratedCompanyId: string;
   stars: 1 | 2 | 3 | 4 | 5;
   comment?: string;
-  isPublic: boolean;               // False trong 7 ngày blind window
+  isPublic: boolean; // False trong 7 ngày blind window
   submittedAt: string;
-  windowExpiresAt: string;         // 7 ngày sau COMPLETED
+  windowExpiresAt: string; // 7 ngày sau COMPLETED
 }
 
 export interface TrustSnapshot {
   id: string;
   companyId: string;
-  role: 'A' | 'B';
-  score: number;                   // 0..100
-  sampleSize: number;              // Số giao dịch đủ dữ liệu
-  isPublishable: boolean;          // False nếu sampleSize < ngưỡng
+  role: "A" | "B";
+  score: number; // 0..100
+  sampleSize: number; // Số giao dịch đủ dữ liệu
+  isPublishable: boolean; // False nếu sampleSize < ngưỡng
   calculatedAt: string;
   factors?: {
     completionRate: number;
@@ -825,16 +966,16 @@ export interface TrustSnapshot {
 export interface AuditEvent {
   id: string;
   correlationId?: string;
-  timestamp: string;               // UTC ISO8601
+  timestamp: string; // UTC ISO8601
   actorEmail: string;
   actorCompanyId?: string;
   actorRole?: string;
-  action: string;                  // Enum-like: HOLD_RESERVATION_CREATED, OFFER_APPROVED,...
+  action: string; // Enum-like: HOLD_RESERVATION_CREATED, OFFER_APPROVED,...
   entityType: string;
   entityId: string;
   aggregateVersion?: number;
   details: string;
-  requestId?: string;              // HTTP request ID
+  requestId?: string; // HTTP request ID
   ipAddress?: string;
 }
 
@@ -842,7 +983,16 @@ export interface Notification {
   id: string;
   recipientCompanyId: string;
   recipientUserId?: string;
-  type: 'TRANSACTION_UPDATE' | 'PAYMENT_REQUIRED' | 'DEADLINE_ALERT' | 'CASE_UPDATE' | 'RATING_REMINDER' | 'SYSTEM' | 'OPS_ALERT';
+  type:
+    | "TRANSACTION_UPDATE"
+    | "PAYMENT_REQUIRED"
+    | "DEADLINE_ALERT"
+    | "CASE_UPDATE"
+    | "RATING_REMINDER"
+    | "SYSTEM"
+    | "OPS_ALERT"
+    | "PENALTY_ALERT"
+    | "SECURITY_ALERT";
   title: string;
   body: string;
   relatedEntityId?: string;

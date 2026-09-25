@@ -417,124 +417,79 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
   return (
     <div
-      className="min-h-screen relative flex flex-col justify-between bg-cover bg-center bg-no-repeat bg-fixed text-slate-100 font-sans selection:bg-blue-600 selection:text-white"
+      className="min-h-screen overflow-hidden flex flex-col justify-between bg-cover bg-center bg-no-repeat bg-fixed text-slate-100 font-sans selection:bg-blue-600 selection:text-white relative"
       style={{ backgroundImage: `url('/login-bg.jpg')` }}
     >
-      {/* Dynamic gradient overlay: darker on left for text readability, clear on right to showcase the port & cranes */}
-      <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/65 to-slate-950/30 backdrop-blur-[1.5px] pointer-events-none" />
+      {/* Soft gradient overlay: allows vibrant container colors & port brightness to shine through while text on left remains crisp */}
+      <div className="absolute inset-0 bg-gradient-to-r from-slate-950/70 via-slate-900/40 to-transparent backdrop-blur-[0.5px] pointer-events-none" />
 
       {/* TOP NAVBAR */}
-      <header className="relative z-20 w-full px-6 lg:px-12 py-5 flex items-center justify-between border-b border-white/10 bg-slate-950/30 backdrop-blur-md">
+      <header className="relative z-20 w-full px-6 lg:px-12 py-3 sm:py-3.5 flex items-center justify-between border-b border-white/10 bg-slate-950/40 backdrop-blur-md">
         <div className="flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white text-2xl font-black shadow-lg shadow-blue-500/30 border border-white/20">
+          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white text-xl sm:text-2xl font-black shadow-lg shadow-blue-500/30 border border-white/20">
             E
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl font-black tracking-tight text-white drop-shadow">
+              <span className="text-lg sm:text-xl font-black tracking-tight text-white drop-shadow">
                 ECont Logistics
               </span>
               <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-400/30">
                 Street-Turn 2.0
               </span>
             </div>
-            <p className="text-xs text-slate-300 hidden sm:block">
+            <p className="text-[11px] sm:text-xs text-slate-300 hidden sm:block">
               Nền tảng Tái sử dụng & Điều phối Vỏ Container Rỗng
             </p>
           </div>
         </div>
 
-        {/* Top-Right Action Buttons */}
+        {/* Top-Right Action Button: simplified to just 'Đăng nhập' to avoid redundancy with Hero CTA */}
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => handleOpenAuth("login")}
-            className="px-4 sm:px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md shadow-sm transition-all duration-200 flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
+            className="px-4 sm:px-5 py-2 rounded-xl text-xs sm:text-sm font-semibold text-white bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md shadow-sm transition-all duration-200 flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
           >
-            <LogIn className="w-4 h-4 text-blue-300" />
+            <LogIn className="w-4 h-4 text-cyan-300" />
             <span>Đăng nhập</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleOpenAuth("register")}
-            className="px-4 sm:px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 shadow-lg shadow-blue-600/30 border border-blue-400/30 transition-all duration-200 flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Đăng ký tài khoản</span>
           </button>
         </div>
       </header>
 
       {/* MAIN HERO CONTENT (Left / Middle Screen) */}
-      <main className="relative z-10 flex-1 flex flex-col justify-center px-6 sm:px-12 lg:px-16 py-12 max-w-4xl">
+      <main className="relative z-10 flex-1 flex flex-col justify-center px-6 sm:px-12 lg:px-16 py-3 sm:py-4 max-w-4xl">
         {/* Category Pill */}
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-semibold uppercase tracking-wider backdrop-blur-md mb-6 w-fit animate-in fade-in slide-in-from-bottom-2 duration-500">
-          <Sparkles className="w-3.5 h-3.5 text-blue-300" />
-          <span>Giải pháp Logistics Cảng biển & Nhà máy thông minh</span>
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-[11px] sm:text-xs font-semibold uppercase tracking-wider backdrop-blur-md mb-2 sm:mb-2.5 w-fit animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <Sparkles className="w-3.5 h-3.5 text-cyan-300" />
+          <span>Giải pháp Logistics</span>
         </div>
 
-        {/* Main Headline */}
-        <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white leading-[1.15] tracking-tight drop-shadow-lg">
+        {/* Main Headline (H1): font text-3xl md:text-5xl lg:text-5xl leading-tight, balanced wrapping */}
+        <h1 className="text-3xl md:text-5xl lg:text-5xl font-black text-white leading-tight tracking-tight drop-shadow-lg max-w-3xl">
           Tối ưu hóa vòng quay{" "}
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-sky-300 to-teal-300">
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-sky-300 to-cyan-300">
             Container rỗng
           </span>
-          <br className="hidden sm:inline" />
-          <span className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-slate-100 mt-2 block">
-            Kết nối trực tiếp Chủ hàng & Vận tải
+          <span className="block text-2xl md:text-4xl lg:text-4xl font-extrabold text-slate-100 mt-1 sm:mt-1.5">
+            Kết nối trực tiếp Chủ hàng &amp;{" "}
+            <span className="whitespace-nowrap">Vận tải</span>
           </span>
         </h1>
 
-        {/* Subtitle */}
-        <p className="mt-5 text-base sm:text-lg text-slate-200/90 leading-relaxed font-normal max-w-2xl drop-shadow">
-          Mô hình điều phối <strong>Street-turn</strong> tiên phong tại Việt
-          Nam: Chuyển vỏ container rỗng nhập khẩu trực tiếp tới đơn vị đóng hàng
-          xuất khẩu. Cắt giảm 50% chi phí chạy xe rỗng, giải tỏa áp lực bãi cảng
-          Cát Lái - Cái Mép và đối soát tự động với Hãng tàu.
+        {/* Subtitle: concise 2-3 lines */}
+        <p className="mt-2 sm:mt-2.5 text-sm sm:text-base text-slate-200/90 leading-relaxed font-normal max-w-2xl drop-shadow">
+          Mô hình điều phối <strong>Street-turn</strong> tiên phong: Tái sử dụng
+          vỏ container rỗng nhập khẩu cho hàng xuất khẩu trực tiếp, cắt giảm 50%
+          chi phí xe rỗng và đối soát tự động với Hãng tàu.
         </p>
 
-        {/* 3 Core Value Cards */}
-        <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3.5 max-w-2xl">
-          <div className="rounded-2xl p-4 bg-slate-900/60 border border-white/10 backdrop-blur-md shadow-lg hover:border-blue-400/30 transition-all">
-            <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-300 mb-2.5">
-              <Boxes className="w-4 h-4" />
-            </div>
-            <h4 className="text-sm font-bold text-white">Khớp lệnh tự động</h4>
-            <p className="text-xs text-slate-300 mt-1">
-              Ghép cont theo Hãng tàu, cự ly Dmax và hạn Cut-off booking.
-            </p>
-          </div>
-
-          <div className="rounded-2xl p-4 bg-slate-900/60 border border-white/10 backdrop-blur-md shadow-lg hover:border-emerald-400/30 transition-all">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-300 mb-2.5">
-              <FileCheck2 className="w-4 h-4" />
-            </div>
-            <h4 className="text-sm font-bold text-white">Duyệt RU Hãng tàu</h4>
-            <p className="text-xs text-slate-300 mt-1">
-              Quản lý công văn RU điện tử, phân bổ phí chia sẻ minh bạch.
-            </p>
-          </div>
-
-          <div className="rounded-2xl p-4 bg-slate-900/60 border border-white/10 backdrop-blur-md shadow-lg hover:border-amber-400/30 transition-all">
-            <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-300 mb-2.5">
-              <Shield className="w-4 h-4" />
-            </div>
-            <h4 className="text-sm font-bold text-white">
-              Giám định IICL 6 mặt
-            </h4>
-            <p className="text-xs text-slate-300 mt-1">
-              Checklist hiện trường, biên bản bàn giao kép mã băm SHA-256.
-            </p>
-          </div>
-        </div>
-
-        {/* CTA Launch Buttons */}
-        <div className="mt-8 flex flex-wrap items-center gap-4">
+        {/* CTA Launch Buttons — positioned immediately below the Street-turn description */}
+        <div className="my-3 sm:my-3.5 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => handleOpenAuth("login")}
-            className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold text-sm shadow-xl shadow-blue-500/25 border border-white/20 transition-all flex items-center gap-2.5 hover:scale-105 active:scale-95"
+            className="px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold text-xs sm:text-sm shadow-xl shadow-blue-500/25 border border-white/20 transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
           >
             <span>Vào hệ thống trải nghiệm</span>
             <ArrowRight className="w-4 h-4" />
@@ -543,23 +498,71 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           <button
             type="button"
             onClick={() => handleOpenAuth("register")}
-            className="px-6 py-3.5 rounded-2xl bg-slate-900/70 hover:bg-slate-800/80 text-white font-semibold text-sm border border-white/20 backdrop-blur-md transition-all flex items-center gap-2 hover:border-white/40"
+            className="px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white font-semibold text-xs sm:text-sm border border-white/25 backdrop-blur-md transition-all flex items-center gap-2 hover:border-white/40 active:scale-95"
           >
             <span>Đăng ký Doanh nghiệp</span>
           </button>
         </div>
+
+        {/* 3 Core Value Cards — positioned immediately below CTA with refined glassmorphism and compact padding */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 max-w-3xl w-full">
+          <div className="rounded-xl p-3 sm:p-3.5 bg-slate-900/75 hover:bg-slate-900/85 border border-white/15 backdrop-blur-md shadow-md shadow-black/20 hover:border-cyan-400/40 transition-all">
+            <div className="w-7 h-7 rounded-lg bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-cyan-300 mb-1.5">
+              <Boxes className="w-3.5 h-3.5" />
+            </div>
+            <h4 className="text-xs sm:text-sm font-bold text-white">
+              Khớp lệnh tự động
+            </h4>
+            <p className="text-[11px] sm:text-xs text-slate-200 mt-0.5 leading-snug">
+              Ghép cont theo Hãng tàu, cự ly Dmax và hạn Cut-off booking.
+            </p>
+          </div>
+
+          <div className="rounded-xl p-3 sm:p-3.5 bg-slate-900/75 hover:bg-slate-900/85 border border-white/15 backdrop-blur-md shadow-md shadow-black/20 hover:border-emerald-400/40 transition-all">
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300 mb-1.5">
+              <FileCheck2 className="w-3.5 h-3.5" />
+            </div>
+            <h4 className="text-xs sm:text-sm font-bold text-white">
+              Duyệt RU Hãng tàu
+            </h4>
+            <p className="text-[11px] sm:text-xs text-slate-200 mt-0.5 leading-snug">
+              Quản lý công văn RU điện tử, phân bổ phí chia sẻ minh bạch.
+            </p>
+          </div>
+
+          <div className="rounded-xl p-3 sm:p-3.5 bg-slate-900/75 hover:bg-slate-900/85 border border-white/15 backdrop-blur-md shadow-md shadow-black/20 hover:border-amber-400/40 transition-all">
+            <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-300 mb-1.5">
+              <Shield className="w-3.5 h-3.5" />
+            </div>
+            <h4 className="text-xs sm:text-sm font-bold text-white">
+              Giám định IICL 6 mặt
+            </h4>
+            <p className="text-[11px] sm:text-xs text-slate-200 mt-0.5 leading-snug">
+              Checklist hiện trường, biên bản bàn giao kép mã băm SHA-256.
+            </p>
+          </div>
+        </div>
       </main>
 
-      {/* FOOTER BAR */}
-      <footer className="relative z-10 w-full px-6 lg:px-12 py-3.5 border-t border-white/10 bg-slate-950/40 backdrop-blur-md flex flex-wrap items-center justify-between text-xs text-slate-300 gap-3">
-        <div className="flex items-center gap-4 flex-wrap">
-          <span>
-            📍 Cụm cảng: Tân Cảng Cát Lái · ICD Phước Long · Cảng Đình Vũ
+      {/* FOOTER BAR / TRUST BAR: enhanced contrast and legibility */}
+      <footer className="relative z-10 w-full px-6 lg:px-12 py-2.5 sm:py-3 border-t border-white/15 bg-slate-950/85 backdrop-blur-lg flex flex-wrap items-center justify-between text-xs sm:text-[13px] text-slate-200 gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-4 flex-wrap font-medium">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-slate-100 shadow-sm">
+            <span>📍</span>
+            <span>Cụm cảng:</span>
+            <strong className="text-white">
+              Tân Cảng Cát Lái · ICD Phước Long · Cái Mép · Đình Vũ
+            </strong>
           </span>
-          <span className="hidden sm:inline text-white/30">•</span>
-          <span>🚢 Hãng tàu: Maersk, CMA CGM, ONE, Evergreen, COSCO</span>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-slate-100 shadow-sm">
+            <span>🚢</span>
+            <span>Hãng tàu:</span>
+            <strong className="text-cyan-300">
+              Maersk, CMA CGM, ONE, Evergreen, COSCO
+            </strong>
+          </span>
         </div>
-        <div>
+        <div className="text-slate-300 text-xs font-normal">
           <span>© 2026 ECont Logistics. Toàn quyền bảo lưu.</span>
         </div>
       </footer>
@@ -637,98 +640,104 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 </button>
               </div>
 
-              {/* GROUPBOX: PHÂN QUYỀN TRUY CẬP (ROLE SELECTOR) */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                    <KeyRound className="w-4 h-4 text-blue-600" />
-                    <span>Phân quyền · Chọn vai trò của bạn</span>
-                  </span>
-                  <span className="text-[11px] text-slate-500 font-medium">
-                    (Bấm để tự động điền tài khoản mẫu)
-                  </span>
-                </div>
+              {/* GROUPBOX: PHÂN QUYỀN TRUY CẬP (ROLE SELECTOR) - CHỈ HIỂN THỊ KHI ĐĂNG NHẬP */}
+              {activeTab === "login" && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                      <KeyRound className="w-4 h-4 text-blue-600" />
+                      <span>Phân quyền · Chọn vai trò của bạn</span>
+                    </span>
+                    <span className="text-[11px] text-slate-500 font-medium">
+                      (Bấm để tự động điền tài khoản mẫu)
+                    </span>
+                  </div>
 
-                {/* 2 Role Selection Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {ROLE_OPTIONS.map((opt) => {
-                    const isSelected = selectedRole === opt.role;
-                    return (
-                      <div
-                        key={opt.role}
-                        onClick={() => handleSelectRole(opt.role)}
-                        className={`cursor-pointer rounded-2xl p-3.5 border transition-all text-left flex flex-col justify-between ${
-                          isSelected
-                            ? "bg-white border-blue-600 shadow-md ring-2 ring-blue-500/20"
-                            : "bg-white/80 border-slate-200 hover:border-slate-300 hover:bg-white"
-                        }`}
-                      >
-                        <div>
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="p-2 rounded-xl bg-slate-100">
-                              {opt.icon}
+                  {/* 2 Role Selection Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {ROLE_OPTIONS.map((opt) => {
+                      const isSelected = selectedRole === opt.role;
+                      return (
+                        <div
+                          key={opt.role}
+                          onClick={() => handleSelectRole(opt.role)}
+                          className={`cursor-pointer rounded-2xl p-3.5 border transition-all text-left flex flex-col justify-between ${
+                            isSelected
+                              ? "bg-white border-blue-600 shadow-md ring-2 ring-blue-500/20"
+                              : "bg-white/80 border-slate-200 hover:border-slate-300 hover:bg-white"
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="p-2 rounded-xl bg-slate-100">
+                                {opt.icon}
+                              </span>
+                              <span
+                                className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                  isSelected
+                                    ? "bg-blue-600 text-white border-blue-600"
+                                    : "bg-slate-100 text-slate-600 border-slate-200"
+                                }`}
+                              >
+                                {isSelected
+                                  ? "Đang chọn ✓"
+                                  : opt.role === "ENTERPRISE_A"
+                                    ? "Bên A · Cung cấp"
+                                    : "Bên B · Cần vỏ"}
+                              </span>
+                            </div>
+                            <div className="text-sm font-bold text-slate-900 leading-tight">
+                              {opt.name}
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
+                              {opt.desc}
+                            </p>
+                          </div>
+
+                          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs">
+                            <span className="font-mono text-slate-700 font-semibold text-[11px]">
+                              {opt.sampleCompany}
                             </span>
-                            <span
-                              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
-                                isSelected
-                                  ? "bg-blue-600 text-white border-blue-600"
-                                  : "bg-slate-100 text-slate-600 border-slate-200"
-                              }`}
-                            >
-                              {isSelected
-                                ? "Đang chọn ✓"
-                                : opt.role === "ENTERPRISE_A"
-                                  ? "Bên A · Cung cấp"
-                                  : "Bên B · Cần vỏ"}
+                            <span className="text-blue-600 font-bold hover:underline text-[11px]">
+                              {isSelected ? "Đã chọn" : "Chọn vai trò →"}
                             </span>
                           </div>
-                          <div className="text-sm font-bold text-slate-900 leading-tight">
-                            {opt.name}
-                          </div>
-                          <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
-                            {opt.desc}
-                          </p>
                         </div>
+                      );
+                    })}
+                  </div>
 
-                        <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs">
-                          <span className="font-mono text-slate-700 font-semibold text-[11px]">
-                            {opt.sampleCompany}
-                          </span>
-                          <span className="text-blue-600 font-bold hover:underline text-[11px]">
-                            {isSelected ? "Đã chọn" : "Chọn vai trò →"}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {/* Discreet Ops Access for internal operations */}
+                  <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500">
+                    <span className="flex items-center gap-1.5">
+                      <Shield className="w-3.5 h-3.5 text-amber-500" />
+                      <span>
+                        Dành riêng cho Ban Điều phối & Vận hành ECont:
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRole("OPS");
+                        const activeAccount = getAccountById("USR-OPS01");
+                        setUsername(activeAccount?.username || "ops");
+                        setPassword(activeAccount?.password || "ops123");
+                        setLoginErrors({});
+                        setLoginError("");
+                      }}
+                      className={`font-semibold transition-all flex items-center gap-1 px-2.5 py-1 rounded-lg ${
+                        selectedRole === "OPS"
+                          ? "text-amber-800 bg-amber-100 border border-amber-300 font-bold shadow-sm"
+                          : "text-amber-600 hover:text-amber-800 hover:bg-amber-50"
+                      }`}
+                    >
+                      <span>
+                        Cổng Ops Nội bộ {selectedRole === "OPS" && "✓"}
+                      </span>
+                    </button>
+                  </div>
                 </div>
-
-                {/* Discreet Ops Access for internal operations */}
-                <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500">
-                  <span className="flex items-center gap-1.5">
-                    <Shield className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Dành riêng cho Ban Điều phối & Vận hành ECont:</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedRole("OPS");
-                      const activeAccount = getAccountById("USR-OPS01");
-                      setUsername(activeAccount?.username || "ops");
-                      setPassword(activeAccount?.password || "ops123");
-                      setLoginErrors({});
-                      setLoginError("");
-                    }}
-                    className={`font-semibold transition-all flex items-center gap-1 px-2.5 py-1 rounded-lg ${
-                      selectedRole === "OPS"
-                        ? "text-amber-800 bg-amber-100 border border-amber-300 font-bold shadow-sm"
-                        : "text-amber-600 hover:text-amber-800 hover:bg-amber-50"
-                    }`}
-                  >
-                    <span>Cổng Ops Nội bộ {selectedRole === "OPS" && "✓"}</span>
-                  </button>
-                </div>
-              </div>
+              )}
 
               {/* LOGIN FORM */}
               {activeTab === "login" ? (
@@ -1280,10 +1289,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                           <option value="ENTERPRISE_B">
                             Cần vỏ Container (Bên B - Đơn vị đóng hàng xuất
                             khẩu)
-                          </option>
-                          <option value="ENTERPRISE_BOTH">
-                            Cả hai vai trò: Vừa có nguồn vỏ vừa có nhu cầu đóng
-                            hàng
                           </option>
                         </select>
                         <p className="text-[11px] text-amber-700 font-medium mt-1.5 flex items-center gap-1.5 bg-amber-50 p-2 rounded-lg border border-amber-200">

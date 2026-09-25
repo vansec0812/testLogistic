@@ -22,7 +22,15 @@ import {
 import { useDatabase } from "../context/DatabaseContext";
 import { useAuth } from "../context/AuthContext";
 import {
+  OFFER_PHOTO_ANGLE_SHORT_LABELS,
+  PENALTY_MATRIX,
+  PENALTY_LEVEL_INFO,
+  isCompanyMatchingDeprioritized,
+  isCompanyTradingBlocked,
+} from "../services/qaRules";
+import {
   ShieldCheck,
+  ShieldAlert,
   AlertTriangle,
   CheckCircle2,
   Clock,
@@ -56,7 +64,14 @@ import {
   CaseStatusBadge,
   ConditionBadge,
 } from "../components/StatusBadge";
-import { Company, CompanyStatus, Offer } from "../types";
+import {
+  Company,
+  CompanyStatus,
+  Offer,
+  PenaltyLevel,
+  ViolationType,
+  CompanyPenalty,
+} from "../types";
 import { DateTimeInput } from "../components/DateInput";
 import { bookingNeedsOpsReview, getBookingAiReviewTitle, getBookingAiEvidence, sortRequestsForOps } from "../services/bookingReview";
 import {
@@ -170,6 +185,8 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
     opsReviewOffer,
     opsReviewRequest,
     resolveCase,
+    closeCase,
+    applyPenalty,
     toggleHold,
     addCompany,
     updateCompany,
@@ -206,6 +223,27 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
   const [faultParty, setFaultParty] = useState<
     "PARTY_A" | "PARTY_B" | "PLATFORM" | "CARRIER" | "NONE"
   >("NONE");
+  const [casePenaltyLevel, setCasePenaltyLevel] = useState<
+    PenaltyLevel | "NONE"
+  >("NONE");
+  const [caseViolationType, setCaseViolationType] =
+    useState<ViolationType>("OTHER");
+  const [casePenaltyDeduction, setCasePenaltyDeduction] = useState<number>(0);
+  const [caseMatchingDeprioritizedDays, setCaseMatchingDeprioritizedDays] =
+    useState<number>(0);
+
+  // Penalty Matrix (Câu 46) State
+  const [selectedPenaltyCompany, setSelectedPenaltyCompany] =
+    useState<Company | null>(null);
+  const [penaltyLevel, setPenaltyLevel] = useState<PenaltyLevel>("LEVEL_1");
+  const [violationType, setViolationType] = useState<ViolationType>(
+    "LATE_APPOINTMENT_15M",
+  );
+  const [penaltyDeduction, setPenaltyDeduction] = useState<number>(2);
+  const [penaltyDeprioritizedDays, setPenaltyDeprioritizedDays] =
+    useState<number>(0);
+  const [penaltyNotes, setPenaltyNotes] = useState<string>("");
+  const [showPenaltyModal, setShowPenaltyModal] = useState<boolean>(false);
 
   // Company CRUD state
   const [showAddCompanyModal, setShowAddCompanyModal] = useState(false);
@@ -267,7 +305,9 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
   const aiReviewAssets = assets.filter(
     (a) =>
       (a.aiInspection?.requiresOpsReview &&
-        ["ANOMALY", "ERROR"].includes(a.aiInspection.status)) ||
+        ["ANOMALY", "ERROR", "INSPECTION_INCOMPLETE"].includes(
+          a.aiInspection.status,
+        )) ||
       (a.hasEdoDocument && a.edoVerificationStatus !== "VERIFIED"),
   );
 
@@ -339,10 +379,23 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
       faultParty,
       resolvedBy: currentUserEmail,
       resolvedAt: new Date().toISOString(),
+      penaltyLevel: casePenaltyLevel !== "NONE" ? casePenaltyLevel : undefined,
+      violationType:
+        casePenaltyLevel !== "NONE" ? caseViolationType : undefined,
+      penaltyScoreDeduction:
+        casePenaltyLevel !== "NONE" ? casePenaltyDeduction : undefined,
+      matchingDeprioritizedDays:
+        casePenaltyLevel === "LEVEL_2"
+          ? caseMatchingDeprioritizedDays
+          : undefined,
     });
     setCaseModalId(null);
     setCaseSummary("");
     setCaseErrors({});
+    setCasePenaltyLevel("NONE");
+    setCaseViolationType("OTHER");
+    setCasePenaltyDeduction(0);
+    setCaseMatchingDeprioritizedDays(0);
     alert("Đã kết luận giải quyết Case thành công.");
   };
 
@@ -1377,13 +1430,17 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                         {asset.photos.map((url, index) => (
                           <div
                             key={`${asset.id}-photo-${index}`}
-                            className="h-20 rounded-lg overflow-hidden border border-slate-200 bg-slate-100"
+                            className="relative h-20 rounded-lg overflow-hidden border border-slate-200 bg-slate-100"
                           >
                             <img
                               src={url}
                               alt={`Ảnh container ${index + 1}`}
                               className="w-full h-full object-cover"
                             />
+                            <span className="absolute bottom-0.5 left-0.5 right-0.5 text-[9px] bg-slate-900/80 text-white px-1 py-0.5 rounded truncate text-center backdrop-blur-xs">
+                              {OFFER_PHOTO_ANGLE_SHORT_LABELS[index] ||
+                                `Ảnh ${index + 1}`}
+                            </span>
                           </div>
                         ))}
                         {asset.photos.length === 0 && (
@@ -1496,23 +1553,54 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                       </div>
                     )}
 
+                    {c.appeal && (
+                      <div className="p-3 rounded-xl bg-purple-50 border border-purple-200 text-xs text-purple-900 space-y-1">
+                        <div className="flex justify-between items-center font-bold">
+                          <span>
+                            Đơn Kháng Nghị ({c.appeal.appellantParty}):
+                          </span>
+                          <span className="text-[10px] bg-purple-200 text-purple-800 px-2 py-0.5 rounded font-mono">
+                            {c.appeal.seniorVerdict
+                              ? `Đã thẩm định: ${c.appeal.seniorVerdict}`
+                              : "Chờ Senior Ops tái thẩm tra"}
+                          </span>
+                        </div>
+                        <p className="text-purple-800 leading-relaxed">
+                          {c.appeal.reason}
+                        </p>
+                        {c.appeal.seniorVerdictReason && (
+                          <p className="text-indigo-900 bg-white p-2 rounded-lg border border-purple-100 text-[11px]">
+                            <strong>Phán quyết Senior Ops:</strong>{" "}
+                            {c.appeal.seniorVerdictReason}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex justify-between items-center pt-2 border-t border-slate-200 text-xs">
                       <span className="text-slate-500">
                         {c.transactionId &&
                           `Giao dịch liên quan: ${c.transactionId}`}
                       </span>
-                      {c.status !== "RESOLVED" && c.status !== "CLOSED" && (
-                        <button
-                          onClick={() => {
-                            setCaseModalId(c.id);
-                            setCaseSummary("");
-                            setCaseErrors({});
-                          }}
-                          className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm"
-                        >
-                          Kết luận giải quyết Case
-                        </button>
+                      {c.status === "APPEAL_PENDING" && (
+                        <span className="px-3.5 py-1.5 rounded-lg bg-purple-700 text-white text-xs font-bold shadow-sm">
+                          Hàng đợi Tái thẩm tra (Senior Ops)
+                        </span>
                       )}
+                      {c.status !== "RESOLVED" &&
+                        c.status !== "CLOSED" &&
+                        c.status !== "APPEAL_PENDING" && (
+                          <button
+                            onClick={() => {
+                              setCaseModalId(c.id);
+                              setCaseSummary("");
+                              setCaseErrors({});
+                            }}
+                            className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm"
+                          >
+                            Kết luận giải quyết Case
+                          </button>
+                        )}
                     </div>
                   </div>
                 ))}
@@ -1578,9 +1666,45 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                       Đại diện: {co.representativeName} (
                       {co.representativeEmail} · {co.representativePhone})
                     </div>
+                    {/* Trust Score & Penalty Badges (Câu 46) */}
+                    <div className="flex items-center gap-2 flex-wrap pt-1">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50/70 border border-blue-100 text-blue-800 text-[11px] font-semibold">
+                        <span>Trust Score A:</span>
+                        <strong className="font-mono text-xs">
+                          {co.trustScoreA ?? 100}/100
+                        </strong>
+                      </div>
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-50/70 border border-cyan-100 text-cyan-800 text-[11px] font-semibold">
+                        <span>Trust Score B:</span>
+                        <strong className="font-mono text-xs">
+                          {co.trustScoreB ?? 100}/100
+                        </strong>
+                      </div>
+                      {co.isBlacklisted ||
+                      co.verificationStatus === "BLOCKED" ? (
+                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-red-900 text-white border border-red-950">
+                          Blacklist (Level 4 - Đình chỉ)
+                        </span>
+                      ) : co.isTradingBlocked ||
+                        co.verificationStatus === "SUSPENDED" ? (
+                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                          Khóa giao dịch (Level 3)
+                        </span>
+                      ) : null}
+                      {isCompanyMatchingDeprioritized(co) && (
+                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                          Giảm ưu tiên ghép đôi (Level 2)
+                        </span>
+                      )}
+                      {co.penalties && co.penalties.length > 0 && (
+                        <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                          {co.penalties.length} sai phạm
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Actions: Edit, Status, Delete */}
+                  {/* Actions: Edit, Status, Delete, Penalty */}
                   <div className="pt-2 border-t border-slate-200 flex items-center justify-between gap-2 flex-wrap">
                     {/* Status switcher for Ops */}
                     <div className="flex items-center gap-1.5">
@@ -1604,11 +1728,31 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                         <option value="PENDING_VERIFICATION">PENDING</option>
                         <option value="NEEDS_INFO">NEEDS_INFO</option>
                         <option value="SUSPENDED">SUSPENDED</option>
+                        <option value="BLOCKED">BLOCKED</option>
                         <option value="REJECTED">REJECTED</option>
                       </select>
                     </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          setSelectedPenaltyCompany(co);
+                          setPenaltyLevel("LEVEL_1");
+                          setViolationType("LATE_APPOINTMENT_15M");
+                          setPenaltyDeduction(
+                            PENALTY_MATRIX.LATE_APPOINTMENT_15M
+                              .defaultDeduction,
+                          );
+                          setPenaltyDeprioritizedDays(0);
+                          setPenaltyNotes("");
+                          setShowPenaltyModal(true);
+                        }}
+                        className="px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-semibold flex items-center gap-1 shadow-sm transition-colors"
+                        title="Xử lý sai phạm & Chế tài (Câu 46)"
+                      >
+                        <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Chế tài & Sai phạm</span>
+                      </button>
                       <button
                         onClick={() => {
                           setEditingCompany(co);
@@ -2050,6 +2194,156 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                   <option value="PLATFORM">Hệ thống ECont</option>
                 </select>
               </div>
+
+              {(faultParty === "PARTY_A" || faultParty === "PARTY_B") && (
+                <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-200 space-y-2">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-900 text-xs">
+                    <ShieldAlert className="w-4 h-4 text-amber-600" />
+                    <span>Áp dụng Chế tài & Trừ điểm Trust Score (Câu 46)</span>
+                  </div>
+                  <div>
+                    <label className="text-slate-700 font-semibold block mb-1">
+                      Mức độ chế tài
+                    </label>
+                    <select
+                      value={casePenaltyLevel}
+                      onChange={(e) => {
+                        const lvl = e.target.value as PenaltyLevel | "NONE";
+                        setCasePenaltyLevel(lvl);
+                        if (lvl === "LEVEL_1") {
+                          setCaseViolationType("LATE_APPOINTMENT_15M");
+                          setCasePenaltyDeduction(2);
+                          setCaseMatchingDeprioritizedDays(0);
+                        } else if (lvl === "LEVEL_2") {
+                          setCaseViolationType("NO_SHOW");
+                          setCasePenaltyDeduction(10);
+                          setCaseMatchingDeprioritizedDays(7);
+                        } else if (lvl === "LEVEL_3") {
+                          setCaseViolationType("PAYMENT_OVERDUE_2H");
+                          setCasePenaltyDeduction(15);
+                          setCaseMatchingDeprioritizedDays(0);
+                        } else if (lvl === "LEVEL_4") {
+                          setCaseViolationType("AI_INSPECTION_FRAUD");
+                          setCasePenaltyDeduction(100);
+                          setCaseMatchingDeprioritizedDays(0);
+                        } else {
+                          setCaseViolationType("OTHER");
+                          setCasePenaltyDeduction(0);
+                          setCaseMatchingDeprioritizedDays(0);
+                        }
+                      }}
+                      className="w-full p-2 rounded-lg border border-slate-200 outline-none text-xs"
+                    >
+                      <option value="NONE">Không áp dụng chế tài</option>
+                      <option value="LEVEL_1">
+                        Level 1 (Nhẹ): Trừ 1–2 điểm Trust Score
+                      </option>
+                      <option value="LEVEL_2">
+                        Level 2 (Vận hành): Trừ 5–10 điểm + Khóa ưu tiên ghép
+                        đôi
+                      </option>
+                      <option value="LEVEL_3">
+                        Level 3 (Tài chính): Khóa giao dịch mới, cảnh báo đình
+                        chỉ
+                      </option>
+                      <option value="LEVEL_4">
+                        Level 4 (Gian lận): Blacklist, đình chỉ vĩnh viễn
+                        (BLOCKED)
+                      </option>
+                    </select>
+                  </div>
+
+                  {casePenaltyLevel !== "NONE" && (
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label className="text-slate-700 font-semibold block mb-1">
+                          Hành vi vi phạm
+                        </label>
+                        <select
+                          value={caseViolationType}
+                          onChange={(e) => {
+                            const vt = e.target.value as ViolationType;
+                            setCaseViolationType(vt);
+                            const cfg = PENALTY_MATRIX[vt];
+                            if (cfg) {
+                              setCasePenaltyDeduction(cfg.defaultDeduction);
+                              setCaseMatchingDeprioritizedDays(
+                                cfg.matchingDeprioritizedDays || 0,
+                              );
+                            }
+                          }}
+                          className="w-full p-2 rounded-lg border border-slate-200 outline-none text-xs"
+                        >
+                          {casePenaltyLevel === "LEVEL_1" && (
+                            <>
+                              <option value="LATE_APPOINTMENT_15M">
+                                Trễ hẹn giao nhận &gt;15 phút
+                              </option>
+                              <option value="SLOW_CHAT_RESPONSE_24H">
+                                Phản hồi chat chậm &gt;24 giờ
+                              </option>
+                              <option value="OTHER">Vi phạm nhẹ khác</option>
+                            </>
+                          )}
+                          {casePenaltyLevel === "LEVEL_2" && (
+                            <>
+                              <option value="NO_SHOW">
+                                No-show không nhận/giao cont
+                              </option>
+                              <option value="LATE_CANCELLATION">
+                                Hủy giao dịch cận giờ
+                              </option>
+                              <option value="WRONG_SPECIFICATION">
+                                Khai sai quy cách cont
+                              </option>
+                              <option value="OTHER">
+                                Vi phạm vận hành khác
+                              </option>
+                            </>
+                          )}
+                          {casePenaltyLevel === "LEVEL_3" && (
+                            <>
+                              <option value="PAYMENT_OVERDUE_2H">
+                                Không thanh toán đúng hạn 2 giờ
+                              </option>
+                              <option value="RU_FEE_OVERDUE">
+                                Chậm nộp phí RU hãng tàu
+                              </option>
+                            </>
+                          )}
+                          {casePenaltyLevel === "LEVEL_4" && (
+                            <>
+                              <option value="AI_INSPECTION_FRAUD">
+                                Làm giả ảnh giám định
+                              </option>
+                              <option value="FAKE_CONTAINER_NUMBER">
+                                Giả mạo số container
+                              </option>
+                              <option value="SWAP_DAMAGED_CONTAINER">
+                                Tráo vỏ container mục nát
+                              </option>
+                            </>
+                          )}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-slate-700 font-semibold block mb-1">
+                          Điểm trừ Trust Score
+                        </label>
+                        <input
+                          type="number"
+                          value={casePenaltyDeduction}
+                          onChange={(e) =>
+                            setCasePenaltyDeduction(Number(e.target.value))
+                          }
+                          className="w-full p-2 rounded-lg border border-slate-200 outline-none text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label
                   htmlFor="caseSummary"
@@ -2088,6 +2382,349 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                 className="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white"
               >
                 Chốt kết luận Case
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Chế tài & Sai phạm Doanh nghiệp (Câu 46) */}
+      {showPenaltyModal && selectedPenaltyCompany && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-amber-600" />
+                  <span>Xử lý Sai phạm & Chế tài Doanh nghiệp (Câu 46)</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Doanh nghiệp:{" "}
+                  <strong className="text-slate-800">
+                    {selectedPenaltyCompany.shortName}
+                  </strong>{" "}
+                  ({selectedPenaltyCompany.companyName})
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowPenaltyModal(false);
+                  setSelectedPenaltyCompany(null);
+                }}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Current Status Overview */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
+              <div>
+                <span className="text-slate-500 block">Trust Score A</span>
+                <span className="font-bold text-blue-700 font-mono text-sm">
+                  {selectedPenaltyCompany.trustScoreA ?? 100}/100
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-500 block">Trust Score B</span>
+                <span className="font-bold text-cyan-700 font-mono text-sm">
+                  {selectedPenaltyCompany.trustScoreB ?? 100}/100
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-500 block">Trạng thái</span>
+                <span className="font-semibold text-slate-800">
+                  {selectedPenaltyCompany.verificationStatus}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-500 block">Khóa giao dịch</span>
+                <span
+                  className={`font-semibold ${selectedPenaltyCompany.isTradingBlocked ? "text-rose-600" : "text-emerald-600"}`}
+                >
+                  {selectedPenaltyCompany.isTradingBlocked
+                    ? "Đang khóa"
+                    : "Bình thường"}
+                </span>
+              </div>
+            </div>
+
+            {/* Lịch sử vi phạm */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                Lịch sử chế tài đã ghi nhận (
+                {selectedPenaltyCompany.penalties?.length || 0})
+              </h4>
+              {selectedPenaltyCompany.penalties &&
+              selectedPenaltyCompany.penalties.length > 0 ? (
+                <div className="max-h-36 overflow-y-auto space-y-1.5 border border-slate-200 rounded-xl p-2.5 bg-slate-50/50">
+                  {selectedPenaltyCompany.penalties.map((pen) => (
+                    <div
+                      key={pen.id}
+                      className="p-2 rounded-lg bg-white border border-slate-200 text-[11px] flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${PENALTY_LEVEL_INFO[pen.level].badgeClass}`}
+                          >
+                            {PENALTY_LEVEL_INFO[pen.level].label}
+                          </span>
+                          <strong className="text-slate-800">
+                            {pen.title}
+                          </strong>
+                        </div>
+                        <p className="text-slate-500 text-[10px] mt-0.5">
+                          {pen.description}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-rose-600 font-mono font-bold">
+                          -{pen.scoreDeduction} điểm
+                        </span>
+                        <div className="text-[10px] text-slate-400">
+                          {formatDate(pen.appliedAt)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">
+                  Doanh nghiệp chưa có ghi nhận sai phạm nào.
+                </p>
+              )}
+            </div>
+
+            {/* Form áp dụng chế tài mới */}
+            <div className="space-y-3 pt-3 border-t border-slate-200 text-xs">
+              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                Quyết định áp dụng Chế tài mới
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-700 font-semibold block mb-1">
+                    Cấp độ sai phạm (Penalty Level) <RequiredMark />
+                  </label>
+                  <select
+                    value={penaltyLevel}
+                    onChange={(e) => {
+                      const lvl = e.target.value as PenaltyLevel;
+                      setPenaltyLevel(lvl);
+                      if (lvl === "LEVEL_1") {
+                        setViolationType("LATE_APPOINTMENT_15M");
+                        setPenaltyDeduction(2);
+                        setPenaltyDeprioritizedDays(0);
+                      } else if (lvl === "LEVEL_2") {
+                        setViolationType("NO_SHOW");
+                        setPenaltyDeduction(10);
+                        setPenaltyDeprioritizedDays(7);
+                      } else if (lvl === "LEVEL_3") {
+                        setViolationType("PAYMENT_OVERDUE_2H");
+                        setPenaltyDeduction(15);
+                        setPenaltyDeprioritizedDays(0);
+                      } else if (lvl === "LEVEL_4") {
+                        setViolationType("AI_INSPECTION_FRAUD");
+                        setPenaltyDeduction(100);
+                        setPenaltyDeprioritizedDays(0);
+                      }
+                    }}
+                    className="w-full p-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500 font-medium"
+                  >
+                    <option value="LEVEL_1">
+                      Level 1 (Nhẹ): Trừ 1–2 điểm Trust Score
+                    </option>
+                    <option value="LEVEL_2">
+                      Level 2 (Vận hành): Trừ 5–10 điểm + Khóa ưu tiên ghép đôi
+                    </option>
+                    <option value="LEVEL_3">
+                      Level 3 (Tài chính): Khóa giao dịch mới, cảnh báo đình chỉ
+                    </option>
+                    <option value="LEVEL_4">
+                      Level 4 (Gian lận): Blacklist, đình chỉ vĩnh viễn
+                      (BLOCKED)
+                    </option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-slate-700 font-semibold block mb-1">
+                    Hành vi vi phạm cụ thể <RequiredMark />
+                  </label>
+                  <select
+                    value={violationType}
+                    onChange={(e) => {
+                      const vt = e.target.value as ViolationType;
+                      setViolationType(vt);
+                      const cfg = PENALTY_MATRIX[vt];
+                      if (cfg) {
+                        setPenaltyDeduction(cfg.defaultDeduction);
+                        setPenaltyDeprioritizedDays(
+                          cfg.matchingDeprioritizedDays || 0,
+                        );
+                      }
+                    }}
+                    className="w-full p-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500 font-medium"
+                  >
+                    {penaltyLevel === "LEVEL_1" && (
+                      <>
+                        <option value="LATE_APPOINTMENT_15M">
+                          Trễ hẹn giao nhận &gt;15 phút
+                        </option>
+                        <option value="SLOW_CHAT_RESPONSE_24H">
+                          Phản hồi trao đổi chậm &gt;24 giờ
+                        </option>
+                        <option value="OTHER">Vi phạm nhẹ khác</option>
+                      </>
+                    )}
+                    {penaltyLevel === "LEVEL_2" && (
+                      <>
+                        <option value="NO_SHOW">
+                          No-show (không đến điểm hẹn)
+                        </option>
+                        <option value="LATE_CANCELLATION">
+                          Hủy giao dịch cận giờ
+                        </option>
+                        <option value="WRONG_SPECIFICATION">
+                          Khai sai quy cách/tình trạng container
+                        </option>
+                        <option value="OTHER">Vi phạm vận hành khác</option>
+                      </>
+                    )}
+                    {penaltyLevel === "LEVEL_3" && (
+                      <>
+                        <option value="PAYMENT_OVERDUE_2H">
+                          Không thanh toán đúng hạn 2 giờ
+                        </option>
+                        <option value="RU_FEE_OVERDUE">
+                          Chậm nộp phí RU hãng tàu
+                        </option>
+                      </>
+                    )}
+                    {penaltyLevel === "LEVEL_4" && (
+                      <>
+                        <option value="AI_INSPECTION_FRAUD">
+                          Làm giả ảnh giám định container
+                        </option>
+                        <option value="FAKE_CONTAINER_NUMBER">
+                          Giả mạo số container
+                        </option>
+                        <option value="SWAP_DAMAGED_CONTAINER">
+                          Tráo vỏ container mục nát
+                        </option>
+                      </>
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-700 font-semibold block mb-1">
+                    Điểm trừ Trust Score <RequiredMark />
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={penaltyDeduction}
+                    onChange={(e) =>
+                      setPenaltyDeduction(Number(e.target.value))
+                    }
+                    className="w-full p-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+                  />
+                  <span className="text-[11px] text-slate-400 mt-0.5 block">
+                    Gợi ý ma trận: {PENALTY_MATRIX[violationType]?.minDeduction}
+                    –{PENALTY_MATRIX[violationType]?.maxDeduction} điểm
+                  </span>
+                </div>
+
+                {penaltyLevel === "LEVEL_2" ? (
+                  <div>
+                    <label className="text-slate-700 font-semibold block mb-1">
+                      Số ngày giảm ưu tiên ghép đôi (Matching Deprioritization){" "}
+                      <RequiredMark />
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={90}
+                      value={penaltyDeprioritizedDays}
+                      onChange={(e) =>
+                        setPenaltyDeprioritizedDays(Number(e.target.value))
+                      }
+                      className="w-full p-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+                    />
+                    <span className="text-[11px] text-slate-400 mt-0.5 block">
+                      Khóa quyền ưu tiên ghép đôi trong X ngày
+                    </span>
+                  </div>
+                ) : (
+                  <div>
+                    <span className="text-slate-700 font-semibold block mb-1">
+                      Hậu quả chế tài
+                    </span>
+                    <div className="p-2.5 rounded-lg bg-amber-50/70 border border-amber-200 text-amber-900 text-xs">
+                      {PENALTY_LEVEL_INFO[penaltyLevel].summary}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-slate-700 font-semibold block mb-1">
+                  Căn cứ / Ghi chú xử lý của Ops
+                </label>
+                <textarea
+                  value={penaltyNotes}
+                  onChange={(e) => setPenaltyNotes(e.target.value)}
+                  placeholder="Ghi rõ số biên bản, mã giao dịch hoặc bằng chứng sai phạm..."
+                  rows={2}
+                  className="w-full p-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => {
+                  setShowPenaltyModal(false);
+                  setSelectedPenaltyCompany(null);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                onClick={() => {
+                  const res = applyPenalty(
+                    selectedPenaltyCompany.id,
+                    {
+                      level: penaltyLevel,
+                      violationType,
+                      title:
+                        PENALTY_MATRIX[violationType]?.name ||
+                        "Chế tài sai phạm",
+                      description:
+                        penaltyNotes.trim() ||
+                        PENALTY_MATRIX[violationType]?.description,
+                      scoreDeduction: penaltyDeduction,
+                      matchingDeprioritizedDays:
+                        penaltyLevel === "LEVEL_2"
+                          ? penaltyDeprioritizedDays
+                          : undefined,
+                    },
+                    "BOTH",
+                  );
+                  alert(res.message);
+                  setShowPenaltyModal(false);
+                  setSelectedPenaltyCompany(null);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-sm flex items-center gap-1.5"
+              >
+                <ShieldAlert className="w-4 h-4" />
+                <span>Thực thi Chế tài ngay</span>
               </button>
             </div>
           </div>

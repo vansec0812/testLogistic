@@ -13,6 +13,7 @@ import {
   ConditionBadge,
 } from "../components/StatusBadge";
 import { formatVnd, formatDateTime, formatRelativeTime } from "../lib/utils";
+import { OFFER_PHOTO_ANGLE_LABELS } from "../services/qaRules";
 import {
   FileText,
   Ship,
@@ -453,6 +454,11 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       errors.inspectionChecklist =
         "Vui lòng xác nhận đủ 6 hạng mục kiểm tra IICL.";
     }
+    if (inspectionPhotos.length < 6) {
+      const missingCount = 6 - inspectionPhotos.length;
+      errors.inspectionPhotos = `INSPECTION_INCOMPLETE: Bộ ảnh chụp thực địa thiếu ${missingCount}/6 góc bắt buộc theo chuẩn IICL. Yêu cầu tải đủ 6 góc ảnh trước khi chuyển sang bước tiếp theo.`;
+      errors.inspectionChecklist = `INSPECTION_INCOMPLETE: Bộ ảnh thiếu ${missingCount} góc ảnh bắt buộc (1. Mặt trước container, 2. Cửa sau container, 3. Vách trái, 4. Vách phải, 5. Bên trong container, 6. Tem số container/CSC plate).`;
+    }
     if (isDiscrepancy && !discrepancyNote.trim()) {
       errors.discrepancyNote =
         "Vui lòng mô tả chi tiết sai lệch/hư hỏng thực tế.";
@@ -473,6 +479,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       isDiscrepancyFound: isDiscrepancy,
       discrepancyNotes: discrepancyNote.trim(),
       discrepancySeverity: isDiscrepancy ? discrepancySeverity : undefined,
+      photos: inspectionPhotos,
     });
     if (!result.success) {
       setInspectionErrors({ inspectionChecklist: result.message });
@@ -1413,14 +1420,26 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
                 {/* Photo upload at inspection */}
                 <div className="pt-2 border-t border-slate-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-slate-800">
-                      Ảnh chụp hiện trường giám định ({inspectionPhotos.length}{" "}
-                      ảnh)
-                    </span>
-                    <label className="cursor-pointer text-xs font-semibold text-brand-600 hover:text-brand-700 flex items-center gap-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5 text-blue-600" />
+                        Ảnh hiện trường 6 góc chuẩn IICL (
+                        {inspectionPhotos.length}/6 ảnh) <RequiredMark />
+                      </span>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Bắt buộc 6 góc: 1. Mặt trước container, 2. Cửa sau
+                        container, 3. Vách trái, 4. Vách phải, 5. Bên trong
+                        container, 6. Tem số container/CSC plate.
+                      </p>
+                    </div>
+                    <label className="cursor-pointer text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 flex items-center gap-1 shrink-0">
                       <Camera className="w-3.5 h-3.5" />
-                      <span>Tải ảnh hiện trường</span>
+                      <span>
+                        {inspectionPhotos.length < 6
+                          ? "Chụp thêm góc ảnh"
+                          : "Thêm ảnh hiện trường"}
+                      </span>
                       <input
                         type="file"
                         accept="image/*"
@@ -1430,20 +1449,68 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       />
                     </label>
                   </div>
-                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
                     {inspectionPhotos.map((url, idx) => (
                       <div
                         key={idx}
-                        className="h-16 rounded-lg overflow-hidden border border-slate-200 bg-slate-100"
+                        className="relative h-20 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 group shadow-xs"
                       >
                         <img
                           src={url}
                           alt={`Ảnh kiểm tra ${idx + 1}`}
                           className="w-full h-full object-cover"
                         />
+                        <span className="absolute bottom-1 left-1 right-1 text-[10px] bg-slate-900/80 text-white px-1.5 py-0.5 rounded truncate text-center backdrop-blur-xs">
+                          {OFFER_PHOTO_ANGLE_LABELS[idx] || `Ảnh ${idx + 1}`}
+                        </span>
                       </div>
                     ))}
                   </div>
+
+                  {inspectionPhotos.length < 6 && (
+                    <div className="mt-3 p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <div>
+                          <strong>INSPECTION_INCOMPLETE:</strong> Đã có{" "}
+                          {inspectionPhotos.length}/6 góc ảnh. Cần đủ 6 góc ảnh
+                          thực địa trước khi chuyển sang bước tiếp theo.
+                          <div className="text-[11px] text-amber-700 mt-0.5">
+                            Góc kế tiếp cần chụp:{" "}
+                            <strong>
+                              {
+                                OFFER_PHOTO_ANGLE_LABELS[
+                                  inspectionPhotos.length
+                                ]
+                              }
+                            </strong>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInspectionPhotos([
+                            "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800",
+                            "https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=800",
+                            "https://images.unsplash.com/photo-1559297434-fae8a1916a79?w=800",
+                            "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800",
+                            "https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=800",
+                            "https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=800",
+                          ]);
+                          setInspectionErrors((p) => ({
+                            ...p,
+                            inspectionPhotos: "",
+                            inspectionChecklist: "",
+                          }));
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-amber-200 hover:bg-amber-300 text-amber-950 font-bold text-xs transition-colors shrink-0"
+                      >
+                        Nạp mẫu 6 góc IICL
+                      </button>
+                    </div>
+                  )}
+                  <FieldError message={inspectionErrors.inspectionPhotos} />
                 </div>
 
                 {/* Tùy chọn báo hư hỏng */}

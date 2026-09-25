@@ -932,7 +932,9 @@ export const INITIAL_CASES: CaseIssue[] = [
       resolvedBy: "ops.lead@econt.vn",
       resolvedAt: hAgo(1),
     },
-    closedAt: hAgo(1),
+    appealWindowExpiresAt: new Date(
+      Date.now() + 47 * 3600 * 1000,
+    ).toISOString(),
     createdAt: hAgo(7),
     updatedAt: hAgo(1),
   },
@@ -951,6 +953,51 @@ export const INITIAL_CASES: CaseIssue[] = [
     evidenceFileIds: [],
     createdAt: hAgo(3),
     updatedAt: hAgo(1),
+  },
+  {
+    id: "CASE-003",
+    transactionId: "TXN-2026-0042",
+    openedByCompanyId: "COMP-B01",
+    openedByCompanyName: "Toàn Cầu Export Corp",
+    assignedToOpsEmail: "ops.lead@econt.vn",
+    caseType: "NO_SHOW",
+    title: "Kháng nghị kết luận lỗi No-show lúc nhận cont tại Cát Lái",
+    description:
+      "Tài xế Bên B đến trạm lúc 10:15 do tắc đường ngoài cổng cảng, nhưng Ops sơ thẩm kết luận lỗi hoàn toàn thuộc Bên B và áp dụng chế tài Level 2.",
+    status: "APPEAL_PENDING",
+    priority: "HIGH",
+    evidenceFileIds: [],
+    resolution: {
+      summary:
+        "Ops sơ thẩm kết luận Bên B trễ hẹn quá 30 phút không thông báo trước. Áp dụng chế tài Level 2.",
+      faultParty: "PARTY_B",
+      resolvedBy: "ops.specialist@econt.vn",
+      resolvedAt: hAgo(12),
+      penaltyLevel: "LEVEL_2",
+      violationType: "NO_SHOW",
+      penaltyScoreDeduction: 10,
+      matchingDeprioritizedDays: 7,
+    },
+    appealWindowExpiresAt: new Date(
+      Date.now() + 36 * 3600 * 1000,
+    ).toISOString(),
+    appealedAt: hAgo(2),
+    appealReason:
+      "Bên B đã cung cấp định vị GPS của xe đầu kéo và camera giám sát cổng Cảng Cát Lái chứng minh xe đã có mặt tại khu vực chờ từ 09:55, do hệ thống cân xe của cảng bị nghẽn cục bộ nên bảo vệ giữ lại. Đề nghị Quản trị viên cấp cao thẩm tra lại độc lập và gỡ bỏ chế tài Level 2.",
+    appeal: {
+      id: "APL-DEMO-001",
+      caseId: "CASE-003",
+      appellantParty: "PARTY_B",
+      appellantCompanyId: "COMP-B01",
+      appellantCompanyName: "Toàn Cầu Export Corp",
+      appellantName: "Trần Thị Mai (Giám đốc Logistics)",
+      appellantEmail: "mai.tran@toancaugroups.vn",
+      reason:
+        "Bên B đã cung cấp định vị GPS của xe đầu kéo và camera giám sát cổng Cảng Cát Lái chứng minh xe đã có mặt tại khu vực chờ từ 09:55, do hệ thống cân xe của cảng bị nghẽn cục bộ nên bảo vệ giữ lại. Đề nghị Quản trị viên cấp cao thẩm tra lại độc lập và gỡ bỏ chế tài Level 2.",
+      submittedAt: hAgo(2),
+    },
+    createdAt: hAgo(24),
+    updatedAt: hAgo(2),
   },
 ];
 

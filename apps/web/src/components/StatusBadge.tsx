@@ -12,6 +12,7 @@ import {
   CompanyStatus,
   PermitStatus,
   CaseStatus,
+  AiInspectionStatus,
 } from "../types";
 
 interface BadgeProps {
@@ -414,6 +415,10 @@ const CASE_STATUS_MAP: Record<CaseStatus, StatusBadgeInfo> = {
     label: "Cần bổ sung TT",
     className: "bg-orange-50 text-orange-700 border-orange-200",
   },
+  APPEAL_PENDING: {
+    label: "Chờ tái thẩm tra",
+    className: "bg-purple-50 text-purple-700 border-purple-200",
+  },
   RESOLVED: {
     label: "Đã giải quyết",
     className: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -480,6 +485,53 @@ export const TrustScoreBadge: React.FC<{
       {label && (
         <span className="ml-1 text-slate-400 font-normal">({label})</span>
       )}
+    </span>
+  );
+};
+
+// ==================== AI INSPECTION STATUS ====================
+
+const AI_INSPECTION_STATUS_MAP: Record<AiInspectionStatus, StatusBadgeInfo> = {
+  NOT_RUN: {
+    label: "Chưa quét AI",
+    className: "bg-slate-100 text-slate-600 border-slate-200",
+  },
+  CLEAN: {
+    label: "Đạt chuẩn AI",
+    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  },
+  ANOMALY: {
+    label: "Phát hiện bất thường",
+    className: "bg-amber-50 text-amber-700 border-amber-200",
+  },
+  INSPECTION_INCOMPLETE: {
+    label: "Thiếu ảnh (INCOMPLETE)",
+    className: "bg-orange-50 text-orange-700 border-orange-200",
+  },
+  OPS_VERIFIED: {
+    label: "Ops đã duyệt",
+    className: "bg-blue-50 text-blue-700 border-blue-200",
+  },
+  OPS_REJECTED: {
+    label: "Ops từ chối",
+    className: "bg-red-50 text-red-700 border-red-200",
+  },
+  ERROR: {
+    label: "Lỗi kiểm tra",
+    className: "bg-red-50 text-red-700 border-red-200",
+  },
+};
+
+export const AiInspectionStatusBadge: React.FC<
+  { status: AiInspectionStatus } & BadgeProps
+> = ({ status, size = "sm" }) => {
+  const info = AI_INSPECTION_STATUS_MAP[status] || {
+    label: status,
+    className: "bg-slate-100 text-slate-600 border-slate-200",
+  };
+  return (
+    <span className={`${getBadgeClasses(size)} ${info.className}`}>
+      {info.label}
     </span>
   );
 };

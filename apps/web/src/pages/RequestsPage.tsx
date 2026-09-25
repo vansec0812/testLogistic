@@ -19,7 +19,9 @@ import {
   formatDistance,
   formatDate,
   formatRelativeTime,
+  maskPrivateData,
 } from "../lib/utils";
+export { maskPrivateData } from "../lib/utils";
 import {
   Search,
   Plus,
@@ -121,6 +123,7 @@ function MatchCandidateCard({
   onChat?: () => void;
 }) {
   const [showPricing, setShowPricing] = useState(false);
+  const { currentRole, currentCompany, canOpsReview } = useAuth();
   const {
     offer,
     distanceKm,
@@ -262,7 +265,12 @@ function MatchCandidateCard({
       <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
         <span className="text-xs text-slate-500 font-medium truncate flex items-center gap-1">
           <MapPin className="w-3.5 h-3.5 text-slate-400" />
-          Khu vực: {offer.pickupLocationName}
+          Khu vực:{" "}
+          {maskPrivateData(offer.pickupLocationName, offer.status, {
+            isOps: currentRole === "OPS" || canOpsReview,
+            isOwner: offer.companyId === currentCompany.id,
+            field: "address",
+          })}
         </span>
         <div className="flex items-center gap-1.5">
           {onChat && (
@@ -296,6 +304,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
   const {
     requests,
     offers,
+    companies,
     addRequest,
     updateRequest,
     deleteRequest,
@@ -526,19 +535,19 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
     const map: Record<string, ReturnType<typeof findMatchesForRequest>> = {};
     requests.forEach((req) => {
       if (req.status === "OPEN") {
-        map[req.id] = findMatchesForRequest(req, availableOffers);
+        map[req.id] = findMatchesForRequest(req, availableOffers, 3, companies);
       }
     });
     return map;
-  }, [requests, availableOffers]);
+  }, [requests, availableOffers, companies]);
 
   // Matching candidates for manually opened request
   const activeMatchResults = useMemo(() => {
     if (!matchingForId) return null;
     const req = requests.find((r) => r.id === matchingForId);
     if (!req) return null;
-    return findMatchesForRequest(req, availableOffers);
-  }, [matchingForId, requests, availableOffers]);
+    return findMatchesForRequest(req, availableOffers, 3, companies);
+  }, [matchingForId, requests, availableOffers, companies]);
 
   const clearRequestError = (field: string) => {
     setFormErrors((previous) => {
@@ -1724,7 +1733,13 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                   </div>
                   <div className="text-xs text-slate-600 mt-1.5 flex items-center gap-1.5">
                     <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
-                    <span>{req.deliveryLocationName}</span>
+                    <span>
+                      {maskPrivateData(req.deliveryLocationName, req.status, {
+                        isOps: currentRole === "OPS" || canOpsReview,
+                        isOwner: req.companyId === currentCompany.id,
+                        field: "address",
+                      })}
+                    </span>
                   </div>
                   <div className="text-xs text-slate-500 mt-1.5 flex items-center gap-3 flex-wrap">
                     <span>
@@ -1811,7 +1826,17 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                       </div>
                       <p className="text-xs text-slate-600 mt-0.5">
                         Cách {bestMatch.distanceKm}km (
-                        {bestMatch.offer.pickupLocationName}) · Tiết kiệm:{" "}
+                        {maskPrivateData(
+                          bestMatch.offer.pickupLocationName,
+                          bestMatch.offer.status,
+                          {
+                            isOps: currentRole === "OPS" || canOpsReview,
+                            isOwner:
+                              bestMatch.offer.companyId === currentCompany.id,
+                            field: "address",
+                          },
+                        )}
+                        ) · Tiết kiệm:{" "}
                         <strong className="font-mono text-emerald-700 font-bold">
                           {formatVnd(Math.abs(bestMatch.quote.sBVnd))}
                         </strong>

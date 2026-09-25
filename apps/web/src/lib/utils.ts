@@ -169,3 +169,82 @@ export function truncate(str: string, max = 50): string {
 export function cn(...classes: (string | undefined | null | false)[]): string {
   return classes.filter(Boolean).join(" ");
 }
+
+/**
+ * Helper che (masking) thông tin nhạy cảm theo tài liệu ECont Round Use Workflow:
+ * - Trạng thái TRƯỚC ACCEPTED (DRAFT, OFFER_CREATED, AVAILABLE, OPEN, MATCH_REQUESTED, MATCHED, NEGOTIATING):
+ *   Tự động chuyển đổi các trường Tên công ty, Số điện thoại (phone), Địa chỉ chi tiết (address) thành dạng ẩn '***'.
+ * - Trạng thái TỪ ACCEPTED TRỞ ĐI (ACCEPTED, CARRIER_APPROVAL_PENDING, CARRIER_APPROVED, PAYMENT_CONFIRMED, HANDOVER, COMPLETED...)
+ *   hoặc khi có xác nhận của Ops (isOps: true), hoặc là chính chủ sở hữu (isOwner: true):
+ *   Hiển thị đầy đủ thông tin gốc.
+ */
+export function maskPrivateData(
+  text: string | undefined | null,
+  state: string | undefined | null,
+  options?: {
+    isOps?: boolean;
+    isOwner?: boolean;
+    field?: "company" | "phone" | "address" | "general";
+    preserveRegion?: boolean;
+  },
+): string {
+  if (!text) return "";
+
+  // 1. Đặc quyền: Ops hoặc Chính chủ sở hữu xem được toàn bộ thông tin
+  if (options?.isOps || options?.isOwner) {
+    return text;
+  }
+
+  const normalizedState = (state || "").toUpperCase().trim();
+
+  // 2. Trạng thái sau ACCEPTED được phép hiển thị đầy đủ
+  const POST_ACCEPTED_STATES = new Set([
+    "ACCEPTED",
+    "MATCH_ACCEPTED",
+    "CARRIER_APPROVAL_PENDING",
+    "PENDING_CARRIER",
+    "CARRIER_APPROVED",
+    "PAYMENT_PENDING",
+    "PAYMENT_CONFIRMED",
+    "AWAITING_PAYMENT",
+    "READY_FOR_PICKUP",
+    "INSPECTION",
+    "HANDOVER_PENDING",
+    "HANDOVER_IN_PROGRESS",
+    "HANDOVER_CONFIRMED",
+    "COMPLETED",
+    "DISPUTE_PENDING",
+    "DISPUTE_OPEN",
+    "UNDER_REVIEW_DISPUTE",
+    "RESOLVED",
+    "CLOSED",
+  ]);
+
+  if (POST_ACCEPTED_STATES.has(normalizedState)) {
+    return text;
+  }
+
+  // 3. Trạng thái TRƯỚC ACCEPTED -> Masking bảo mật dữ liệu nhạy cảm
+  if (options?.field === "phone") {
+    return "***";
+  }
+
+  if (options?.field === "company") {
+    return "***";
+  }
+
+  if (options?.field === "address") {
+    // Với địa chỉ: nếu cấu hình preserveRegion !== false và địa chỉ có phân tách quận/huyện/tỉnh
+    // Giữ lại khu vực/tỉnh thành để doanh nghiệp nhận biết vùng hoạt động
+    if (options?.preserveRegion !== false) {
+      const parts = text.split(",").map((p) => p.trim());
+      if (parts.length > 1) {
+        const region = parts.slice(1).join(", ");
+        return `***, ${region}`;
+      }
+    }
+    return "***";
+  }
+
+  return "***";
+}

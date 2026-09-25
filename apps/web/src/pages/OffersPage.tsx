@@ -13,7 +13,8 @@ import {
 } from "../types";
 import { OfferStatusBadge, ConditionBadge } from "../components/StatusBadge";
 import { DateInput } from "../components/DateInput";
-import { formatVnd, formatRelativeTime } from "../lib/utils";
+import { formatVnd, formatRelativeTime, maskPrivateData } from "../lib/utils";
+export { maskPrivateData } from "../lib/utils";
 import {
   PackageOpen,
   Plus,
@@ -173,8 +174,16 @@ export const OffersPage: React.FC<OffersPageProps> = ({
   const [editOfferErrors, setEditOfferErrors] = useState<FieldErrors>({});
   const [editPhotoAiChecking, setEditPhotoAiChecking] = useState(false);
   const editPhotoScanId = useRef(0);
-  useEffect(() => { editPhotoScanId.current++; setEditPhotoAiChecking(false); }, [editingOffer?.id]);
-  useEffect(() => () => { editPhotoScanId.current++; }, []);
+  useEffect(() => {
+    editPhotoScanId.current++;
+    setEditPhotoAiChecking(false);
+  }, [editingOffer?.id]);
+  useEffect(
+    () => () => {
+      editPhotoScanId.current++;
+    },
+    [],
+  );
   const [editPhotoAiResult, setEditPhotoAiResult] =
     useState<ContainerPhotoVerificationResult | null>(null);
   const [opsNotes, setOpsNotes] = useState("");
@@ -186,7 +195,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({
   const [formErrors, setFormErrors] = useState<FieldErrors>({});
   const [withdrawErrors, setWithdrawErrors] = useState<FieldErrors>({});
   const [edoFile, setEdoFile] = useState<File | null>(null);
-  const [edoAiSource, setEdoAiSource] = useState<EdoVerificationResult | null>(null);
+  const [edoAiSource, setEdoAiSource] = useState<EdoVerificationResult | null>(
+    null,
+  );
   const edoScanId = useRef(0);
   const aiInputVersion = useRef(0);
   const [isEdoAiChecking, setIsEdoAiChecking] = useState(false);
@@ -222,7 +233,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
     edoValid: boolean;
     edoAnomaly: boolean;
     edoMatchesRegistration?: boolean;
-    edoDocumentType?: EdoVerificationResult['documentType'];
+    edoDocumentType?: EdoVerificationResult["documentType"];
     edoActualContainerNumber?: string;
     edoActualCarrierCode?: string;
     edoActualContainerType?: string;
@@ -279,25 +290,35 @@ export const OffersPage: React.FC<OffersPageProps> = ({
   const latestForm = useRef(form);
   latestForm.current = form;
 
-  const edoExpected = useMemo(() => ({
-    containerNumber: form.containerNumber,
-    carrierCode: INITIAL_CARRIERS.find(carrier => carrier.id === form.carrierId)?.code || form.carrierId,
-    containerType: form.containerType || undefined,
-  }), [form.containerNumber, form.carrierId, form.containerType]);
+  const edoExpected = useMemo(
+    () => ({
+      containerNumber: form.containerNumber,
+      carrierCode:
+        INITIAL_CARRIERS.find((carrier) => carrier.id === form.carrierId)
+          ?.code || form.carrierId,
+      containerType: form.containerType || undefined,
+    }),
+    [form.containerNumber, form.carrierId, form.containerType],
+  );
   const latestEdoExpected = useRef(edoExpected);
   latestEdoExpected.current = edoExpected;
   const edoVerification = useMemo(
-    () => edoAiSource ? reconcileEdoVerificationResult(edoAiSource, edoExpected) : null,
+    () =>
+      edoAiSource
+        ? reconcileEdoVerificationResult(edoAiSource, edoExpected)
+        : null,
     [edoAiSource, edoExpected],
   );
   const edoMismatchErrors: FieldErrors = {};
-  if (edoVerification?.comparisonStatus === 'MISMATCH') {
-    const message = edoVerification.mismatchDetails?.[0] || edoVerification.summary;
+  if (edoVerification?.comparisonStatus === "MISMATCH") {
+    const message =
+      edoVerification.mismatchDetails?.[0] || edoVerification.summary;
     edoMismatchErrors.edoEvidence = message;
     for (const field of edoVerification.mismatchedFields || []) {
-      if (field === 'CONTAINER_NUMBER') edoMismatchErrors.containerNumber = message;
-      if (field === 'CARRIER_CODE') edoMismatchErrors.carrierId = message;
-      if (field === 'CONTAINER_TYPE') edoMismatchErrors.containerType = message;
+      if (field === "CONTAINER_NUMBER")
+        edoMismatchErrors.containerNumber = message;
+      if (field === "CARRIER_CODE") edoMismatchErrors.carrierId = message;
+      if (field === "CONTAINER_TYPE") edoMismatchErrors.containerType = message;
     }
   }
 
@@ -355,16 +376,30 @@ export const OffersPage: React.FC<OffersPageProps> = ({
     if (scanId !== edoScanId.current) return;
     setEdoAiSource(verification);
     setIsEdoAiChecking(false);
-    const currentVerification = reconcileEdoVerificationResult(verification, latestEdoExpected.current);
-    if (currentVerification.status === 'VALID' && currentVerification.matchesRegistration === true) {
-      showMsg('✓ eDO khớp số container, hãng tàu và loại container đã nhập.');
-    } else if (currentVerification.comparisonStatus === 'MISMATCH') {
-      showMsg(`⚠️ eDO không khớp Offer: ${currentVerification.mismatchDetails?.[0] || currentVerification.summary}`, true);
+    const currentVerification = reconcileEdoVerificationResult(
+      verification,
+      latestEdoExpected.current,
+    );
+    if (
+      currentVerification.status === "VALID" &&
+      currentVerification.matchesRegistration === true
+    ) {
+      showMsg("✓ eDO khớp số container, hãng tàu và loại container đã nhập.");
+    } else if (currentVerification.comparisonStatus === "MISMATCH") {
+      showMsg(
+        `⚠️ eDO không khớp Offer: ${currentVerification.mismatchDetails?.[0] || currentVerification.summary}`,
+        true,
+      );
       scrollToFirstFieldError({ edoEvidence: currentVerification.summary });
-    } else if (currentVerification.status === 'MANUAL_REVIEW') {
-      showMsg(`AI chưa thể kết luận eDO: ${currentVerification.error || currentVerification.summary}`);
+    } else if (currentVerification.status === "MANUAL_REVIEW") {
+      showMsg(
+        `AI chưa thể kết luận eDO: ${currentVerification.error || currentVerification.summary}`,
+      );
     } else {
-      showMsg(`⚠️ eDO có kết quả ${currentVerification.status === 'INVALID' ? 'không hợp lệ' : 'bất thường'}: ${currentVerification.anomalyReason || currentVerification.summary}`, true);
+      showMsg(
+        `⚠️ eDO có kết quả ${currentVerification.status === "INVALID" ? "không hợp lệ" : "bất thường"}: ${currentVerification.anomalyReason || currentVerification.summary}`,
+        true,
+      );
     }
   };
 
@@ -465,18 +500,36 @@ export const OffersPage: React.FC<OffersPageProps> = ({
     if (imageFiles.length < files.length) {
       showMsg("Một số tệp không hợp lệ hoặc vượt quá 10MB đã bị bỏ qua.", true);
     }
-    e.target.value = '';
-    const filesToRead = imageFiles.slice(0, MAX_OFFER_PHOTO_COUNT - form.photos.length);
-    if (filesToRead.length < imageFiles.length) showMsg(`Chỉ nhận tối đa ${MAX_OFFER_PHOTO_COUNT} ảnh cho một Offer.`, true);
-    Promise.all(filesToRead.map(file => imageFileToDataUrl(file))).then(async urls => {
-      const currentForm = latestForm.current;
-      const nextPhotos = [...currentForm.photos, ...urls].slice(0, MAX_OFFER_PHOTO_COUNT);
-      const nextForm = { ...currentForm, photos: nextPhotos };
-      latestForm.current = nextForm;
-      setForm(nextForm);
-      if (nextPhotos.length >= 6) await runOfferPhotoAiCheck(nextPhotos, nextForm);
-      else showMsg(`Đã thêm ảnh. Còn thiếu ${6 - nextPhotos.length} ảnh để AI tự quét.`);
-    }).catch(() => showMsg('Không đọc được một hoặc nhiều ảnh container.', true));
+    e.target.value = "";
+    const filesToRead = imageFiles.slice(
+      0,
+      MAX_OFFER_PHOTO_COUNT - form.photos.length,
+    );
+    if (filesToRead.length < imageFiles.length)
+      showMsg(
+        `Chỉ nhận tối đa ${MAX_OFFER_PHOTO_COUNT} ảnh cho một Offer.`,
+        true,
+      );
+    Promise.all(filesToRead.map((file) => imageFileToDataUrl(file)))
+      .then(async (urls) => {
+        const currentForm = latestForm.current;
+        const nextPhotos = [...currentForm.photos, ...urls].slice(
+          0,
+          MAX_OFFER_PHOTO_COUNT,
+        );
+        const nextForm = { ...currentForm, photos: nextPhotos };
+        latestForm.current = nextForm;
+        setForm(nextForm);
+        if (nextPhotos.length >= 6)
+          await runOfferPhotoAiCheck(nextPhotos, nextForm);
+        else
+          showMsg(
+            `Đã thêm ảnh. Còn thiếu ${6 - nextPhotos.length} ảnh để AI tự quét.`,
+          );
+      })
+      .catch(() =>
+        showMsg("Không đọc được một hoặc nhiều ảnh container.", true),
+      );
   };
 
   const handleRemoveOfferPhoto = (index: number) => {
@@ -540,15 +593,23 @@ export const OffersPage: React.FC<OffersPageProps> = ({
           declaredCondition: form.declaredCondition as PhysicalCondition,
         }),
       ]);
-      if (scanId !== edoScanId.current || inputVersion !== aiInputVersion.current) return;
+      if (
+        scanId !== edoScanId.current ||
+        inputVersion !== aiInputVersion.current
+      )
+        return;
       setEdoAiSource(edoResult);
       setIsEdoAiChecking(false);
-      const edoValid = edoResult.status === 'VALID'
-        && edoResult.isLegal
-        && edoResult.documentType === 'EDO'
-        && edoResult.matchesRegistration === true
-        && !edoResult.requiresOpsReview;
-      const hasAnomaly = !edoValid || photoResult.status !== 'MATCHED' || photoResult.requiresOpsReview;
+      const edoValid =
+        edoResult.status === "VALID" &&
+        edoResult.isLegal &&
+        edoResult.documentType === "EDO" &&
+        edoResult.matchesRegistration === true &&
+        !edoResult.requiresOpsReview;
+      const hasAnomaly =
+        !edoValid ||
+        photoResult.status !== "MATCHED" ||
+        photoResult.requiresOpsReview;
       const details = [
         ...edoResult.details,
         ...(edoResult.mismatchDetails || []),
@@ -587,27 +648,43 @@ export const OffersPage: React.FC<OffersPageProps> = ({
         mismatchDetails: photoResult.mismatchDetails,
         details,
         edoValid,
-        edoAnomaly: edoResult.hasAnomaly || edoResult.comparisonStatus === 'MISMATCH',
+        edoAnomaly:
+          edoResult.hasAnomaly || edoResult.comparisonStatus === "MISMATCH",
         edoMatchesRegistration: edoResult.matchesRegistration,
         edoDocumentType: edoResult.documentType,
         edoActualContainerNumber: edoResult.actualContainerNumber,
         edoActualCarrierCode: edoResult.actualCarrierCode,
         edoActualContainerType: edoResult.actualContainerType,
         edoMismatchDetails: edoResult.mismatchDetails,
-        photoChecked: photoResult.status !== 'ERROR',
+        photoChecked: photoResult.status !== "ERROR",
         photoStatus: photoResult.status,
         photoCondition: photoResult.actualCondition,
         photoConditionNotes: photoResult.actualConditionNotes,
         verificationStatus: edoResult.status,
       });
 
-      if (edoResult.comparisonStatus === 'MISMATCH') {
+      if (edoResult.comparisonStatus === "MISMATCH") {
         const message = edoResult.mismatchDetails?.[0] || edoResult.summary;
-        showMsg(`⚠️ eDO không khớp thông tin Offer: ${message} Offer sẽ được chuyển Ops.`, true);
+        showMsg(
+          `⚠️ eDO không khớp thông tin Offer: ${message} Offer sẽ được chuyển Ops.`,
+          true,
+        );
         scrollToFirstFieldError({ edoEvidence: message });
-      } else if (photoResult.status === 'MISMATCH') {
-        const nextErrors = { photos: `Ảnh không khớp thông tin đăng ký: ${photoResult.mismatchDetails.join(' ') || photoResult.summary}` };
-        setFormErrors(previous => ({ ...previous, ...nextErrors }));
+      } else if (photoResult.status === "INSPECTION_INCOMPLETE") {
+        const nextErrors = {
+          photos: `INSPECTION_INCOMPLETE: ${photoResult.mismatchDetails.join(" ") || photoResult.summary}`,
+        };
+        setFormErrors((previous) => ({ ...previous, ...nextErrors }));
+        showMsg(
+          "Bộ ảnh chưa đủ 6 góc bắt buộc (INSPECTION_INCOMPLETE). Vui lòng chụp bổ sung.",
+          true,
+        );
+        scrollToFirstFieldError(nextErrors);
+      } else if (photoResult.status === "MISMATCH") {
+        const nextErrors = {
+          photos: `Ảnh không khớp thông tin đăng ký: ${photoResult.mismatchDetails.join(" ") || photoResult.summary}`,
+        };
+        setFormErrors((previous) => ({ ...previous, ...nextErrors }));
         showMsg(nextErrors.photos, true);
         scrollToFirstFieldError(nextErrors);
       } else if (edoResult.status === "INVALID") {
@@ -620,7 +697,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
           "⚠️ AI phát hiện điểm cần Ops kiểm tra. Offer chỉ được publish sau khi Ops duyệt.",
         );
       } else {
-        showMsg('✓ eDO và ảnh container khớp thông tin đăng ký.');
+        showMsg("✓ eDO và ảnh container khớp thông tin đăng ký.");
       }
     } catch (error: any) {
       const message = error?.message || "Không thể hoàn tất kiểm tra AI.";
@@ -688,9 +765,12 @@ export const OffersPage: React.FC<OffersPageProps> = ({
         "Vui lòng nhập mô tả chi tiết tình trạng vỏ cont.",
       ),
     );
-    if (form.photos.length < 6)
+    if (
+      form.photos.length < 6 ||
+      photoAiResult?.status === "INSPECTION_INCOMPLETE"
+    )
       errors.photos =
-        "Vui lòng tải đủ tối thiểu 6 ảnh container (6 góc IICL-5).";
+        "INSPECTION_INCOMPLETE: Vui lòng tải đủ tối thiểu 6 ảnh container theo 6 góc bắt buộc (Mặt trước container, Cửa sau container, Vách trái, Vách phải, Bên trong container, Tem số container/CSC plate).";
     setError(
       errors,
       "edoEvidence",
@@ -714,41 +794,64 @@ export const OffersPage: React.FC<OffersPageProps> = ({
 
     // Lưu cả kết quả AI chạy tự động sau khi đủ 6 ảnh, kể cả khi người dùng
     // chưa bấm lại nút kiểm tra tổng hợp eDO + ảnh.
-    const persistedAiResult = aiCheckResult || ((edoVerification || photoAiResult) ? {
-      score: Math.round(edoVerification?.score || photoAiResult?.score || 0),
-      summary: [
-        edoVerification ? `eDO: ${edoVerification.summary}` : '',
-        photoAiResult ? `Ảnh: ${photoAiResult.summary}` : '',
-      ].filter(Boolean).join(' '),
-      hasAnomaly: Boolean((edoVerification && edoVerification.status !== 'VALID') || (photoAiResult && photoAiResult.status !== 'MATCHED')),
-      matchesRegistration: photoAiResult?.matchesRegistration,
-      actualContainerNumber: photoAiResult?.actualContainerNumber,
-      actualContainerType: photoAiResult?.actualContainerType,
-      actualCarrierCode: photoAiResult?.actualCarrierCode,
-      actualConditionNotes: photoAiResult?.actualConditionNotes,
-      mismatchDetails: photoAiResult?.mismatchDetails || [],
-      details: [
-        ...(edoVerification?.details || []),
-        ...(edoVerification?.mismatchDetails || []),
-        ...(photoAiResult?.mismatchDetails || []),
-        ...(photoAiResult?.actualConditionNotes ? [photoAiResult.actualConditionNotes] : []),
-      ],
-      edoValid: Boolean(edoVerification?.status === 'VALID' && edoVerification.isLegal
-        && edoVerification.documentType === 'EDO' && edoVerification.matchesRegistration === true
-        && !edoVerification.requiresOpsReview),
-      edoAnomaly: Boolean(edoVerification?.hasAnomaly || edoVerification?.comparisonStatus === 'MISMATCH'),
-      edoMatchesRegistration: edoVerification?.matchesRegistration,
-      edoDocumentType: edoVerification?.documentType,
-      edoActualContainerNumber: edoVerification?.actualContainerNumber,
-      edoActualCarrierCode: edoVerification?.actualCarrierCode,
-      edoActualContainerType: edoVerification?.actualContainerType,
-      edoMismatchDetails: edoVerification?.mismatchDetails,
-      photoChecked: Boolean(photoAiResult && photoAiResult.status !== 'ERROR'),
-      photoStatus: photoAiResult?.status || 'MANUAL_REVIEW' as const,
-      photoCondition: photoAiResult?.actualCondition,
-      photoConditionNotes: photoAiResult?.actualConditionNotes,
-      verificationStatus: edoVerification?.status || 'MANUAL_REVIEW' as const,
-    } : null);
+    const persistedAiResult =
+      aiCheckResult ||
+      (edoVerification || photoAiResult
+        ? {
+            score: Math.round(
+              edoVerification?.score || photoAiResult?.score || 0,
+            ),
+            summary: [
+              edoVerification ? `eDO: ${edoVerification.summary}` : "",
+              photoAiResult ? `Ảnh: ${photoAiResult.summary}` : "",
+            ]
+              .filter(Boolean)
+              .join(" "),
+            hasAnomaly: Boolean(
+              (edoVerification && edoVerification.status !== "VALID") ||
+              (photoAiResult && photoAiResult.status !== "MATCHED"),
+            ),
+            matchesRegistration: photoAiResult?.matchesRegistration,
+            actualContainerNumber: photoAiResult?.actualContainerNumber,
+            actualContainerType: photoAiResult?.actualContainerType,
+            actualCarrierCode: photoAiResult?.actualCarrierCode,
+            actualConditionNotes: photoAiResult?.actualConditionNotes,
+            mismatchDetails: photoAiResult?.mismatchDetails || [],
+            details: [
+              ...(edoVerification?.details || []),
+              ...(edoVerification?.mismatchDetails || []),
+              ...(photoAiResult?.mismatchDetails || []),
+              ...(photoAiResult?.actualConditionNotes
+                ? [photoAiResult.actualConditionNotes]
+                : []),
+            ],
+            edoValid: Boolean(
+              edoVerification?.status === "VALID" &&
+              edoVerification.isLegal &&
+              edoVerification.documentType === "EDO" &&
+              edoVerification.matchesRegistration === true &&
+              !edoVerification.requiresOpsReview,
+            ),
+            edoAnomaly: Boolean(
+              edoVerification?.hasAnomaly ||
+              edoVerification?.comparisonStatus === "MISMATCH",
+            ),
+            edoMatchesRegistration: edoVerification?.matchesRegistration,
+            edoDocumentType: edoVerification?.documentType,
+            edoActualContainerNumber: edoVerification?.actualContainerNumber,
+            edoActualCarrierCode: edoVerification?.actualCarrierCode,
+            edoActualContainerType: edoVerification?.actualContainerType,
+            edoMismatchDetails: edoVerification?.mismatchDetails,
+            photoChecked: Boolean(
+              photoAiResult && photoAiResult.status !== "ERROR",
+            ),
+            photoStatus: photoAiResult?.status || ("MANUAL_REVIEW" as const),
+            photoCondition: photoAiResult?.actualCondition,
+            photoConditionNotes: photoAiResult?.actualConditionNotes,
+            verificationStatus:
+              edoVerification?.status || ("MANUAL_REVIEW" as const),
+          }
+        : null);
 
     const result = addOffer({
       containerNumber: form.containerNumber.trim().toUpperCase(),
@@ -769,44 +872,60 @@ export const OffersPage: React.FC<OffersPageProps> = ({
       expectedDepotId: form.expectedDepotId,
       baselineDepotCostVnd: DEFAULT_BASELINE_DEPOT_COST_VND,
       vehicleRequirements: form.vehicleRequirements?.trim(),
-      aiCheck: persistedAiResult ? {
-        passed: !persistedAiResult.hasAnomaly && persistedAiResult.edoValid
-          && persistedAiResult.edoMatchesRegistration === true
-          && persistedAiResult.edoDocumentType === 'EDO'
-          && persistedAiResult.photoStatus === 'MATCHED'
-          && persistedAiResult.matchesRegistration === true,
-        score: persistedAiResult.score,
-        summary: persistedAiResult.summary,
-        hasAnomaly: persistedAiResult.hasAnomaly,
-        matchesRegistration: persistedAiResult.matchesRegistration,
-        actualContainerNumber: persistedAiResult.actualContainerNumber,
-        actualContainerType: persistedAiResult.actualContainerType,
-        actualCarrierCode: persistedAiResult.actualCarrierCode,
-        actualConditionNotes: persistedAiResult.actualConditionNotes,
-        mismatchDetails: persistedAiResult.mismatchDetails,
-        photoStatus: persistedAiResult.photoStatus,
-        anomalyReason: persistedAiResult.verificationStatus === 'ANOMALY' ? persistedAiResult.edoMismatchDetails?.[0] || persistedAiResult.summary : undefined,
-        edoChecked: Boolean(edoVerification),
-        edoValid: persistedAiResult.edoValid,
-        edoAnomaly: persistedAiResult.edoAnomaly,
-        edoMatchesRegistration: persistedAiResult.edoMatchesRegistration,
-        edoDocumentType: persistedAiResult.edoDocumentType,
-        edoActualContainerNumber: persistedAiResult.edoActualContainerNumber,
-        edoActualCarrierCode: persistedAiResult.edoActualCarrierCode,
-        edoActualContainerType: persistedAiResult.edoActualContainerType,
-        edoMismatchDetails: persistedAiResult.edoMismatchDetails,
-        photoChecked: persistedAiResult.photoChecked,
-        photoCondition: persistedAiResult.photoCondition,
-        photoConditionNotes: persistedAiResult.photoConditionNotes,
-        verificationStatus: persistedAiResult.edoValid && persistedAiResult.photoStatus === 'MATCHED' ? 'VERIFIED' : persistedAiResult.verificationStatus === 'INVALID' ? 'INVALID' : 'MANUAL_REVIEW',
-        details: persistedAiResult.details,
-      } : undefined,
-      requiresOpsManualReview: !persistedAiResult
-        || persistedAiResult.hasAnomaly
-        || persistedAiResult.edoMatchesRegistration !== true
-        || persistedAiResult.edoDocumentType !== 'EDO'
-        || persistedAiResult.photoStatus !== 'MATCHED'
-        || persistedAiResult.verificationStatus !== 'VALID',
+      aiCheck: persistedAiResult
+        ? {
+            passed:
+              !persistedAiResult.hasAnomaly &&
+              persistedAiResult.edoValid &&
+              persistedAiResult.edoMatchesRegistration === true &&
+              persistedAiResult.edoDocumentType === "EDO" &&
+              persistedAiResult.photoStatus === "MATCHED" &&
+              persistedAiResult.matchesRegistration === true,
+            score: persistedAiResult.score,
+            summary: persistedAiResult.summary,
+            hasAnomaly: persistedAiResult.hasAnomaly,
+            matchesRegistration: persistedAiResult.matchesRegistration,
+            actualContainerNumber: persistedAiResult.actualContainerNumber,
+            actualContainerType: persistedAiResult.actualContainerType,
+            actualCarrierCode: persistedAiResult.actualCarrierCode,
+            actualConditionNotes: persistedAiResult.actualConditionNotes,
+            mismatchDetails: persistedAiResult.mismatchDetails,
+            photoStatus: persistedAiResult.photoStatus,
+            anomalyReason:
+              persistedAiResult.verificationStatus === "ANOMALY"
+                ? persistedAiResult.edoMismatchDetails?.[0] ||
+                  persistedAiResult.summary
+                : undefined,
+            edoChecked: Boolean(edoVerification),
+            edoValid: persistedAiResult.edoValid,
+            edoAnomaly: persistedAiResult.edoAnomaly,
+            edoMatchesRegistration: persistedAiResult.edoMatchesRegistration,
+            edoDocumentType: persistedAiResult.edoDocumentType,
+            edoActualContainerNumber:
+              persistedAiResult.edoActualContainerNumber,
+            edoActualCarrierCode: persistedAiResult.edoActualCarrierCode,
+            edoActualContainerType: persistedAiResult.edoActualContainerType,
+            edoMismatchDetails: persistedAiResult.edoMismatchDetails,
+            photoChecked: persistedAiResult.photoChecked,
+            photoCondition: persistedAiResult.photoCondition,
+            photoConditionNotes: persistedAiResult.photoConditionNotes,
+            verificationStatus:
+              persistedAiResult.edoValid &&
+              persistedAiResult.photoStatus === "MATCHED"
+                ? "VERIFIED"
+                : persistedAiResult.verificationStatus === "INVALID"
+                  ? "INVALID"
+                  : "MANUAL_REVIEW",
+            details: persistedAiResult.details,
+          }
+        : undefined,
+      requiresOpsManualReview:
+        !persistedAiResult ||
+        persistedAiResult.hasAnomaly ||
+        persistedAiResult.edoMatchesRegistration !== true ||
+        persistedAiResult.edoDocumentType !== "EDO" ||
+        persistedAiResult.photoStatus !== "MATCHED" ||
+        persistedAiResult.verificationStatus !== "VALID",
     });
 
     if (result.success) {
@@ -1011,7 +1130,12 @@ export const OffersPage: React.FC<OffersPageProps> = ({
       .catch((error) => {
         if (uploadId !== editPhotoScanId.current) return;
         setEditPhotoAiChecking(false);
-        showMsg(error instanceof Error ? error.message : "Không đọc được ảnh container.", true);
+        showMsg(
+          error instanceof Error
+            ? error.message
+            : "Không đọc được ảnh container.",
+          true,
+        );
       });
   };
 
@@ -1040,12 +1164,15 @@ export const OffersPage: React.FC<OffersPageProps> = ({
 
   const handleSaveOfferEdit = () => {
     if (!editingOffer) return;
-    if (editPhotoAiChecking) { showMsg("Vui lòng chờ kiểm tra bộ ảnh mới.", true); return; }
+    if (editPhotoAiChecking) {
+      showMsg("Vui lòng chờ kiểm tra bộ ảnh mới.", true);
+      return;
+    }
     const photos = editForm.photoUrls || [];
     const errors: FieldErrors = {};
     if (photos.length < 6)
       errors.editPhotoUrls =
-        "Offer phải giữ tối thiểu 6 ảnh: mặt trước, mặt sau, mặt trái, mặt phải, trên nóc và dưới gầm.";
+        "INSPECTION_INCOMPLETE: Offer phải giữ tối thiểu 6 ảnh: Mặt trước container, Cửa sau container, Vách trái, Vách phải, Bên trong container, Tem số container/CSC plate.";
     setError(
       errors,
       "editConditionNotes",
@@ -1445,13 +1572,24 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                   }));
                 }}
                 placeholder="VD: MSKU8421093"
-                aria-invalid={Boolean(formErrors.containerNumber || edoMismatchErrors.containerNumber)}
+                aria-invalid={Boolean(
+                  formErrors.containerNumber ||
+                  edoMismatchErrors.containerNumber,
+                )}
                 className={getFieldErrorClass(
-                  Boolean(formErrors.containerNumber || edoMismatchErrors.containerNumber),
+                  Boolean(
+                    formErrors.containerNumber ||
+                    edoMismatchErrors.containerNumber,
+                  ),
                   "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase outline-none focus:ring-2 focus:ring-emerald-500 bg-white",
                 )}
               />
-              <FieldError message={formErrors.containerNumber || edoMismatchErrors.containerNumber} />
+              <FieldError
+                message={
+                  formErrors.containerNumber ||
+                  edoMismatchErrors.containerNumber
+                }
+              />
             </div>
 
             {/* 2. Loại Container */}
@@ -1474,9 +1612,13 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                     containerType: e.target.value as "20GP" | "40HC",
                   }));
                 }}
-                aria-invalid={Boolean(formErrors.containerType || edoMismatchErrors.containerType)}
+                aria-invalid={Boolean(
+                  formErrors.containerType || edoMismatchErrors.containerType,
+                )}
                 className={getFieldErrorClass(
-                  Boolean(formErrors.containerType || edoMismatchErrors.containerType),
+                  Boolean(
+                    formErrors.containerType || edoMismatchErrors.containerType,
+                  ),
                   "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white",
                 )}
               >
@@ -1484,7 +1626,11 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                 <option value="40HC">40HC (40 foot High Cube)</option>
                 <option value="20GP">20GP (20 foot Tiêu chuẩn)</option>
               </select>
-              <FieldError message={formErrors.containerType || edoMismatchErrors.containerType} />
+              <FieldError
+                message={
+                  formErrors.containerType || edoMismatchErrors.containerType
+                }
+              />
             </div>
 
             {/* 3. Hãng tàu */}
@@ -1504,7 +1650,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                   invalidateAiCheck();
                   setForm((p) => ({ ...p, carrierId: e.target.value }));
                 }}
-                aria-invalid={Boolean(formErrors.carrierId || edoMismatchErrors.carrierId)}
+                aria-invalid={Boolean(
+                  formErrors.carrierId || edoMismatchErrors.carrierId,
+                )}
                 className={getFieldErrorClass(
                   Boolean(formErrors.carrierId || edoMismatchErrors.carrierId),
                   "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white",
@@ -1517,14 +1665,18 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                   </option>
                 ))}
               </select>
-              <FieldError message={formErrors.carrierId || edoMismatchErrors.carrierId} />
+              <FieldError
+                message={formErrors.carrierId || edoMismatchErrors.carrierId}
+              />
             </div>
 
             {/* 4. Chứng từ e-DO */}
             <div
               data-field="edoEvidence"
               className={getFieldErrorClass(
-                Boolean(formErrors.edoEvidence || edoMismatchErrors.edoEvidence),
+                Boolean(
+                  formErrors.edoEvidence || edoMismatchErrors.edoEvidence,
+                ),
                 "md:col-span-2 lg:col-span-3 p-3.5 rounded-xl border border-blue-200 bg-blue-50/50 space-y-3",
               )}
             >
@@ -1535,55 +1687,93 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                 </span>
               </div>
 
-               <div className="space-y-2 text-xs">
-                 <div className="flex flex-wrap items-center gap-2">
-                   <label className="text-slate-700 font-medium">Tệp e-DO <RequiredMark /></label>
-                 </div>
-                 <div className="flex flex-wrap items-center gap-2">
-                   <label className="flex min-w-[260px] flex-1 items-center gap-2 border border-slate-200 bg-white rounded-lg px-3 py-2 cursor-pointer hover:bg-slate-50 transition-colors">
-                     <UploadCloud className="w-4 h-4 text-blue-600 shrink-0" />
-                     <span className="truncate text-xs font-medium text-slate-700">
-                       {form.edoFileName || 'Chọn tệp e-DO PDF hoặc ảnh'}
-                     </span>
-                     <input
-                       type="file"
-                       accept=".pdf,image/png,image/jpeg,image/jpg,image/webp"
-                       className="hidden"
-                       onChange={e => {
-                         const f = e.target.files?.[0];
-                         e.target.value = '';
-                         if (!f) return;
-                         const isPdfOrImg = f.type === 'application/pdf' || f.type.startsWith('image/') || f.name.toLowerCase().endsWith('.pdf');
-                         if (!isPdfOrImg || f.size > 20 * 1024 * 1024) {
-                           showMsg('Chỉ chấp nhận tệp ảnh/PDF hợp lệ, tối đa 20MB.', true);
-                           return;
-                         }
-                         invalidateAiCheck();
-                         void handleEdoFileSelection(f);
-                       }}
-                     />
-                   </label>
-                   <button
-                     type="button"
-                     disabled={!edoFile || isEdoAiChecking}
-                     onClick={() => edoFile && void handleEdoFileSelection(edoFile)}
-                     className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50"
-                   >
-                     {isEdoAiChecking ? 'Đang xác minh...' : 'Xác minh eDO bằng AI'}
-                   </button>
-                 </div>
-                 <FieldError message={formErrors.edoEvidence || edoMismatchErrors.edoEvidence} />
-                 {edoVerification && (
-                   <div className={`rounded-lg border px-3 py-2 text-xs ${edoVerification.status === 'VALID' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : edoVerification.status === 'MANUAL_REVIEW' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
-                     <strong>{edoVerification.status === 'VALID' && edoVerification.matchesRegistration === true ? '✓ eDO khớp thông tin Offer' : edoVerification.status === 'MANUAL_REVIEW' ? '⚠ eDO chờ Ops xác minh' : '✕ eDO không khớp hoặc có dấu hiệu bất thường'}</strong>
-                     <span className="ml-1">{edoVerification.summary}</span>
-                     {(edoVerification.actualContainerNumber || edoVerification.actualCarrierCode || edoVerification.actualContainerType) && (
-                       <p className="mt-1">AI đọc từ eDO: Cont {edoVerification.actualContainerNumber || 'chưa rõ'} · Hãng {edoVerification.actualCarrierCode || 'chưa rõ'} · Loại {edoVerification.actualContainerType || 'chưa rõ'}</p>
-                     )}
-                     {edoVerification.details.length > 0 && <ul className="mt-1 list-disc pl-4">{edoVerification.details.map((detail, index) => <li key={index}>{detail}</li>)}</ul>}
-                   </div>
-                 )}
-               </div>
+              <div className="space-y-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-slate-700 font-medium">
+                    Tệp e-DO <RequiredMark />
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="flex min-w-[260px] flex-1 items-center gap-2 border border-slate-200 bg-white rounded-lg px-3 py-2 cursor-pointer hover:bg-slate-50 transition-colors">
+                    <UploadCloud className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span className="truncate text-xs font-medium text-slate-700">
+                      {form.edoFileName || "Chọn tệp e-DO PDF hoặc ảnh"}
+                    </span>
+                    <input
+                      type="file"
+                      accept=".pdf,image/png,image/jpeg,image/jpg,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!f) return;
+                        const isPdfOrImg =
+                          f.type === "application/pdf" ||
+                          f.type.startsWith("image/") ||
+                          f.name.toLowerCase().endsWith(".pdf");
+                        if (!isPdfOrImg || f.size > 20 * 1024 * 1024) {
+                          showMsg(
+                            "Chỉ chấp nhận tệp ảnh/PDF hợp lệ, tối đa 20MB.",
+                            true,
+                          );
+                          return;
+                        }
+                        invalidateAiCheck();
+                        void handleEdoFileSelection(f);
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={!edoFile || isEdoAiChecking}
+                    onClick={() =>
+                      edoFile && void handleEdoFileSelection(edoFile)
+                    }
+                    className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50"
+                  >
+                    {isEdoAiChecking
+                      ? "Đang xác minh..."
+                      : "Xác minh eDO bằng AI"}
+                  </button>
+                </div>
+                <FieldError
+                  message={
+                    formErrors.edoEvidence || edoMismatchErrors.edoEvidence
+                  }
+                />
+                {edoVerification && (
+                  <div
+                    className={`rounded-lg border px-3 py-2 text-xs ${edoVerification.status === "VALID" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : edoVerification.status === "MANUAL_REVIEW" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-red-200 bg-red-50 text-red-800"}`}
+                  >
+                    <strong>
+                      {edoVerification.status === "VALID" &&
+                      edoVerification.matchesRegistration === true
+                        ? "✓ eDO khớp thông tin Offer"
+                        : edoVerification.status === "MANUAL_REVIEW"
+                          ? "⚠ eDO chờ Ops xác minh"
+                          : "✕ eDO không khớp hoặc có dấu hiệu bất thường"}
+                    </strong>
+                    <span className="ml-1">{edoVerification.summary}</span>
+                    {(edoVerification.actualContainerNumber ||
+                      edoVerification.actualCarrierCode ||
+                      edoVerification.actualContainerType) && (
+                      <p className="mt-1">
+                        AI đọc từ eDO: Cont{" "}
+                        {edoVerification.actualContainerNumber || "chưa rõ"} ·
+                        Hãng {edoVerification.actualCarrierCode || "chưa rõ"} ·
+                        Loại {edoVerification.actualContainerType || "chưa rõ"}
+                      </p>
+                    )}
+                    {edoVerification.details.length > 0 && (
+                      <ul className="mt-1 list-disc pl-4">
+                        {edoVerification.details.map((detail, index) => (
+                          <li key={index}>{detail}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* 5. Vị trí lấy vỏ */}
@@ -1872,9 +2062,11 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                   className={`rounded-xl border p-3 space-y-1.5 text-xs ${
                     photoAiResult.status === "MATCHED"
                       ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                      : photoAiResult.status === "ERROR"
-                        ? "border-red-200 bg-red-50 text-red-900"
-                        : "border-amber-200 bg-amber-50 text-amber-900"
+                      : photoAiResult.status === "INSPECTION_INCOMPLETE"
+                        ? "border-amber-300 bg-amber-50 text-amber-900"
+                        : photoAiResult.status === "ERROR"
+                          ? "border-red-200 bg-red-50 text-red-900"
+                          : "border-amber-200 bg-amber-50 text-amber-900"
                   }`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1883,11 +2075,13 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                       AI ảnh sau khi tải lên:{" "}
                       {photoAiResult.status === "MATCHED"
                         ? "Khớp thông tin đăng ký"
-                        : photoAiResult.status === "MANUAL_REVIEW"
-                          ? "Chờ Ops kiểm tra"
-                          : photoAiResult.status === "MISMATCH"
-                            ? "Không khớp"
-                            : "Lỗi kiểm tra"}
+                        : photoAiResult.status === "INSPECTION_INCOMPLETE"
+                          ? "Thiếu góc ảnh (INSPECTION_INCOMPLETE)"
+                          : photoAiResult.status === "MANUAL_REVIEW"
+                            ? "Chờ Ops kiểm tra"
+                            : photoAiResult.status === "MISMATCH"
+                              ? "Không khớp"
+                              : "Lỗi kiểm tra"}
                     </strong>
                     {photoAiResult.score !== undefined && (
                       <span className="font-mono font-bold">
@@ -2197,7 +2391,15 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                         <MapPin className="w-3.5 h-3.5 text-slate-400" />
                         Khu vực lấy vỏ:{" "}
                         <strong className="text-slate-800">
-                          {offer.pickupLocationName}
+                          {maskPrivateData(
+                            offer.pickupLocationName,
+                            offer.status,
+                            {
+                              isOps: canOpsReview,
+                              isOwner: offer.companyId === currentCompany.id,
+                              field: "address",
+                            },
+                          )}
                         </strong>
                       </span>
                     </div>
@@ -2304,7 +2506,15 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                         <span className="truncate">
                           Vị trí:{" "}
                           <strong className="text-slate-800 font-medium">
-                            {offer.pickupLocationName}
+                            {maskPrivateData(
+                              offer.pickupLocationName,
+                              offer.status,
+                              {
+                                isOps: canOpsReview,
+                                isOwner: offer.companyId === currentCompany.id,
+                                field: "address",
+                              },
+                            )}
                           </strong>
                         </span>
                       </div>
@@ -2958,7 +3168,16 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                   <span className="font-mono font-medium text-slate-700">
                     {selectedOffer.id}
                   </span>{" "}
-                  &middot; Đăng bởi {selectedOffer.companyName}
+                  &middot; Đăng bởi{" "}
+                  {maskPrivateData(
+                    selectedOffer.companyName,
+                    selectedOffer.status,
+                    {
+                      isOps: canOpsReview,
+                      isOwner: selectedOffer.companyId === currentCompany.id,
+                      field: "company",
+                    },
+                  )}
                 </p>
               </div>
               <button
@@ -2980,7 +3199,15 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                   </span>
                   <strong className="text-slate-900 text-sm flex items-center gap-1.5 font-medium">
                     <MapPin className="w-4 h-4 text-slate-500 shrink-0" />
-                    {selectedOffer.pickupLocationName}
+                    {maskPrivateData(
+                      selectedOffer.pickupLocationName,
+                      selectedOffer.status,
+                      {
+                        isOps: canOpsReview,
+                        isOwner: selectedOffer.companyId === currentCompany.id,
+                        field: "address",
+                      },
+                    )}
                   </strong>
                 </div>
 
