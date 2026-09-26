@@ -69,7 +69,7 @@ test('demo data creates the requested Offer, Booking, matching, and RU states', 
 
 test('each demo container item has its own complete seven-angle photo set', async () => {
   const summary = await loadDemoDatasetSummary();
-  const expectedPhotoNames = ['front.jpg', 'left.jpg', 'right.jpg', 'rear.jpg', 'roof.jpg', 'underbody.jpg', 'floor.jpg'];
+  const expectedPhotoNames = ['front.jpg', 'rear.jpg', 'left.jpg', 'right.jpg', 'inside.jpg', 'floor.jpg', 'csc.jpg'];
   const photoSetKeys = summary.containerPhotoSets.map((photos) => photos.join('|'));
 
   assert.equal(summary.containerPhotoSets.length, 6);

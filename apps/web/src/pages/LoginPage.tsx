@@ -535,7 +535,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               <Shield className="w-3.5 h-3.5" />
             </div>
             <h4 className="text-xs sm:text-sm font-bold text-white">
-              Giám định IICL 6 mặt
+              Giám định IICL 7 góc ảnh
             </h4>
             <p className="text-[11px] sm:text-xs text-slate-200 mt-0.5 leading-snug">
               Checklist hiện trường, biên bản bàn giao kép mã băm SHA-256.

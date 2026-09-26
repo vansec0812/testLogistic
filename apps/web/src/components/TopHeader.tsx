@@ -28,7 +28,7 @@ const PAGE_METADATA: Record<
     category: "Nghiệp vụ Vỏ Cont",
     title: "Quản lý Kho Vỏ Container",
     subtitle:
-      "Danh mục tài sản vỏ cont rỗng, thẩm định chất lượng IICL và kiểm tra 6 góc",
+      "Danh mục tài sản vỏ cont rỗng, thẩm định chất lượng IICL và kiểm tra 7 góc",
   },
   offers: {
     category: "Nghiệp vụ Vỏ Cont",

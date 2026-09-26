@@ -13,7 +13,10 @@ import {
   ConditionBadge,
 } from "../components/StatusBadge";
 import { formatVnd, formatDateTime, formatRelativeTime } from "../lib/utils";
-import { OFFER_PHOTO_ANGLE_LABELS } from "../services/qaRules";
+import {
+  INSPECTION_PHOTO_ANGLE_LABELS,
+  REQUIRED_INSPECTION_PHOTO_COUNT,
+} from "../services/qaRules";
 import {
   FileText,
   Ship,
@@ -163,7 +166,7 @@ const ReadOnlyStepPanel: React.FC<{
                     transaction.inspection?.inspectorName || "Chưa có",
                   ],
                   [
-                    "Checklist 6 mặt",
+                    "Bộ ảnh 7 góc",
                     transaction.inspection ? "Đã gửi biên bản" : "Chưa gửi",
                   ],
                   [
@@ -360,7 +363,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
   const [paymentRefA, setPaymentRefA] = useState("");
   const [paymentRefB, setPaymentRefB] = useState("");
 
-  // Step 5: Checklist 6 faces
+  // Step 5: Checklist và bộ ảnh 7 góc
   const [chkFloor, setChkFloor] = useState(true);
   const [chkWalls, setChkWalls] = useState(true);
   const [chkRoof, setChkRoof] = useState(true);
@@ -373,8 +376,13 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     "MINOR" | "MAJOR"
   >("MINOR");
   const [inspectionPhotos, setInspectionPhotos] = useState<string[]>([
-    "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800",
-    "https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=800",
+    "/demo/container/asset-01/front.jpg",
+    "/demo/container/asset-01/rear.jpg",
+    "/demo/container/asset-01/left.jpg",
+    "/demo/container/asset-01/right.jpg",
+    "/demo/container/asset-01/inside.jpg",
+    "/demo/container/asset-01/floor.jpg",
+    "/demo/container/asset-01/csc.jpg",
   ]);
 
   const handleUploadInspectionPhoto = (
@@ -454,10 +462,14 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       errors.inspectionChecklist =
         "Vui lòng xác nhận đủ 6 hạng mục kiểm tra IICL.";
     }
-    if (inspectionPhotos.length < 6) {
-      const missingCount = 6 - inspectionPhotos.length;
-      errors.inspectionPhotos = `INSPECTION_INCOMPLETE: Bộ ảnh chụp thực địa thiếu ${missingCount}/6 góc bắt buộc theo chuẩn IICL. Yêu cầu tải đủ 6 góc ảnh trước khi chuyển sang bước tiếp theo.`;
-      errors.inspectionChecklist = `INSPECTION_INCOMPLETE: Bộ ảnh thiếu ${missingCount} góc ảnh bắt buộc (1. Mặt trước container, 2. Cửa sau container, 3. Vách trái, 4. Vách phải, 5. Bên trong container, 6. Tem số container/CSC plate).`;
+    if (inspectionPhotos.length < REQUIRED_INSPECTION_PHOTO_COUNT) {
+      const missingCount =
+        REQUIRED_INSPECTION_PHOTO_COUNT - inspectionPhotos.length;
+      const requiredAngles = INSPECTION_PHOTO_ANGLE_LABELS.map(
+        (label, index) => `${index + 1}. ${label}`,
+      ).join(", ");
+      errors.inspectionPhotos = `INSPECTION_INCOMPLETE: Bộ ảnh chụp thực địa thiếu ${missingCount}/${REQUIRED_INSPECTION_PHOTO_COUNT} góc bắt buộc theo chuẩn IICL. Yêu cầu tải đủ ${REQUIRED_INSPECTION_PHOTO_COUNT} góc ảnh trước khi chuyển sang bước tiếp theo.`;
+      errors.inspectionChecklist = `INSPECTION_INCOMPLETE: Bộ ảnh thiếu ${missingCount} góc ảnh bắt buộc (${requiredAngles}).`;
     }
     if (isDiscrepancy && !discrepancyNote.trim()) {
       errors.discrepancyNote =
@@ -1300,7 +1312,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-slate-900 uppercase">
-                      BƯỚC 5: BIÊN BẢN KIỂM TRA THỰC ĐỊA 6 MẶT CONTAINER (IICL)
+                      BƯỚC 5: BIÊN BẢN KIỂM TRA THỰC ĐỊA 7 GÓC ẢNH CONTAINER (IICL)
                     </h4>
                     <p className="text-xs text-slate-500">
                       Tài xế/Đại diện đơn vị cần vỏ kiểm tra thực tế trước khi
@@ -1424,19 +1436,20 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                     <div>
                       <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <Camera className="w-3.5 h-3.5 text-blue-600" />
-                        Ảnh hiện trường 6 góc chuẩn IICL (
-                        {inspectionPhotos.length}/6 ảnh) <RequiredMark />
+                        Ảnh hiện trường 7 góc chuẩn IICL (
+                        {inspectionPhotos.length}/{REQUIRED_INSPECTION_PHOTO_COUNT} ảnh){" "}
+                        <RequiredMark />
                       </span>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Bắt buộc 6 góc: 1. Mặt trước container, 2. Cửa sau
+                        Bắt buộc 7 góc: 1. Mặt trước container, 2. Cửa sau
                         container, 3. Vách trái, 4. Vách phải, 5. Bên trong
-                        container, 6. Tem số container/CSC plate.
+                        container, 6. Sàn cont, 7. Tem số container/CSC plate.
                       </p>
                     </div>
                     <label className="cursor-pointer text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 flex items-center gap-1 shrink-0">
                       <Camera className="w-3.5 h-3.5" />
                       <span>
-                        {inspectionPhotos.length < 6
+                        {inspectionPhotos.length < REQUIRED_INSPECTION_PHOTO_COUNT
                           ? "Chụp thêm góc ảnh"
                           : "Thêm ảnh hiện trường"}
                       </span>
@@ -1461,25 +1474,25 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                           className="w-full h-full object-cover"
                         />
                         <span className="absolute bottom-1 left-1 right-1 text-[10px] bg-slate-900/80 text-white px-1.5 py-0.5 rounded truncate text-center backdrop-blur-xs">
-                          {OFFER_PHOTO_ANGLE_LABELS[idx] || `Ảnh ${idx + 1}`}
+                          {INSPECTION_PHOTO_ANGLE_LABELS[idx] || `Ảnh ${idx + 1}`}
                         </span>
                       </div>
                     ))}
                   </div>
 
-                  {inspectionPhotos.length < 6 && (
+                  {inspectionPhotos.length < REQUIRED_INSPECTION_PHOTO_COUNT && (
                     <div className="mt-3 p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                         <div>
                           <strong>INSPECTION_INCOMPLETE:</strong> Đã có{" "}
-                          {inspectionPhotos.length}/6 góc ảnh. Cần đủ 6 góc ảnh
+                          {inspectionPhotos.length}/{REQUIRED_INSPECTION_PHOTO_COUNT} góc ảnh. Cần đủ {REQUIRED_INSPECTION_PHOTO_COUNT} góc ảnh
                           thực địa trước khi chuyển sang bước tiếp theo.
                           <div className="text-[11px] text-amber-700 mt-0.5">
                             Góc kế tiếp cần chụp:{" "}
                             <strong>
                               {
-                                OFFER_PHOTO_ANGLE_LABELS[
+                                INSPECTION_PHOTO_ANGLE_LABELS[
                                   inspectionPhotos.length
                                 ]
                               }
@@ -1491,12 +1504,13 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                         type="button"
                         onClick={() => {
                           setInspectionPhotos([
-                            "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800",
-                            "https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=800",
-                            "https://images.unsplash.com/photo-1559297434-fae8a1916a79?w=800",
-                            "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800",
-                            "https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=800",
-                            "https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=800",
+                            "/demo/container/asset-01/front.jpg",
+                            "/demo/container/asset-01/rear.jpg",
+                            "/demo/container/asset-01/left.jpg",
+                            "/demo/container/asset-01/right.jpg",
+                            "/demo/container/asset-01/inside.jpg",
+                            "/demo/container/asset-01/floor.jpg",
+                            "/demo/container/asset-01/csc.jpg",
                           ]);
                           setInspectionErrors((p) => ({
                             ...p,
@@ -1506,7 +1520,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                         }}
                         className="px-2.5 py-1 rounded-lg bg-amber-200 hover:bg-amber-300 text-amber-950 font-bold text-xs transition-colors shrink-0"
                       >
-                        Nạp mẫu 6 góc IICL
+                        Nạp mẫu 7 góc IICL
                       </button>
                     </div>
                   )}
@@ -1622,7 +1636,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-3 text-slate-700">
                 <p>
-                  Biên bản kiểm tra 6 mặt đã hoàn tất đạt chuẩn. Nhà cung cấp
+                  Biên bản kiểm tra 7 góc ảnh đã hoàn tất đạt chuẩn. Nhà cung cấp
                   (kho giao) và đơn vị cần vỏ (tài xế/kho nhận) xác nhận độc lập
                   để hệ thống chốt giao dịch và chuyển giao quyền quản lý cont
                   (Custody).

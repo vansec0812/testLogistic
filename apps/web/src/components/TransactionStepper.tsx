@@ -57,7 +57,7 @@ const STEPS: Array<{
   {
     status: "INSPECTION",
     label: "Kiểm tra cont",
-    sublabel: "6 ảnh chuẩn IICL",
+    sublabel: "7 ảnh chuẩn IICL",
     icon: Eye,
     step: 5,
   },

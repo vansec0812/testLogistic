@@ -42,64 +42,64 @@ const hAgo = (hours: number) => new Date(now - hours * 3600000).toISOString();
 const dAgo = (days: number) => new Date(now - days * 86400000).toISOString();
 
 // Đổi mã này khi có chủ đích thay toàn bộ tập dữ liệu demo trên trình duyệt.
-export const DEMO_DATASET_VERSION = "2026-09-26-v5-six-condition-photo-sets";
+export const DEMO_DATASET_VERSION = "2026-09-26-v6-seven-angle-photo-sets";
 
 // Mỗi Asset/Offer có một bộ ảnh local riêng, không dùng chung một mẫu ảnh.
-// Thứ tự trong mỗi bộ: Mặt trước, Mặt trái, Mặt phải, Mặt sau, Mặt trên, Mặt dưới, Mặt sàn.
+// Thứ tự trong mỗi bộ: Mặt trước, Cửa sau, Vách trái, Vách phải, Bên trong, Sàn cont, Tem số container/CSC plate.
 const DEMO_CONTAINER_PHOTO_SETS: Record<string, readonly string[]> = {
   "ASSET-01": [
     "/demo/container/asset-01/front.jpg",
+    "/demo/container/asset-01/rear.jpg",
     "/demo/container/asset-01/left.jpg",
     "/demo/container/asset-01/right.jpg",
-    "/demo/container/asset-01/rear.jpg",
-    "/demo/container/asset-01/roof.jpg",
-    "/demo/container/asset-01/underbody.jpg",
+    "/demo/container/asset-01/inside.jpg",
     "/demo/container/asset-01/floor.jpg",
+    "/demo/container/asset-01/csc.jpg",
   ],
   "ASSET-02": [
     "/demo/container/asset-02/front.jpg",
+    "/demo/container/asset-02/rear.jpg",
     "/demo/container/asset-02/left.jpg",
     "/demo/container/asset-02/right.jpg",
-    "/demo/container/asset-02/rear.jpg",
-    "/demo/container/asset-02/roof.jpg",
-    "/demo/container/asset-02/underbody.jpg",
+    "/demo/container/asset-02/inside.jpg",
     "/demo/container/asset-02/floor.jpg",
+    "/demo/container/asset-02/csc.jpg",
   ],
   "ASSET-03": [
     "/demo/container/asset-03/front.jpg",
+    "/demo/container/asset-03/rear.jpg",
     "/demo/container/asset-03/left.jpg",
     "/demo/container/asset-03/right.jpg",
-    "/demo/container/asset-03/rear.jpg",
-    "/demo/container/asset-03/roof.jpg",
-    "/demo/container/asset-03/underbody.jpg",
+    "/demo/container/asset-03/inside.jpg",
     "/demo/container/asset-03/floor.jpg",
+    "/demo/container/asset-03/csc.jpg",
   ],
   "ASSET-04": [
     "/demo/container/asset-04/front.jpg",
+    "/demo/container/asset-04/rear.jpg",
     "/demo/container/asset-04/left.jpg",
     "/demo/container/asset-04/right.jpg",
-    "/demo/container/asset-04/rear.jpg",
-    "/demo/container/asset-04/roof.jpg",
-    "/demo/container/asset-04/underbody.jpg",
+    "/demo/container/asset-04/inside.jpg",
     "/demo/container/asset-04/floor.jpg",
+    "/demo/container/asset-04/csc.jpg",
   ],
   "ASSET-05": [
     "/demo/container/asset-05/front.jpg",
+    "/demo/container/asset-05/rear.jpg",
     "/demo/container/asset-05/left.jpg",
     "/demo/container/asset-05/right.jpg",
-    "/demo/container/asset-05/rear.jpg",
-    "/demo/container/asset-05/roof.jpg",
-    "/demo/container/asset-05/underbody.jpg",
+    "/demo/container/asset-05/inside.jpg",
     "/demo/container/asset-05/floor.jpg",
+    "/demo/container/asset-05/csc.jpg",
   ],
   "ASSET-06": [
     "/demo/container/asset-06/front.jpg",
+    "/demo/container/asset-06/rear.jpg",
     "/demo/container/asset-06/left.jpg",
     "/demo/container/asset-06/right.jpg",
-    "/demo/container/asset-06/rear.jpg",
-    "/demo/container/asset-06/roof.jpg",
-    "/demo/container/asset-06/underbody.jpg",
+    "/demo/container/asset-06/inside.jpg",
     "/demo/container/asset-06/floor.jpg",
+    "/demo/container/asset-06/csc.jpg",
   ],
 };
 

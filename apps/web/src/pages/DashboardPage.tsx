@@ -521,7 +521,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               value={stats.pendingOpsOffers}
               sub={
                 stats.pendingOpsOffers > 0
-                  ? "Cần phê duyệt ảnh 6 góc"
+                  ? "Cần phê duyệt ảnh 7 góc"
                   : "Đã duyệt hết"
               }
               color="blue"

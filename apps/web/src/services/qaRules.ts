@@ -89,6 +89,23 @@ export const OFFER_PHOTO_ANGLE_SHORT_LABELS = [
   "Mặt sàn",
 ] as const;
 
+/**
+ * Bộ ảnh bắt buộc khi kiểm tra thực địa ở Bước 5 của giao dịch.
+ * Thứ tự này là thứ tự hiển thị và được dùng chung cho UI/guard/thông báo.
+ */
+export const INSPECTION_PHOTO_ANGLE_LABELS = [
+  "Mặt trước container",
+  "Cửa sau container",
+  "Vách trái",
+  "Vách phải",
+  "Bên trong container",
+  "Sàn cont",
+  "Tem số container/CSC plate",
+] as const;
+
+export const REQUIRED_INSPECTION_PHOTO_COUNT =
+  INSPECTION_PHOTO_ANGLE_LABELS.length;
+
 export const DEFAULT_BASELINE_DEPOT_COST_VND =
   QA_RULES.pricing.defaultBaselineDepotCostVnd;
 export const DEFAULT_BASELINE_PICKUP_COST_VND =

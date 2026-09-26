@@ -177,7 +177,7 @@ export function canTransitionTo(
       return {
         allowed: true,
         nextStatus: 'INSPECTION',
-        nextAction: 'Đại diện đơn vị Cần vỏ Container kiểm tra thực tế 6 mặt cont tại điểm giao và ghi nhận biên bản.',
+        nextAction: 'Đại diện đơn vị Cần vỏ Container kiểm tra thực tế 7 góc ảnh cont tại điểm giao và ghi nhận biên bản.',
       };
     }
 

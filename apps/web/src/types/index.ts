@@ -291,7 +291,7 @@ export interface ContainerAsset {
   locationVerifiedAt?: string; // Thời điểm Ops xác nhận vị trí (UTC)
   freeTimeDetentionEnd?: string; // ISO UTC timestamp
   freeTimeSource?: string; // Nguồn thông tin hạn
-  photos: string[]; // URLs ảnh (ít nhất 6 góc cho Offer)
+  photos: string[]; // URLs ảnh (ít nhất 7 góc cho Offer)
   edoEvidenceName?: string;
   aiInspection?: AssetAiInspection;
   hasEdoDocument: boolean; // Đã có e-DO/hồ sơ tương đương

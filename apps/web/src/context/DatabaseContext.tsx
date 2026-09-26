@@ -68,6 +68,8 @@ import {
   DEFAULT_BASELINE_DEPOT_COST_VND,
   DEFAULT_BASELINE_PICKUP_COST_VND,
   hasRequiredOfferPhotos,
+  INSPECTION_PHOTO_ANGLE_LABELS,
+  REQUIRED_INSPECTION_PHOTO_COUNT,
   isWithinDisputeWindow,
   applyCompanyPenalty,
   isCompanyTradingBlocked,
@@ -3448,7 +3450,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
         status: "INSPECTION",
         rowVersion: txn.rowVersion + 1,
         nextAction:
-          "Đại diện đơn vị Cần vỏ Container tiến hành kiểm tra thực tế 6 mặt container.",
+          "Đại diện đơn vị Cần vỏ Container tiến hành kiểm tra thực tế 7 góc ảnh container.",
         updatedAt: new Date().toISOString(),
       };
       persistTransactions(
@@ -3505,12 +3507,13 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
         };
       }
 
-      if (data.photos && data.photos.length < 6) {
-        const missingCount = 6 - data.photos.length;
+      const inspectionPhotoCount = data.photos?.filter(Boolean).length ?? 0;
+      if (inspectionPhotoCount < REQUIRED_INSPECTION_PHOTO_COUNT) {
+        const missingCount = REQUIRED_INSPECTION_PHOTO_COUNT - inspectionPhotoCount;
         return {
           success: false,
           code: "INSPECTION_INCOMPLETE",
-          message: `INSPECTION_INCOMPLETE: Bộ ảnh chụp hiện trường thiếu ${missingCount}/6 góc bắt buộc (1. Mặt trước container, 2. Cửa sau container, 3. Vách trái, 4. Vách phải, 5. Bên trong container, 6. Tem số container/CSC plate). Yêu cầu chụp bổ sung đầy đủ trước khi chuyển giao dịch sang trạng thái tiếp theo.`,
+          message: `INSPECTION_INCOMPLETE: Bộ ảnh chụp hiện trường thiếu ${missingCount}/${REQUIRED_INSPECTION_PHOTO_COUNT} góc bắt buộc (${INSPECTION_PHOTO_ANGLE_LABELS.map((label, index) => `${index + 1}. ${label}`).join(", ")}). Yêu cầu chụp bổ sung đầy đủ trước khi chuyển giao dịch sang trạng thái tiếp theo.`,
         };
       }
 
