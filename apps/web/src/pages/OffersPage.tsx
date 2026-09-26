@@ -2436,7 +2436,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                     <div className="p-3 bg-amber-50/70 rounded-xl text-xs text-slate-700 border border-amber-200/70 flex items-start gap-2 shadow-2xs">
                       <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                       <div className="leading-relaxed">
-                        <span className="text-amber-900 font-bold">Ghi chú tình trạng:</span>{" "}
+                        <span className="text-amber-900 font-bold">
+                          Ghi chú tình trạng:
+                        </span>{" "}
                         <span className="text-slate-800 font-medium">
                           {offer.conditionNotes || offer.asset?.conditionNotes}
                         </span>
@@ -2619,15 +2621,16 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                               Ghi chú tình trạng:
                             </span>{" "}
                             <span className="text-slate-800 font-medium">
-                              {offer.conditionNotes || offer.asset?.conditionNotes}
+                              {offer.conditionNotes ||
+                                offer.asset?.conditionNotes}
                             </span>
                           </div>
                         </div>
                       )}
 
                     {/* Ops AI check notes if OPS role */}
-                    {currentRole === "OPS" && (
-                      hasOfferPhotoAiResult(offer.aiCheck) ? (
+                    {currentRole === "OPS" &&
+                      (hasOfferPhotoAiResult(offer.aiCheck) ? (
                         <div className="space-y-2 rounded-xl border border-violet-200 bg-violet-50/50 p-3 text-xs">
                           <div className="flex flex-wrap items-center gap-2">
                             <strong className="text-violet-950">
@@ -2649,29 +2652,34 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                           </p>
                           {getOfferAiReviewEvidence(offer).length > 0 && (
                             <ul className="list-disc pl-4 space-y-0.5 text-violet-950 leading-relaxed">
-                              {getOfferAiReviewEvidence(offer).map((item, index) => (
-                                <li key={`${offer.id}-ai-evidence-${index}`}>
-                                  {item}
-                                </li>
-                              ))}
+                              {getOfferAiReviewEvidence(offer).map(
+                                (item, index) => (
+                                  <li key={`${offer.id}-ai-evidence-${index}`}>
+                                    {item}
+                                  </li>
+                                ),
+                              )}
                             </ul>
                           )}
-                          {(offer.conditionNotes || offer.asset?.conditionNotes) && (
+                          {(offer.conditionNotes ||
+                            offer.asset?.conditionNotes) && (
                             <p className="leading-relaxed text-slate-700">
                               <strong>Mô tả:</strong>{" "}
-                              {offer.conditionNotes || offer.asset?.conditionNotes}
+                              {offer.conditionNotes ||
+                                offer.asset?.conditionNotes}
                             </p>
                           )}
                         </div>
                       ) : (
-                        (offer.conditionNotes || offer.asset?.conditionNotes) && (
+                        (offer.conditionNotes ||
+                          offer.asset?.conditionNotes) && (
                           <div className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-700">
                             <strong>Mô tả:</strong>{" "}
-                            {offer.conditionNotes || offer.asset?.conditionNotes}
+                            {offer.conditionNotes ||
+                              offer.asset?.conditionNotes}
                           </div>
                         )
-                      )
-                    )}
+                      ))}
                   </div>
 
                   {/* Hàng 3: Action Buttons */}
@@ -2765,11 +2773,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                           <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-200 py-1 z-[100] animate-in fade-in zoom-in-95 duration-100">
                             {/* Chỉnh sửa Offer */}
                             {(isSupplierRole || currentRole === "OPS") &&
-                              ![
-                                "HELD",
-                                "ALLOCATED",
-                                "FULFILLED",
-                              ].includes(offer.status) && (
+                              !["HELD", "ALLOCATED", "FULFILLED"].includes(
+                                offer.status,
+                              ) && (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -2784,27 +2790,26 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                               )}
 
                             {/* Rút tin Offer */}
-                            {offer.status === "AVAILABLE" && (isSupplierRole || currentRole === "OPS") && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActiveActionMenuId(null);
-                                  setWithdrawId(offer.id);
-                                }}
-                                className="w-full px-3.5 py-2 text-left text-xs font-medium text-amber-700 hover:bg-amber-50 flex items-center gap-2 transition-colors"
-                              >
-                                <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-                                <span>Rút tin Offer</span>
-                              </button>
-                            )}
+                            {offer.status === "AVAILABLE" &&
+                              (isSupplierRole || currentRole === "OPS") && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveActionMenuId(null);
+                                    setWithdrawId(offer.id);
+                                  }}
+                                  className="w-full px-3.5 py-2 text-left text-xs font-medium text-amber-700 hover:bg-amber-50 flex items-center gap-2 transition-colors"
+                                >
+                                  <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                                  <span>Rút tin Offer</span>
+                                </button>
+                              )}
 
                             {/* Xóa Offer */}
                             {(isSupplierRole || currentRole === "OPS") &&
-                              ![
-                                "HELD",
-                                "ALLOCATED",
-                                "FULFILLED",
-                              ].includes(offer.status) && (
+                              !["HELD", "ALLOCATED", "FULFILLED"].includes(
+                                offer.status,
+                              ) && (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -3426,7 +3431,8 @@ export const OffersPage: React.FC<OffersPageProps> = ({
               </div>
 
               {/* Ghi chú giám định nếu có */}
-              {(selectedOffer.conditionNotes || selectedOffer.asset?.conditionNotes) && (
+              {(selectedOffer.conditionNotes ||
+                selectedOffer.asset?.conditionNotes) && (
                 <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200/70 text-xs text-slate-700 flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div className="leading-relaxed">
@@ -3434,7 +3440,8 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                       Ghi chú tình trạng:
                     </strong>{" "}
                     <span className="text-slate-800 font-medium">
-                      {selectedOffer.conditionNotes || selectedOffer.asset?.conditionNotes}
+                      {selectedOffer.conditionNotes ||
+                        selectedOffer.asset?.conditionNotes}
                     </span>
                   </div>
                 </div>

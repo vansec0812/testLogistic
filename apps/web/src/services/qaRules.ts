@@ -59,34 +59,34 @@ export const QA_RULES = {
 
 export const OFFER_PHOTO_ANGLES = [
   "front",
-  "back_door",
   "left_side",
+  "rear",
   "right_side",
-  "inside",
+  "roof",
+  "underbody",
   "floor",
-  "container_number_plate",
 ] as const;
 
 export type OfferPhotoAngle = (typeof OFFER_PHOTO_ANGLES)[number];
 
 export const OFFER_PHOTO_ANGLE_LABELS = [
-  "Mặt trước container",
-  "Cửa sau container",
-  "Vách trái container",
-  "Vách phải container",
-  "Bên trong container",
-  "Sàn container",
-  "Tem số container / CSC plate",
+  "Mặt trước",
+  "Mặt trái",
+  "Mặt sau",
+  "Mặt phải",
+  "Mặt trên",
+  "Mặt dưới",
+  "Mặt sàn",
 ] as const;
 
 export const OFFER_PHOTO_ANGLE_SHORT_LABELS = [
   "Mặt trước",
-  "Cửa sau",
-  "Vách trái",
-  "Vách phải",
-  "Bên trong",
-  "Sàn cont",
-  "Tem số/CSC",
+  "Mặt trái",
+  "Mặt sau",
+  "Mặt phải",
+  "Mặt trên",
+  "Mặt dưới",
+  "Mặt sàn",
 ] as const;
 
 export const DEFAULT_BASELINE_DEPOT_COST_VND =

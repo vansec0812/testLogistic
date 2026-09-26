@@ -406,7 +406,10 @@ export const AssetsPage: React.FC = () => {
       showMsg("Có thể tải tối đa 12 ảnh cho một container.", true);
       return;
     }
-    if (currentPhotos.length < QA_RULES.offer.minPhotoCount && files.length > 1) {
+    if (
+      currentPhotos.length < QA_RULES.offer.minPhotoCount &&
+      files.length > 1
+    ) {
       e.target.value = "";
       showMsg(
         `Mỗi bước chỉ được tải 1 ảnh. Hãy hoàn tất ${QA_RULES.offer.minPhotoCount} góc theo đúng thứ tự.`,
@@ -885,9 +888,9 @@ export const AssetsPage: React.FC = () => {
               {QA_RULES.offer.minPhotoCount})
             </label>
             <p className="text-xs font-semibold text-red-600 mb-2">
-              <RequiredMark /> Bắt buộc tối thiểu {QA_RULES.offer.minPhotoCount} ảnh:
-              1. Mặt trước container, 2. Cửa sau container, 3. Vách trái, 4. Vách
-              phải, 5. Bên trong container, 6. Sàn container, 7. Tem số
+              <RequiredMark /> Bắt buộc tối thiểu {QA_RULES.offer.minPhotoCount}{" "}
+              ảnh: 1. Mặt trước container, 2. Cửa sau container, 3. Vách trái,
+              4. Vách phải, 5. Bên trong container, 6. Sàn container, 7. Tem số
               container/CSC plate.
             </p>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-3">
@@ -1288,8 +1291,8 @@ export const AssetsPage: React.FC = () => {
                 </div>
                 <p className="text-[11px] text-slate-500">
                   Tối thiểu {QA_RULES.offer.minPhotoCount} góc: 1. Mặt trước, 2.
-                  Cửa sau, 3. Vách trái, 4. Vách phải, 5. Bên trong container, 6.
-                  Sàn container, 7. Tem số/CSC plate. Thiếu góc sẽ báo
+                  Cửa sau, 3. Vách trái, 4. Vách phải, 5. Bên trong container,
+                  6. Sàn container, 7. Tem số/CSC plate. Thiếu góc sẽ báo
                   INSPECTION_INCOMPLETE.
                 </p>
 
@@ -1304,7 +1307,8 @@ export const AssetsPage: React.FC = () => {
                       type="button"
                       disabled={
                         isAiInspecting ||
-                        selectedAsset.photos.length < QA_RULES.offer.minPhotoCount
+                        selectedAsset.photos.length <
+                          QA_RULES.offer.minPhotoCount
                       }
                       onClick={() => handleAiInspection(selectedAsset.id)}
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all ${
@@ -1487,7 +1491,8 @@ export const AssetsPage: React.FC = () => {
                       )}
                     </div>
                     <span className="absolute bottom-2 right-2 text-xs font-bold bg-slate-900/80 text-white rounded-lg px-2.5 py-1 backdrop-blur-sm">
-                      {asset.photos.length}/{QA_RULES.offer.minPhotoCount} tối thiểu
+                      {asset.photos.length}/{QA_RULES.offer.minPhotoCount} tối
+                      thiểu
                     </span>
                   </div>
 

@@ -359,7 +359,8 @@ export const INITIAL_ASSETS: ContainerAsset[] = [
       inspectedAt: hAgo(4),
       reviewedBy: "ops.lead@econt.vn",
       reviewedAt: hAgo(3.5),
-      opsDecisionNotes: "Ops xác nhận tình trạng xước nhẹ, đủ điều kiện giao nhận.",
+      opsDecisionNotes:
+        "Ops xác nhận tình trạng xước nhẹ, đủ điều kiện giao nhận.",
     },
     hasEdoDocument: true,
     edoVerificationStatus: "VERIFIED",
@@ -393,7 +394,8 @@ export const INITIAL_ASSETS: ContainerAsset[] = [
       status: "OPS_VERIFIED",
       score: 86,
       condition: "MINOR_DAMAGE",
-      summary: "Vỏ đã qua sử dụng lâu hơn, có xước và rỉ sét cục bộ nhưng vẫn khai thác được.",
+      summary:
+        "Vỏ đã qua sử dụng lâu hơn, có xước và rỉ sét cục bộ nhưng vẫn khai thác được.",
       details: [
         "Nhiều vết xước trên vách trái, vách phải và cửa sau.",
         "Có rỉ sét cục bộ ở mép dưới và một số góc cont.",
@@ -403,7 +405,8 @@ export const INITIAL_ASSETS: ContainerAsset[] = [
       inspectedAt: hAgo(28),
       reviewedBy: "ops.lead@econt.vn",
       reviewedAt: hAgo(26),
-      opsDecisionNotes: "Ops chấp thuận với điều kiện công khai rõ tình trạng xước/rỉ sét nhẹ.",
+      opsDecisionNotes:
+        "Ops chấp thuận với điều kiện công khai rõ tình trạng xước/rỉ sét nhẹ.",
     },
     hasEdoDocument: true,
     edoVerificationStatus: "VERIFIED",
@@ -435,7 +438,8 @@ export const INITIAL_ASSETS: ContainerAsset[] = [
       status: "ANOMALY",
       score: 54,
       condition: "MAJOR_DAMAGE",
-      summary: "Ảnh cho thấy vỏ bị hư hỏng nặng, không nên giao khi chưa sửa chữa.",
+      summary:
+        "Ảnh cho thấy vỏ bị hư hỏng nặng, không nên giao khi chưa sửa chữa.",
       details: [
         "Phát hiện móp rõ ở góc và mép dưới vách cont.",
         "Có mảng rỉ sét lớn ở vách, khung đáy và gầm cont.",
@@ -445,7 +449,8 @@ export const INITIAL_ASSETS: ContainerAsset[] = [
       inspectedAt: dAgo(2),
       reviewedBy: "ops.lead@econt.vn",
       reviewedAt: dAgo(1),
-      opsDecisionNotes: "Không duyệt giao cho đến khi hoàn tất sửa chữa; Offer hiện đã rút.",
+      opsDecisionNotes:
+        "Không duyệt giao cho đến khi hoàn tất sửa chữa; Offer hiện đã rút.",
     },
     hasEdoDocument: true,
     edoVerificationStatus: "VERIFIED",
@@ -525,7 +530,8 @@ export const INITIAL_ASSETS: ContainerAsset[] = [
       status: "OPS_VERIFIED",
       score: 89,
       condition: "MINOR_DAMAGE",
-      summary: "Vỏ đã qua sử dụng, có xước nhẹ nhưng tình trạng phù hợp với biên bản bàn giao.",
+      summary:
+        "Vỏ đã qua sử dụng, có xước nhẹ nhưng tình trạng phù hợp với biên bản bàn giao.",
       details: [
         "Có xước nhẹ ở vách và khung cửa do quá trình khai thác.",
         "Cửa và sàn còn sử dụng tốt, không phát hiện hư hỏng nặng.",
@@ -535,7 +541,8 @@ export const INITIAL_ASSETS: ContainerAsset[] = [
       inspectedAt: dAgo(2),
       reviewedBy: "ops.lead@econt.vn",
       reviewedAt: dAgo(2),
-      opsDecisionNotes: "Đã kiểm tra và bàn giao; tình trạng xước nhẹ được ghi nhận.",
+      opsDecisionNotes:
+        "Đã kiểm tra và bàn giao; tình trạng xước nhẹ được ghi nhận.",
     },
     hasEdoDocument: true,
     edoVerificationStatus: "VERIFIED",
