@@ -5332,13 +5332,13 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
       let refundAmountB = paidB;
 
       if (ruling.faultParty === "PARTY_A") {
-        // Bên A sai: bị phạt trừ tiền đền bù; Bên B không sai nhận đủ + được đền bù
+        // Nhà cung cấp Cont sai: bị khấu trừ tiền phạt làm phí trung gian Ops thu; bên Cần vỏ Cont nhận đủ 100% tiền đã đóng
         refundAmountA = Math.max(0, paidA - penalty);
-        refundAmountB = paidB + penalty;
+        refundAmountB = paidB;
       } else if (ruling.faultParty === "PARTY_B") {
-        // Bên B sai: bị phạt trừ tiền đền bù; Bên A không sai nhận đủ + được đền bù
+        // Cần vỏ Cont sai: bị khấu trừ tiền phạt làm phí trung gian Ops thu; bên Nhà cung cấp Cont nhận đủ 100% tiền đã đóng
         refundAmountB = Math.max(0, paidB - penalty);
-        refundAmountA = paidA + penalty;
+        refundAmountA = paidA;
       }
 
       const opsRuling: OpsDisputeRuling = {
@@ -5371,9 +5371,9 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const faultLabel =
         ruling.faultParty === "PARTY_A"
-          ? `Lỗi vi phạm thuộc về Bên A (${txn.companyAName})`
+          ? `Lỗi vi phạm thuộc về Nhà cung cấp Cont (${txn.companyAName})`
           : ruling.faultParty === "PARTY_B"
-          ? `Lỗi vi phạm thuộc về Bên B (${txn.companyBName})`
+          ? `Lỗi vi phạm thuộc về bên Cần vỏ Cont (${txn.companyBName})`
           : ruling.faultParty === "MUTUAL"
           ? "Lỗi phát sinh từ cả hai phía (Mutual)"
           : "Không bên nào có lỗi nghiêm trọng (Bất khả kháng)";
@@ -5381,16 +5381,16 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
       addNotification(
         txn.companyAId,
         "OPS_ALERT",
-        `Phán quyết Ops giao dịch ${txn.id} - Phiếu hoàn tiền đền bù`,
-        `Ops kết luận: ${faultLabel}. Mức phạt/đền bù: ${penalty.toLocaleString("vi-VN")} đ. Số tiền hoàn dự kiến về Bên A: ${refundAmountA.toLocaleString("vi-VN")} đ. Vui lòng cung cấp STK Ngân hàng để nhận tiền hoàn.`,
+        `Phán quyết Ops giao dịch ${txn.id} - Phiếu hoàn tiền`,
+        `Ops kết luận: ${faultLabel}. Khấu trừ phí trung gian (Ops thu): ${penalty.toLocaleString("vi-VN")} đ. Số tiền hoàn dự kiến về Nhà cung cấp Cont: ${refundAmountA.toLocaleString("vi-VN")} đ. Vui lòng cung cấp STK Ngân hàng để nhận tiền hoàn.`,
         txn.id,
       );
 
       addNotification(
         txn.companyBId,
         "OPS_ALERT",
-        `Phán quyết Ops giao dịch ${txn.id} - Phiếu hoàn tiền đền bù`,
-        `Ops kết luận: ${faultLabel}. Mức phạt/đền bù: ${penalty.toLocaleString("vi-VN")} đ. Số tiền hoàn dự kiến về Bên B: ${refundAmountB.toLocaleString("vi-VN")} đ. Vui lòng cung cấp STK Ngân hàng để nhận tiền hoàn.`,
+        `Phán quyết Ops giao dịch ${txn.id} - Phiếu hoàn tiền`,
+        `Ops kết luận: ${faultLabel}. Khấu trừ phí trung gian (Ops thu): ${penalty.toLocaleString("vi-VN")} đ. Số tiền hoàn dự kiến về bên Cần vỏ Cont: ${refundAmountB.toLocaleString("vi-VN")} đ. Vui lòng cung cấp STK Ngân hàng để nhận tiền hoàn.`,
         txn.id,
       );
 
@@ -5493,7 +5493,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
       const updatedTxn: Transaction = {
         ...txn,
         disputeFlow: updatedDisputeFlow,
-        nextAction: `Đã ghi nhận STK từ Bên ${isA ? "A" : "B"}. Ops chuẩn bị giải ngân tiền hoàn.`,
+        nextAction: `Đã ghi nhận STK từ ${isA ? "Nhà cung cấp Cont" : "Cần vỏ Cont"}. Ops chuẩn bị giải ngân tiền hoàn.`,
         rowVersion: txn.rowVersion + 1,
         updatedAt: new Date().toISOString(),
       };
