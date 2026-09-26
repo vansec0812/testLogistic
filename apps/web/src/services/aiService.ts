@@ -187,7 +187,7 @@ function assertAiPhotoSize(photos: string[]): void {
   }, 0);
   if (encodedChars > MAX_AI_PHOTO_BASE64_CHARS) {
     throw new Error(
-      "Tổng dung lượng 6 ảnh quá lớn cho phiên quét AI trên Vercel. Vui lòng chọn ảnh nhẹ hơn.",
+      "Tổng dung lượng bộ ảnh quá lớn cho phiên quét AI trên Vercel. Vui lòng chọn ảnh nhẹ hơn.",
     );
   }
 }
@@ -1207,7 +1207,7 @@ export async function inspectContainerWithAI(
   }
 }
 
-/** Đối chiếu 6 ảnh thực tế với số cont, loại, hãng và tình trạng đã khai báo. */
+/** Đối chiếu 7 góc ảnh thực tế với số cont, loại, hãng và tình trạng đã khai báo. */
 export async function verifyContainerPhotosWithAI(
   photos: string[],
   expected: {
@@ -1265,11 +1265,12 @@ export async function verifyContainerPhotosWithAI(
           "back_door",
           "left_side",
           "right_side",
-          "inside_floor_vach",
+          "inside",
+          "floor",
           "container_number_plate",
         ],
         expected,
-        requiredPhotoCount: 6,
+        requiredPhotoCount: 7,
       }),
     );
     const mismatchDetails = vietnameseTextArray(
@@ -1307,34 +1308,14 @@ export async function verifyContainerPhotosWithAI(
         responseDetails.join(" "),
       ) || undefined;
 
-    let resolvedContainerNumber = actualContainerNumber;
+    const resolvedContainerNumber = actualContainerNumber;
     if (
       actualContainerNumber &&
       actualContainerNumber !== expected.containerNumber
     ) {
-      if (
-        actualContainerNumber.length === 11 &&
-        expected.containerNumber.length === 11 &&
-        actualContainerNumber.slice(0, 10) ===
-          expected.containerNumber.slice(0, 10)
-      ) {
-        const actualCd = actualContainerNumber[10];
-        const expectedCd = expected.containerNumber[10];
-        if (
-          (actualCd === "4" && expectedCd === "9") ||
-          (actualCd === "9" && expectedCd === "4")
-        ) {
-          resolvedContainerNumber = expected.containerNumber;
-        } else {
-          mismatchDetails.push(
-            `Ảnh nhận diện số cont ${actualContainerNumber}, không khớp ${expected.containerNumber}.`,
-          );
-        }
-      } else {
-        mismatchDetails.push(
-          `Ảnh nhận diện số cont ${actualContainerNumber}, không khớp ${expected.containerNumber}.`,
-        );
-      }
+      mismatchDetails.push(
+        `Ảnh nhận diện số cont ${actualContainerNumber}, không khớp ${expected.containerNumber}.`,
+      );
     }
 
     if (actualContainerType && actualContainerType !== expected.containerType)

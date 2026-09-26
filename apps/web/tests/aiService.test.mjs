@@ -9,7 +9,7 @@ let timeouts;
 const realFetch = globalThis.fetch;
 const oldWindow = globalThis.window;
 const oldReader = globalThis.FileReader;
-const photos = Array(6).fill('data:image/png;base64,iVBORw0KGgo=');
+const photos = Array(7).fill('data:image/png;base64,iVBORw0KGgo=');
 const expected = { containerNumber: 'TEST1234567', containerType: '40HC', carrierCode: 'OTHER', declaredCondition: 'GOOD' };
 const file = { name: 'fixture.pdf', type: 'application/pdf' };
 
@@ -147,6 +147,8 @@ test('all photos and declared identity are sent; AI requests get the longer time
     const sent = JSON.parse(init.body);
     assert.deepEqual(sent.photos, photos);
     assert.deepEqual(sent.expected, expected);
+    assert.equal(sent.requiredPhotoCount, 7);
+    assert.deepEqual(sent.photoAngles, ['front', 'back_door', 'left_side', 'right_side', 'inside', 'floor', 'container_number_plate']);
     return new Response(JSON.stringify({ status: 'OBSERVED', actualContainerNumber: expected.containerNumber, actualContainerType: expected.containerType, actualCarrierCode: expected.carrierCode, actualCondition: 'GOOD', actualConditionNotes: 'Vách và cửa nguyên vẹn, không thấy hư hỏng.', summary: 'Ảnh rõ', requiresOpsReview: false }), { headers: { 'Content-Type': 'application/json' } });
   };
   assert.equal((await ai.verifyContainerPhotosWithAI(photos, expected)).status, 'MATCHED');
