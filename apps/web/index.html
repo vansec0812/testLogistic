@@ -11,6 +11,25 @@
   </head>
   <body class="h-full font-sans antialiased selection:bg-brand-100 selection:text-brand-900">
     <div id="root" class="h-full"></div>
+    <script>
+      window.addEventListener('error', function(e) {
+        var root = document.getElementById('root');
+        if (root && root.children.length === 0) {
+          var box = document.getElementById('debug-error-box') || document.createElement('div');
+          box.id = 'debug-error-box';
+          box.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:#f8fafc;padding:32px;font-family:sans-serif;z-index:999999;box-sizing:border-box;display:flex;align-items:center;justify-content:center;';
+          box.innerHTML = '<div style="max-width:560px;background:#fff;border:1px solid #fecaca;padding:24px;border-radius:16px;box-shadow:0 10px 25px rgba(0,0,0,0.1);">'
+            + '<h2 style="color:#b91c1c;margin:0 0 8px 0;font-size:18px;">⚠️ Lỗi nạp ứng dụng</h2>'
+            + '<p style="color:#64748b;font-size:13px;margin:0 0 16px 0;">Đã xảy ra lỗi khi tải script hoặc khởi động giao diện:</p>'
+            + '<pre style="background:#0f172a;color:#f8fafc;padding:12px;border-radius:8px;font-size:11px;overflow:auto;max-height:200px;">' + (e.error ? (e.error.stack || e.error.message) : e.message) + '</pre>'
+            + '<div style="margin-top:16px;display:flex;gap:12px;">'
+            + '<button onclick="localStorage.clear();sessionStorage.clear();location.reload();" style="flex:1;background:#2563eb;color:#fff;border:none;padding:10px 16px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer;">🔄 Xóa Cache & Tải lại</button>'
+            + '<button onclick="location.reload();" style="border:1px solid #cbd5e1;background:#fff;color:#334155;padding:10px 16px;border-radius:8px;font-size:13px;cursor:pointer;">Thử lại</button>'
+            + '</div></div>';
+          document.body.appendChild(box);
+        }
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
