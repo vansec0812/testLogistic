@@ -72,6 +72,8 @@ import {
 } from "../services/qaRules";
 import {
   getOfferAiConditionTitle,
+  getOfferAiReviewEvidence,
+  hasOfferPhotoAiResult,
   sortOffersForOps,
 } from "../services/offerReview";
 
@@ -230,6 +232,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
     actualCarrierCode?: string;
     actualConditionNotes?: string;
     mismatchDetails: string[];
+    missingAngles?: string[];
     details?: string[];
     edoValid: boolean;
     edoAnomaly: boolean;
@@ -650,6 +653,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
         actualCarrierCode: photoResult.actualCarrierCode,
         actualConditionNotes: photoResult.actualConditionNotes,
         mismatchDetails: photoResult.mismatchDetails,
+        missingAngles: photoResult.missingAngles,
         details,
         edoValid,
         edoAnomaly:
@@ -796,7 +800,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
       return;
     }
 
-    // Lưu cả kết quả AI chạy tự động sau khi đủ 6 ảnh, kể cả khi người dùng
+    // Lưu cả kết quả AI chạy tự động sau khi đủ 7 ảnh, kể cả khi người dùng
     // chưa bấm lại nút kiểm tra tổng hợp eDO + ảnh.
     const persistedAiResult =
       aiCheckResult ||
@@ -821,6 +825,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
             actualCarrierCode: photoAiResult?.actualCarrierCode,
             actualConditionNotes: photoAiResult?.actualConditionNotes,
             mismatchDetails: photoAiResult?.mismatchDetails || [],
+            missingAngles: photoAiResult?.missingAngles,
             details: [
               ...(edoVerification?.details || []),
               ...(edoVerification?.mismatchDetails || []),
@@ -894,6 +899,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
             actualCarrierCode: persistedAiResult.actualCarrierCode,
             actualConditionNotes: persistedAiResult.actualConditionNotes,
             mismatchDetails: persistedAiResult.mismatchDetails,
+            missingAngles: persistedAiResult.missingAngles,
             photoStatus: persistedAiResult.photoStatus,
             anomalyReason:
               persistedAiResult.verificationStatus === "ANOMALY"
@@ -1268,6 +1274,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
         actualCarrierCode: editPhotoAiResult.actualCarrierCode,
         actualConditionNotes: editPhotoAiResult.actualConditionNotes,
         mismatchDetails: editPhotoAiResult.mismatchDetails,
+        missingAngles: editPhotoAiResult.missingAngles,
         photoStatus: aiStatus,
         anomalyReason:
           aiStatus === "MATCHED"
@@ -1972,7 +1979,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
               <FieldError message={formErrors.conditionNotes} />
             </div>
 
-            {/* 10. Ảnh container (Tối thiểu 6 ảnh, có thể bổ sung ảnh chi tiết) */}
+            {/* 10. Ảnh container (Tối thiểu 7 ảnh, có thể bổ sung ảnh chi tiết) */}
             <div
               id="offer-photos"
               data-field="photos"
@@ -2158,7 +2165,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-teal-600" />
                     <span className="text-xs font-bold text-teal-900">
-                      AI xác minh eDO & đối chiếu tình trạng 6 ảnh:
+                      AI xác minh eDO & đối chiếu tình trạng 7 ảnh:
                     </span>
                     {aiCheckResult ? (
                       <span
@@ -2603,47 +2610,67 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                       </div>
                     )}
 
-                    {/* Ghi chú tình trạng container - hiển thị trực tiếp bên ngoài */}
-                    {(offer.conditionNotes || offer.asset?.conditionNotes) && (
-                      <div className="p-2.5 bg-amber-50/70 rounded-xl text-xs text-slate-700 border border-amber-200/70 flex items-start gap-2 shadow-2xs">
-                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                        <div className="leading-relaxed">
-                          <span className="text-amber-900 font-bold">Ghi chú tình trạng:</span>{" "}
-                          <span className="text-slate-800 font-medium">
-                            {offer.conditionNotes || offer.asset?.conditionNotes}
-                          </span>
+                    {currentRole !== "OPS" &&
+                      (offer.conditionNotes || offer.asset?.conditionNotes) && (
+                        <div className="p-2.5 bg-amber-50/70 rounded-xl text-xs text-slate-700 border border-amber-200/70 flex items-start gap-2 shadow-2xs">
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div className="leading-relaxed">
+                            <span className="text-amber-900 font-bold">
+                              Ghi chú tình trạng:
+                            </span>{" "}
+                            <span className="text-slate-800 font-medium">
+                              {offer.conditionNotes || offer.asset?.conditionNotes}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
                     {/* Ops AI check notes if OPS role */}
                     {currentRole === "OPS" && (
-                      <div className="space-y-2 rounded-xl border border-violet-200 bg-violet-50/50 p-3 text-xs">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <strong className="text-violet-950">
-                            Kết quả AI báo về:
-                          </strong>
-                          {offer.aiCheck?.photoCondition && (
-                            <ConditionBadge
-                              condition={offer.aiCheck.photoCondition}
-                              size="xs"
-                            />
-                          )}
-                          <span className="text-violet-950 font-semibold">
+                      hasOfferPhotoAiResult(offer.aiCheck) ? (
+                        <div className="space-y-2 rounded-xl border border-violet-200 bg-violet-50/50 p-3 text-xs">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <strong className="text-violet-950">
+                              Kết quả AI báo về:
+                            </strong>
+                            {offer.aiCheck?.photoCondition && (
+                              <span className="flex items-center gap-1 text-violet-950">
+                                Tình trạng ảnh:
+                                <ConditionBadge
+                                  condition={offer.aiCheck.photoCondition}
+                                  size="xs"
+                                />
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-violet-950 font-semibold leading-relaxed">
+                            <strong>Kết luận:</strong>{" "}
                             {getOfferAiConditionTitle(offer)}
-                          </span>
+                          </p>
+                          {getOfferAiReviewEvidence(offer).length > 0 && (
+                            <ul className="list-disc pl-4 space-y-0.5 text-violet-950 leading-relaxed">
+                              {getOfferAiReviewEvidence(offer).map((item, index) => (
+                                <li key={`${offer.id}-ai-evidence-${index}`}>
+                                  {item}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {(offer.conditionNotes || offer.asset?.conditionNotes) && (
+                            <p className="leading-relaxed text-slate-700">
+                              <strong>Mô tả:</strong>{" "}
+                              {offer.conditionNotes || offer.asset?.conditionNotes}
+                            </p>
+                          )}
                         </div>
-                        {offer.aiCheck?.photoConditionNotes && (
-                          <p className="leading-relaxed text-violet-950">
-                            {offer.aiCheck.photoConditionNotes}
-                          </p>
-                        )}
-                        {offer.conditionNotes && (
-                          <p className="leading-relaxed text-slate-700">
-                            <strong>Mô tả:</strong> {offer.conditionNotes}
-                          </p>
-                        )}
-                      </div>
+                      ) : (
+                        (offer.conditionNotes || offer.asset?.conditionNotes) && (
+                          <div className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-700">
+                            <strong>Mô tả:</strong>{" "}
+                            {offer.conditionNotes || offer.asset?.conditionNotes}
+                          </div>
+                        )
+                      )
                     )}
                   </div>
 
@@ -2817,7 +2844,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
         </div>
       )}
 
-      {/* Modal chỉnh sửa Offer: cho phép thay, xóa và thêm ảnh nhưng vẫn giữ checklist tối thiểu 6 góc */}
+      {/* Modal chỉnh sửa Offer: cho phép thay, xóa và thêm ảnh nhưng vẫn giữ checklist tối thiểu 7 góc */}
       {editingOffer && (isSupplierRole || currentRole === "OPS") && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] overflow-y-auto p-6 space-y-5 shadow-2xl">

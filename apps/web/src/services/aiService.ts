@@ -11,6 +11,10 @@ import {
 } from "../types";
 import { calculateCheckDigit, validateContainerNumber } from "./iso6346";
 import { ApiClientError, isApiConfigured, postApi } from "./apiClient";
+import {
+  OFFER_PHOTO_ANGLE_LABELS,
+  OFFER_PHOTO_ANGLES,
+} from "./qaRules";
 
 export interface ExtractedEdoData {
   containerNumber: string;
@@ -629,6 +633,116 @@ function normalizeEdoContainerNumber(value: unknown): string {
     .replace(/[^A-Z0-9]/g, "");
 }
 
+function normalizePhotoAngleToken(value: unknown): string {
+  return asString(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function normalizeMissingPhotoAngles(value: unknown): string[] {
+  const values = Array.isArray(value)
+    ? value.flatMap((item) =>
+        item && typeof item === "object"
+          ? [
+              (item as { angle?: unknown }).angle,
+              (item as { name?: unknown }).name,
+              (item as { view?: unknown }).view,
+            ]
+          : [item],
+      )
+    : typeof value === "string"
+      ? value.split(/[,;|\n]+/)
+      : [];
+  const normalized = new Set(
+    values.map(normalizePhotoAngleToken).filter(Boolean),
+  );
+  const aliases: Record<string, string[]> = {
+    front: [
+      "front",
+      "front_view",
+      "mat_truoc",
+      "mat_truoc_container",
+      "mat_vach_dau",
+    ],
+    back_door: [
+      "back_door",
+      "backdoor",
+      "back_view",
+      "rear",
+      "rear_view",
+      "cua_sau",
+      "cua_sau_container",
+      "mat_sau",
+    ],
+    left_side: [
+      "left_side",
+      "left",
+      "left_view",
+      "vach_trai",
+      "vach_trai_container",
+      "mat_trai",
+    ],
+    right_side: [
+      "right_side",
+      "right",
+      "right_view",
+      "vach_phai",
+      "vach_phai_container",
+      "mat_phai",
+    ],
+    inside: [
+      "inside",
+      "interior",
+      "inside_container",
+      "ben_trong",
+      "ben_trong_container",
+    ],
+    floor: [
+      "floor",
+      "floor_view",
+      "san",
+      "san_container",
+      "san_cont",
+      "bottom",
+      "bottom_view",
+      "undercarriage",
+    ],
+    container_number_plate: [
+      "container_number_plate",
+      "container_plate",
+      "number_plate",
+      "csc_plate",
+      "plate",
+      "tem_so",
+      "tem_so_container",
+      "tem_so_container_csc_plate",
+    ],
+  };
+  return OFFER_PHOTO_ANGLES.filter((angle) => {
+    const angleAliases = aliases[angle] || [angle];
+    return angleAliases.some((alias) =>
+      [...normalized].some(
+        (token) => token === alias || token.includes(alias) || alias.includes(token),
+      ),
+    );
+  });
+}
+
+function missingPhotoAnglesMessage(missingAngles: string[]): string {
+  const labels = missingAngles.map((angle) => {
+    const index = OFFER_PHOTO_ANGLES.indexOf(
+      angle as (typeof OFFER_PHOTO_ANGLES)[number],
+    );
+    return OFFER_PHOTO_ANGLE_LABELS[index] || angle;
+  });
+  return labels.length > 0
+    ? `Thiếu góc ảnh bắt buộc: ${labels.join(", ")}. Vui lòng bổ sung đúng từng mặt.`
+    : "";
+}
+
 function normalizeEdoContainerType(value: unknown): string {
   const source = asString(value).toUpperCase().trim();
   const normalized = source
@@ -1132,25 +1246,18 @@ export async function verifyBookingWithAI(
 export async function inspectContainerWithAI(
   photos: string[],
 ): Promise<AiInspectionResult> {
-  if (photos.length < 7) {
-    const missingCount = 7 - photos.length;
+  if (photos.length < OFFER_PHOTO_ANGLES.length) {
+    const missingAngles = OFFER_PHOTO_ANGLES.slice(photos.length);
+    const missingDetail = missingPhotoAnglesMessage(missingAngles);
     return {
       success: false,
       status: "INSPECTION_INCOMPLETE",
       requiresOpsReview: true,
-      error: `INSPECTION_INCOMPLETE: Thiếu ${missingCount}/7 góc ảnh bắt buộc. Yêu cầu tải đủ 7 góc: 1. Mặt trước container, 2. Cửa sau container, 3. Vách trái container, 4. Vách phải container, 5. Bên trong container, 6. Sàn container, 7. Tem số container / CSC plate.`,
+      error: `INSPECTION_INCOMPLETE: ${missingDetail}`,
       details: [
-        `Thiếu ${missingCount} góc ảnh container bắt buộc theo chuẩn IICL`,
+        missingDetail,
       ],
-      missingAngles: [
-        "front",
-        "back_door",
-        "left_side",
-        "right_side",
-        "inside",
-        "floor",
-        "container_number_plate",
-      ].slice(photos.length),
+      missingAngles,
     };
   }
   if (!isApiConfigured) {
@@ -1184,9 +1291,18 @@ export async function inspectContainerWithAI(
     const condition = normalizeCondition(
       response.condition || response.actualCondition,
     );
-    const details = vietnameseTextArray(response.details || response.findings);
+    const missingAngles = normalizeMissingPhotoAngles(
+      response.missingAngles || response.missingAngle || response.missingViews,
+    );
+    const missingDetail = missingPhotoAnglesMessage(missingAngles);
+    const details = uniqueText([
+      ...vietnameseTextArray(response.details || response.findings),
+      missingDetail,
+    ]);
     if (
-      !["CLEAN", "ANOMALY", "MANUAL_REVIEW"].includes(statusValue) ||
+      !["CLEAN", "ANOMALY", "MANUAL_REVIEW", "INSPECTION_INCOMPLETE"].includes(
+        statusValue,
+      ) ||
       !asString(response.summary)
     ) {
       throw new Error(
@@ -1194,7 +1310,9 @@ export async function inspectContainerWithAI(
       );
     }
     const requiresOpsReview =
+      missingAngles.length > 0 ||
       statusValue === "MANUAL_REVIEW" ||
+      statusValue === "INSPECTION_INCOMPLETE" ||
       !condition ||
       asBoolean(
         response.requiresOpsReview ??
@@ -1204,15 +1322,25 @@ export async function inspectContainerWithAI(
     return {
       success: true,
       status:
-        statusValue === "ANOMALY" || requiresOpsReview ? "ANOMALY" : "CLEAN",
+        missingAngles.length > 0 || statusValue === "INSPECTION_INCOMPLETE"
+          ? "INSPECTION_INCOMPLETE"
+          : statusValue === "ANOMALY" || requiresOpsReview
+            ? "ANOMALY"
+            : "CLEAN",
       score: Number(response.score ?? response.confidence ?? 0) || undefined,
       condition,
-      summary: vietnameseText(
+      summary: [
+        vietnameseText(
         response.summary || response.conditionNotes,
         "AI đã phân tích ảnh container.",
-      ),
+        ),
+        missingDetail,
+      ]
+        .filter(Boolean)
+        .join(" "),
       details,
       requiresOpsReview,
+      missingAngles,
     };
   } catch (error) {
     return {
@@ -1234,26 +1362,17 @@ export async function verifyContainerPhotosWithAI(
     declaredCondition: PhysicalCondition;
   },
 ): Promise<ContainerPhotoVerificationResult> {
-  if (photos.length < 7) {
-    const missingCount = 7 - photos.length;
+  if (photos.length < OFFER_PHOTO_ANGLES.length) {
+    const missingAngles = OFFER_PHOTO_ANGLES.slice(photos.length);
+    const missingDetail = missingPhotoAnglesMessage(missingAngles);
     return {
       success: false,
       status: "INSPECTION_INCOMPLETE",
       matchesRegistration: false,
-      mismatchDetails: [
-        `INSPECTION_INCOMPLETE: Bộ ảnh chụp thiếu ${missingCount}/7 góc bắt buộc theo chuẩn IICL. Yêu cầu chụp bổ sung đầy đủ trước khi chuyển giao dịch sang trạng thái tiếp theo.`,
-      ],
-      summary: `INSPECTION_INCOMPLETE: Thiếu ${missingCount}/7 góc ảnh bắt buộc.`,
+      mismatchDetails: [`INSPECTION_INCOMPLETE: ${missingDetail}`],
+      summary: `INSPECTION_INCOMPLETE: ${missingDetail}`,
       requiresOpsReview: true,
-      missingAngles: [
-        "front",
-        "back_door",
-        "left_side",
-        "right_side",
-        "inside",
-        "floor",
-        "container_number_plate",
-      ].slice(photos.length),
+      missingAngles,
       error:
         "INSPECTION_INCOMPLETE: Cần tải đủ 7 góc ảnh container chuẩn trước khi đối chiếu.",
     };
@@ -1290,9 +1409,14 @@ export async function verifyContainerPhotosWithAI(
         requiredPhotoCount: 7,
       }),
     );
-    const mismatchDetails = vietnameseTextArray(
+    let mismatchDetails = vietnameseTextArray(
       response.mismatchDetails || response.mismatches || response.errors,
     );
+    const missingAngles = normalizeMissingPhotoAngles(
+      response.missingAngles || response.missingAngle || response.missingViews,
+    );
+    const missingDetail = missingPhotoAnglesMessage(missingAngles);
+    if (missingDetail) mismatchDetails.unshift(missingDetail);
     const actualContainerNumber =
       asString(
         response.actualContainerNumber || response.detectedContainerNumber,
@@ -1325,10 +1449,35 @@ export async function verifyContainerPhotosWithAI(
         responseDetails.join(" "),
       ) || undefined;
 
-    const resolvedContainerNumber = actualContainerNumber;
+    const normalizedActualContainerNumber = normalizeEdoContainerNumber(
+      actualContainerNumber,
+    );
+    const normalizedExpectedContainerNumber = normalizeEdoContainerNumber(
+      expected.containerNumber,
+    );
+    const containerNumberMatches = Boolean(
+      normalizedActualContainerNumber &&
+        normalizedExpectedContainerNumber &&
+        normalizedActualContainerNumber === normalizedExpectedContainerNumber,
+    );
+    if (containerNumberMatches) {
+      mismatchDetails = mismatchDetails.filter((detail) => {
+        const mentionsContainerNumber =
+          /(?:số|mã)\s*(?:cont|container)|container\s*(?:number|no)/i.test(
+            detail,
+          );
+        const saysMismatch =
+          /không khớp|không chính xác|sai lệch|mismatch/i.test(detail);
+        return !(mentionsContainerNumber && saysMismatch);
+      });
+    }
+    const resolvedContainerNumber =
+      /^[A-Z]{4}\d{7}$/.test(normalizedActualContainerNumber)
+        ? normalizedActualContainerNumber
+        : actualContainerNumber;
     if (
       actualContainerNumber &&
-      actualContainerNumber !== expected.containerNumber
+      normalizedActualContainerNumber !== normalizedExpectedContainerNumber
     ) {
       mismatchDetails.push(
         `Ảnh nhận diện số cont ${actualContainerNumber}, không khớp ${expected.containerNumber}.`,
@@ -1354,7 +1503,13 @@ export async function verifyContainerPhotosWithAI(
 
     const explicitStatus = String(response.status || "").toUpperCase();
     if (
-      !["OBSERVED", "MATCHED", "MISMATCH", "MANUAL_REVIEW"].includes(
+      ![
+        "OBSERVED",
+        "MATCHED",
+        "MISMATCH",
+        "MANUAL_REVIEW",
+        "INSPECTION_INCOMPLETE",
+      ].includes(
         explicitStatus,
       ) ||
       !asString(response.summary)
@@ -1375,19 +1530,33 @@ export async function verifyContainerPhotosWithAI(
       expected.carrierCode &&
       expected.containerType &&
       expected.declaredCondition;
+    const providerOnlyContainerFormattingMismatch =
+      containerNumberMatches &&
+      response.matchesRegistration === false &&
+      mismatchDetails.length === 0 &&
+      missingAngles.length === 0;
     const reportedMismatch =
-      explicitStatus === "MISMATCH" ||
-      response.matchesRegistration === false ||
-      mismatchDetails.length > 0;
-    const status = reportedMismatch
-      ? "MISMATCH"
+      (explicitStatus === "MISMATCH" &&
+        !providerOnlyContainerFormattingMismatch) ||
+      (response.matchesRegistration === false &&
+        !providerOnlyContainerFormattingMismatch) ||
+      mismatchDetails.length > 0 ||
+      missingAngles.length > 0;
+    const status =
+      missingAngles.length > 0 || explicitStatus === "INSPECTION_INCOMPLETE"
+        ? "INSPECTION_INCOMPLETE"
+        : reportedMismatch
+          ? "MISMATCH"
       : explicitStatus === "MANUAL_REVIEW" ||
           asBoolean(response.requiresOpsReview) ||
           !hasEvidence
         ? "MANUAL_REVIEW"
         : "MATCHED";
     const summary =
-      status === "MATCHED"
+      status === "INSPECTION_INCOMPLETE"
+        ? missingDetail ||
+          "Bộ ảnh chưa đủ 7 góc bắt buộc; Ops cần kiểm tra và yêu cầu bổ sung."
+        : status === "MATCHED"
         ? "Ảnh khớp thông tin container đã đăng ký."
         : status === "MISMATCH"
           ? mismatchDetails[0] ||
@@ -1407,6 +1576,7 @@ export async function verifyContainerPhotosWithAI(
       actualCondition,
       actualConditionNotes,
       mismatchDetails: uniqueText(mismatchDetails),
+      missingAngles,
       summary,
       requiresOpsReview: status !== "MATCHED",
       error: vietnameseText(response.error) || undefined,

@@ -39,6 +39,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { INITIAL_CARRIERS, INITIAL_DEPOTS } from "../data/mockData";
+import { QA_RULES } from "../services/qaRules";
 import {
   FieldErrors,
   FieldError,
@@ -166,9 +167,9 @@ export const AssetsPage: React.FC = () => {
     setError(
       errors,
       "photos",
-      formPhotos.length >= 6
+      formPhotos.length >= QA_RULES.offer.minPhotoCount
         ? undefined
-        : "INSPECTION_INCOMPLETE: Vui lòng tải đủ tối thiểu 6 ảnh container theo 6 góc bắt buộc (Mặt trước container, Cửa sau container, Vách trái, Vách phải, Bên trong container, Tem số container/CSC plate).",
+        : `INSPECTION_INCOMPLETE: Vui lòng tải đủ tối thiểu ${QA_RULES.offer.minPhotoCount} ảnh container theo 7 góc bắt buộc (Mặt trước container, Cửa sau container, Vách trái, Vách phải, Bên trong container, Sàn container, Tem số container/CSC plate).`,
     );
     setError(
       errors,
@@ -182,14 +183,14 @@ export const AssetsPage: React.FC = () => {
     photos: string[],
     snapshot = form,
   ): Promise<ContainerPhotoVerificationResult | null> => {
-    if (photos.length < 6) return null;
+    if (photos.length < QA_RULES.offer.minPhotoCount) return null;
     if (
       !snapshot.containerNumber ||
       !snapshot.containerType ||
       !snapshot.declaredCondition
     ) {
       showMsg(
-        "Đã đủ 6 ảnh. Nhập số container, loại và tình trạng khai báo để AI đối chiếu.",
+        `Đã đủ ${QA_RULES.offer.minPhotoCount} ảnh. Nhập số container, loại và tình trạng khai báo để AI đối chiếu.`,
         true,
       );
       return null;
@@ -225,11 +226,11 @@ export const AssetsPage: React.FC = () => {
       scrollToFirstFieldError(nextErrors);
     } else if (verification.status === "MANUAL_REVIEW") {
       showMsg(
-        "Ảnh đã đủ 6 góc; AI chưa kết luận tự động và đã chuyển Ops kiểm tra thủ công.",
+        `Ảnh đã đủ ${QA_RULES.offer.minPhotoCount} góc; AI chưa kết luận tự động và đã chuyển Ops kiểm tra thủ công.`,
       );
     } else if (verification.status === "MATCHED") {
       showMsg(
-        `AI đã đối chiếu đủ 6 ảnh và khớp thông tin đăng ký (${verification.score ?? "—"}/100).`,
+        `AI đã đối chiếu đủ ${QA_RULES.offer.minPhotoCount} ảnh và khớp thông tin đăng ký (${verification.score ?? "—"}/100).`,
       );
     }
     return verification;
@@ -405,10 +406,10 @@ export const AssetsPage: React.FC = () => {
       showMsg("Có thể tải tối đa 12 ảnh cho một container.", true);
       return;
     }
-    if (currentPhotos.length < 6 && files.length > 1) {
+    if (currentPhotos.length < QA_RULES.offer.minPhotoCount && files.length > 1) {
       e.target.value = "";
       showMsg(
-        "Mỗi bước chỉ được tải 1 ảnh. Hãy hoàn tất 6 góc theo đúng thứ tự.",
+        `Mỗi bước chỉ được tải 1 ảnh. Hãy hoàn tất ${QA_RULES.offer.minPhotoCount} góc theo đúng thứ tự.`,
         true,
       );
       return;
@@ -441,7 +442,8 @@ export const AssetsPage: React.FC = () => {
           });
         }
         showMsg(`Đã tải lên ${updatedUrls.length} ảnh thực tế thành công.`);
-        if (updated.length >= 6) void handleAiInspection(assetId, updated);
+        if (updated.length >= QA_RULES.offer.minPhotoCount)
+          void handleAiInspection(assetId, updated);
       })
       .catch(() =>
         showMsg("Không đọc được một hoặc nhiều ảnh container.", true),
@@ -457,7 +459,7 @@ export const AssetsPage: React.FC = () => {
     }
     if (photoIndex !== asset.photos.length - 1) {
       showMsg(
-        "Để giữ đúng thứ tự 6 góc, chỉ được xóa ảnh vừa tải gần nhất.",
+        `Để giữ đúng thứ tự ${QA_RULES.offer.minPhotoCount} góc, chỉ được xóa ảnh vừa tải gần nhất.`,
         true,
       );
       return;
@@ -475,8 +477,8 @@ export const AssetsPage: React.FC = () => {
       );
       setInspectionResult(null);
       showMsg(
-        updated.length < 6
-          ? "Đã xóa ảnh. Cần bổ sung lại đủ 6 góc trước khi AI kiểm tra."
+        updated.length < QA_RULES.offer.minPhotoCount
+          ? `Đã xóa ảnh. Cần bổ sung lại đủ ${QA_RULES.offer.minPhotoCount} góc trước khi AI kiểm tra.`
           : "Đã xóa ảnh cũ. Vui lòng chạy lại AI để cập nhật kết quả.",
       );
     } else showMsg(result.message, true);
@@ -490,10 +492,10 @@ export const AssetsPage: React.FC = () => {
       showMsg("Có thể tải tối đa 12 ảnh cho một container.", true);
       return;
     }
-    if (formPhotos.length < 6 && files.length > 1) {
+    if (formPhotos.length < QA_RULES.offer.minPhotoCount && files.length > 1) {
       e.target.value = "";
       showMsg(
-        "Mỗi bước chỉ được tải 1 ảnh. Hãy hoàn tất 6 góc theo đúng thứ tự.",
+        `Mỗi bước chỉ được tải 1 ảnh. Hãy hoàn tất ${QA_RULES.offer.minPhotoCount} góc theo đúng thứ tự.`,
         true,
       );
       return;
@@ -518,10 +520,11 @@ export const AssetsPage: React.FC = () => {
       .then(async (urls) => {
         const nextPhotos = [...formPhotos, ...urls].slice(0, 12);
         setFormPhotos(nextPhotos);
-        if (nextPhotos.length >= 6) await runFormPhotoAiCheck(nextPhotos);
+        if (nextPhotos.length >= QA_RULES.offer.minPhotoCount)
+          await runFormPhotoAiCheck(nextPhotos);
         else
           showMsg(
-            `Đã thêm ảnh. Còn thiếu ${6 - nextPhotos.length} ảnh để AI tự quét.`,
+            `Đã thêm ảnh. Còn thiếu ${QA_RULES.offer.minPhotoCount - nextPhotos.length} ảnh để AI tự quét.`,
           );
       })
       .catch(() =>
@@ -532,7 +535,7 @@ export const AssetsPage: React.FC = () => {
   const handleRemoveFormPhoto = (index: number) => {
     if (index !== formPhotos.length - 1) {
       showMsg(
-        "Để giữ đúng thứ tự 6 góc, chỉ được xóa ảnh vừa tải gần nhất.",
+        `Để giữ đúng thứ tự ${QA_RULES.offer.minPhotoCount} góc, chỉ được xóa ảnh vừa tải gần nhất.`,
         true,
       );
       return;
@@ -568,8 +571,11 @@ export const AssetsPage: React.FC = () => {
   ) => {
     const asset = assets.find((a) => a.id === assetId);
     const photos = photosOverride || asset?.photos || [];
-    if (!asset || photos.length < 6) {
-      showMsg("Cần đủ tối thiểu 6 ảnh trước khi chạy AI.", true);
+    if (!asset || photos.length < QA_RULES.offer.minPhotoCount) {
+      showMsg(
+        `Cần đủ tối thiểu ${QA_RULES.offer.minPhotoCount} ảnh trước khi chạy AI.`,
+        true,
+      );
       return;
     }
     setIsAiInspecting(true);
@@ -875,12 +881,14 @@ export const AssetsPage: React.FC = () => {
           >
             <label className="text-xs sm:text-sm font-semibold text-slate-700 block mb-2 flex items-center gap-2">
               <Camera className="w-4 h-4 text-blue-600" />
-              Ảnh tình trạng container ({formPhotos.length}/6)
+              Ảnh tình trạng container ({formPhotos.length}/
+              {QA_RULES.offer.minPhotoCount})
             </label>
             <p className="text-xs font-semibold text-red-600 mb-2">
-              <RequiredMark /> Bắt buộc tối thiểu 6 ảnh: 1. Mặt trước container,
-              2. Cửa sau container, 3. Vách trái, 4. Vách phải, 5. Bên trong
-              container, 6. Tem số container/CSC plate.
+              <RequiredMark /> Bắt buộc tối thiểu {QA_RULES.offer.minPhotoCount} ảnh:
+              1. Mặt trước container, 2. Cửa sau container, 3. Vách trái, 4. Vách
+              phải, 5. Bên trong container, 6. Sàn container, 7. Tem số
+              container/CSC plate.
             </p>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-3">
               {formPhotos.map((url, idx) => (
@@ -907,7 +915,7 @@ export const AssetsPage: React.FC = () => {
               <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-dashed border-blue-300 bg-blue-50/50 text-blue-700 text-xs sm:text-sm font-semibold cursor-pointer hover:bg-blue-100 transition-colors">
                 <UploadCloud className="w-4 h-4" />
                 <span>
-                  {formPhotos.length < 6
+                  {formPhotos.length < QA_RULES.offer.minPhotoCount
                     ? "Tải ảnh tiếp theo"
                     : "Thêm ảnh container"}
                 </span>
@@ -920,7 +928,7 @@ export const AssetsPage: React.FC = () => {
                 />
               </label>
             )}
-            {formPhotos.length < 6 && (
+            {formPhotos.length < QA_RULES.offer.minPhotoCount && (
               <p className="text-xs text-emerald-700 mt-1.5 font-semibold">
                 Ảnh tiếp theo:{" "}
                 {
@@ -930,6 +938,7 @@ export const AssetsPage: React.FC = () => {
                     "Vách trái",
                     "Vách phải",
                     "Bên trong container",
+                    "Sàn container",
                     "Tem số container/CSC plate",
                   ][formPhotos.length]
                 }
@@ -1231,8 +1240,8 @@ export const AssetsPage: React.FC = () => {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-semibold text-slate-800">
-                    Bộ ảnh tình trạng ({selectedAsset.photos.length}/6 tối
-                    thiểu)
+                    Bộ ảnh tình trạng ({selectedAsset.photos.length}/
+                    {QA_RULES.offer.minPhotoCount} tối thiểu)
                   </span>
                   <div className="flex items-center gap-2">
                     <label className="cursor-pointer text-blue-600 hover:underline flex items-center gap-1 font-semibold text-xs">
@@ -1278,9 +1287,10 @@ export const AssetsPage: React.FC = () => {
                   )}
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Tối thiểu 6 góc: 1. Mặt trước, 2. Cửa sau, 3. Vách trái, 4.
-                  Vách phải, 5. Bên trong container, 6. Tem số/CSC plate. Thiếu
-                  góc sẽ báo INSPECTION_INCOMPLETE.
+                  Tối thiểu {QA_RULES.offer.minPhotoCount} góc: 1. Mặt trước, 2.
+                  Cửa sau, 3. Vách trái, 4. Vách phải, 5. Bên trong container, 6.
+                  Sàn container, 7. Tem số/CSC plate. Thiếu góc sẽ báo
+                  INSPECTION_INCOMPLETE.
                 </p>
 
                 {/* AI Inspection Card */}
@@ -1293,21 +1303,24 @@ export const AssetsPage: React.FC = () => {
                     <button
                       type="button"
                       disabled={
-                        isAiInspecting || selectedAsset.photos.length < 6
+                        isAiInspecting ||
+                        selectedAsset.photos.length < QA_RULES.offer.minPhotoCount
                       }
                       onClick={() => handleAiInspection(selectedAsset.id)}
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all ${
                         isAiInspecting
                           ? "bg-teal-400 cursor-not-allowed"
-                          : selectedAsset.photos.length < 6
+                          : selectedAsset.photos.length <
+                              QA_RULES.offer.minPhotoCount
                             ? "bg-slate-300 text-slate-500 cursor-not-allowed"
                             : "bg-teal-600 hover:bg-teal-500 shadow-sm"
                       }`}
                     >
                       {isAiInspecting
                         ? "Đang quét AI..."
-                        : selectedAsset.photos.length < 6
-                          ? "Cần đủ 6 ảnh"
+                        : selectedAsset.photos.length <
+                            QA_RULES.offer.minPhotoCount
+                          ? `Cần đủ ${QA_RULES.offer.minPhotoCount} ảnh`
                           : "Bắt đầu quét AI"}
                     </button>
                   </div>
@@ -1474,7 +1487,7 @@ export const AssetsPage: React.FC = () => {
                       )}
                     </div>
                     <span className="absolute bottom-2 right-2 text-xs font-bold bg-slate-900/80 text-white rounded-lg px-2.5 py-1 backdrop-blur-sm">
-                      {asset.photos.length}/6 tối thiểu
+                      {asset.photos.length}/{QA_RULES.offer.minPhotoCount} tối thiểu
                     </span>
                   </div>
 

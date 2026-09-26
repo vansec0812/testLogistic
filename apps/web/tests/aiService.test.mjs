@@ -297,6 +297,41 @@ test('photo OCR check digit is never rewritten to match the registration', async
   assert.equal(result.actualContainerNumber, 'TGBU2415784');
   assert.equal(result.requiresOpsReview, true);
 });
+test('photo OCR accepts spacing in a correctly recognized container number', async () => {
+  respond({
+    ...photoObserved,
+    status: 'MISMATCH',
+    matchesRegistration: false,
+    actualContainerNumber: 'TGBU 241578 9',
+    mismatchDetails: ['Ảnh nhận diện số cont TGBU 241578 9 không khớp TGBU2415789.'],
+  });
+  const result = await ai.verifyContainerPhotosWithAI(photos, {
+    containerNumber: 'TGBU2415789', containerType: '40HC', carrierCode: 'MSK', declaredCondition: 'GOOD',
+  });
+  assert.equal(result.status, 'MATCHED');
+  assert.equal(result.matchesRegistration, true);
+  assert.equal(result.actualContainerNumber, 'TGBU2415789');
+  assert.equal(result.mismatchDetails.length, 0);
+});
+test('photo scan reports each missing angle while keeping the detected condition', async () => {
+  respond({
+    ...photoObserved,
+    missingAngles: ['left_side', 'floor'],
+    actualCondition: 'GOOD',
+    actualConditionNotes: 'Ảnh cho thấy vỏ sạch, chưa thấy hư hỏng rõ.',
+  });
+  const result = await ai.verifyContainerPhotosWithAI(photos, {
+    ...expected,
+    containerNumber: 'TGBU2415784',
+    carrierCode: 'MSK',
+  });
+  assert.equal(result.status, 'INSPECTION_INCOMPLETE');
+  assert.equal(result.actualCondition, 'GOOD');
+  assert.equal(result.actualConditionNotes, 'Ảnh cho thấy vỏ sạch, chưa thấy hư hỏng rõ.');
+  assert.deepEqual(result.missingAngles, ['left_side', 'floor']);
+  assert.match(result.mismatchDetails[0], /Vách trái/);
+  assert.match(result.mismatchDetails[0], /Sàn/);
+});
 test('photo provider MATCHED without observed identity/condition is manual review', async () => {
   for (const field of ['actualContainerNumber', 'actualCarrierCode', 'actualContainerType', 'actualCondition', 'actualConditionNotes']) {
     respond({ ...photoObserved, status: 'MATCHED', matchesRegistration: true, [field]: '' });
@@ -317,6 +352,45 @@ test('API failure cannot manufacture a physical condition description', async ()
   assert.equal(result.status, 'MANUAL_REVIEW');
   assert.equal(result.actualConditionNotes, undefined);
   assert.equal(result.actualCondition, undefined);
+});
+
+test('Ops AI evidence summarizes eDO and photo findings without a long transcript', async () => {
+  const review = await loadTs('../src/services/offerReview.ts');
+  const evidence = review.getOfferAiReviewEvidence({
+    id: 'OFR-TEST',
+    asset: {
+      containerNumber: 'TGBU2415789',
+      carrierCode: 'EMC',
+      containerType: '40HC',
+    },
+    aiCheck: {
+      passed: false,
+      score: 62,
+      summary: 'eDO cần xác minh và ảnh có sai lệch.',
+      hasAnomaly: true,
+      edoAnomaly: true,
+      edoMatchesRegistration: false,
+      edoMismatchDetails: ['Hãng tàu trên eDO không khớp hãng đã chọn.'],
+      edoActualContainerNumber: 'TGBU2415789',
+      edoActualCarrierCode: 'EMC',
+      edoActualContainerType: '40HC',
+      photoStatus: 'MISMATCH',
+      missingAngles: ['left_side', 'floor'],
+      matchesRegistration: false,
+      actualContainerNumber: 'TGBU2415789',
+      actualContainerType: '40HC',
+      actualCarrierCode: 'EMC',
+      photoCondition: 'MINOR_DAMAGE',
+      photoConditionNotes: 'Vách trái có xước nhẹ và rỉ sét cục bộ.',
+      mismatchDetails: ['Tình trạng thực tế khác tình trạng khai báo.'],
+      details: ['Cần Ops đối chiếu lại bộ ảnh và eDO.'],
+      verificationStatus: 'MANUAL_REVIEW',
+    },
+  });
+  assert.ok(evidence.some((item) => item.includes('Hãng tàu trên eDO')));
+  assert.ok(evidence.some((item) => item.includes('Tình trạng thực tế')));
+  assert.ok(evidence.some((item) => item.includes('Vách trái')));
+  assert.ok(evidence.length <= 4);
 });
 
 test('saved Booking comparison is identical for requester and Ops, including errors', async () => {

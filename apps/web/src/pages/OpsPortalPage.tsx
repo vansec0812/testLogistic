@@ -81,6 +81,8 @@ import {
 } from "../services/bookingReview";
 import {
   getOfferAiConditionTitle as getSharedOfferAiConditionTitle,
+  getOfferAiReviewEvidence,
+  hasOfferPhotoAiResult,
   sortOffersForOps,
 } from "../services/offerReview";
 
@@ -93,7 +95,7 @@ function getOfferReviewErrorField(offerId: string, message = ""): string {
   const normalized = message.toLowerCase();
   if (
     normalized.includes("ảnh") ||
-    normalized.includes("6 ảnh") ||
+    normalized.includes("7 ảnh") ||
     normalized.includes("photo")
   )
     return `offerPhotos-${offerId}`;
@@ -122,6 +124,11 @@ function getOfferManualReviewReasons(offer: Offer): string[] {
     );
   if (!ai.photoChecked)
     reasons.push("Chưa có kết quả AI đối chiếu bộ ảnh container.");
+  if (ai.missingAngles?.length)
+    reasons.push(
+      ai.mismatchDetails?.find((detail) => /Thiếu góc ảnh/i.test(detail)) ||
+        "Bộ ảnh chưa đủ các góc container bắt buộc; cần bổ sung góc còn thiếu.",
+    );
   if (ai.verificationStatus === "ERROR")
     reasons.push("AI trả về lỗi khi xử lý hồ sơ.");
   if (!ai.passed && !reasons.length)
@@ -1103,37 +1110,49 @@ export const OpsPortalPage: React.FC<OpsPortalPageProps> = ({
                       </div>
                     </div>
 
-                    {/* Mô tả chi tiết nếu có */}
-                    {o.conditionNotes && (
-                      <div className="text-xs text-slate-600 bg-slate-50/60 p-2.5 rounded-xl border border-slate-100">
-                        <span className="font-semibold text-slate-800">
-                          Mô tả chi tiết tình trạng vỏ:
-                        </span>{" "}
-                        {o.conditionNotes}
-                      </div>
-                    )}
-
-                    <div className="p-3 rounded-xl border border-violet-200 bg-violet-50/60 text-xs text-violet-950 space-y-1.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <strong>
-                          Kết quả tình trạng thực tế do AI báo về:
-                        </strong>
-                        {o.aiCheck?.photoCondition && (
-                          <ConditionBadge
-                            condition={o.aiCheck.photoCondition}
-                            size="xs"
-                          />
+                    {hasOfferPhotoAiResult(o.aiCheck) ? (
+                      <div className="p-3 rounded-xl border border-violet-200 bg-violet-50/60 text-xs text-violet-950 space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <strong>
+                            Kết quả tình trạng thực tế do AI báo về:
+                          </strong>
+                          {o.aiCheck?.photoCondition && (
+                            <span className="flex items-center gap-1">
+                              Tình trạng ảnh:
+                              <ConditionBadge
+                                condition={o.aiCheck.photoCondition}
+                                size="xs"
+                              />
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-semibold leading-relaxed">
+                          <strong>Kết luận:</strong>{" "}
+                          {getSharedOfferAiConditionTitle(o)}
+                        </p>
+                        {getOfferAiReviewEvidence(o).length > 0 && (
+                          <ul className="list-disc pl-4 space-y-0.5 leading-relaxed">
+                            {getOfferAiReviewEvidence(o).map((item, index) => (
+                              <li key={`${o.id}-ai-evidence-${index}`}>
+                                {item}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {o.conditionNotes && (
+                          <p className="leading-relaxed text-slate-700">
+                            <strong>Mô tả:</strong> {o.conditionNotes}
+                          </p>
                         )}
                       </div>
-                      <p className="font-semibold leading-relaxed">
-                        {getSharedOfferAiConditionTitle(o)}
-                      </p>
-                      {o.aiCheck?.photoConditionNotes && (
-                        <p className="leading-relaxed">
-                          {o.aiCheck.photoConditionNotes}
-                        </p>
-                      )}
-                    </div>
+                    ) : (
+                      o.conditionNotes && (
+                        <div className="text-xs text-slate-600 bg-slate-50/60 p-2.5 rounded-xl border border-slate-100">
+                          <strong className="text-slate-800">Mô tả:</strong>{" "}
+                          {o.conditionNotes}
+                        </div>
+                      )
+                    )}
 
                     {/* Bộ ảnh Container phục vụ Ops kiểm tra thủ công */}
                     <div

@@ -130,7 +130,7 @@ function offerForm() {
   return {
     containerNumber: 'MSKU9234511', containerType: '40HC', carrierId: 'CARR-MSK',
     declaredCondition: 'GOOD', conditionNotes: 'Vách, cửa và gầm nguyên vẹn.',
-    photos: Array.from({length: 6}, (_, index) => 'fixture-photo-' + index),
+    photos: Array.from({length: 7}, (_, index) => 'fixture-photo-' + index),
     edoFileName: 'edo-fixture.pdf', pickupLocationName: 'Bãi kiểm thử',
     pickupLatitude: 10.74, pickupLongitude: 106.7,
     availableFrom: new Date(Date.now() + 86400000).toISOString(),

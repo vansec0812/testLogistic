@@ -27,7 +27,7 @@ test('health and both scan routes distinguish a missing key without calling the 
   assert.equal(health.status, 200);
   assert.equal((await health.json()).code, 'AI_KEY_MISSING');
   for (const path of ['/api/ai/edo/verify', '/api/ai/container/verify']) {
-    const response = await request(path, { document, photos: Array(6).fill(png) });
+    const response = await request(path, { document, photos: Array(7).fill(png) });
     assert.equal(response.status, 503);
     assert.equal((await response.json()).code, 'AI_KEY_MISSING');
   }
@@ -77,17 +77,18 @@ test('eDO verification extracts file identity without showing Offer values to th
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), result);
 });
-test('container scan forwards all six images but hides declared identity from OCR', async t => {
+test('container scan forwards all seven images and requests angle coverage from OCR', async t => {
   const result = { status: 'MISMATCH', matchesRegistration: false, actualCondition: 'MINOR_DAMAGE', actualConditionNotes: 'Vách xước và rỉ.', summary: 'Có hư hỏng', requiresOpsReview: true };
   const request = await startGateway(t, { fetchImpl: async (_url, init) => {
     const parts = JSON.parse(init.body).contents[0].parts;
-    assert.equal(parts.length, 7);
+    assert.equal(parts.length, 8);
     assert.ok(parts.slice(1).every(part => part.inline_data.mime_type === 'image/png'));
     assert.doesNotMatch(parts[0].text, /TEST1234567/);
     assert.match(parts[0].text, /actualConditionNotes/);
+    assert.match(parts[0].text, /missingAngles/);
     return providerJson(result);
   } });
-  const response = await request('/api/ai/container/verify', { photos: Array(6).fill(png), expected: { containerNumber: 'TEST1234567' } });
+  const response = await request('/api/ai/container/verify', { photos: Array(7).fill(png), expected: { containerNumber: 'TEST1234567' } });
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), result);
 });
@@ -120,6 +121,7 @@ test('incomplete uploads fail validation before provider invocation', async t =>
   let calls = 0;
   const request = await startGateway(t, { fetchImpl: () => { calls++; } });
   assert.equal((await request('/api/ai/edo/verify', {})).status, 400);
+  assert.equal((await request('/api/ai/container/verify', { photos: Array(6).fill(png) })).status, 400);
   assert.equal((await request('/api/ai/container/verify', { photos: Array(5).fill(png) })).status, 400);
   assert.equal((await request('/api/ai/edo/verify', null)).status, 400);
   assert.equal(calls, 0);
@@ -127,7 +129,7 @@ test('incomplete uploads fail validation before provider invocation', async t =>
 
 test('empty model JSON is not accepted as a successful inspection', async t => {
   const request = await startGateway(t, { fetchImpl: async () => providerJson({}) });
-  const response = await request('/api/ai/container/inspect', { photos: Array(6).fill(png) });
+  const response = await request('/api/ai/container/inspect', { photos: Array(7).fill(png) });
   assert.equal(response.status, 502);
   assert.equal((await response.json()).code, 'AI_INVALID_RESPONSE');
 });
@@ -198,7 +200,7 @@ test('retry budget expires without accepting a result or calling indefinitely', 
     getConfig: () => ({ ...config, providerTimeoutMs: 100 }),
     fetchImpl: async () => { calls++; return new Response('{}', { status: 503 }); },
   });
-  const result = await request('/api/ai/container/verify', { photos: Array(6).fill(png) });
+  const result = await request('/api/ai/container/verify', { photos: Array(7).fill(png) });
   assert.equal(result.status, 502);
   assert.equal(calls, 1);
 });
@@ -212,7 +214,7 @@ test('tiny image is rejected before Gemini can hallucinate eDO, Booking or photo
     assert.equal(result.status, 422);
     assert.equal((await result.json()).code, 'AI_IMAGE_TOO_SMALL');
   }
-  const result = await request('/api/ai/container/verify', { photos: Array(6).fill('data:image/png;base64,' + pixel) });
+  const result = await request('/api/ai/container/verify', { photos: Array(7).fill('data:image/png;base64,' + pixel) });
   assert.equal(result.status, 422);
   assert.equal(calls, 0);
 });

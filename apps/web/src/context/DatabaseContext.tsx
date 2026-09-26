@@ -1079,10 +1079,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
         };
       }
       const photos = form.photos || [];
-      if (photos.length < 6) {
+      if (photos.length < QA_RULES.offer.minPhotoCount) {
         return {
           success: false,
-          message: "Offer phải có tối thiểu 6 ảnh container.",
+          message: `Offer phải có tối thiểu ${QA_RULES.offer.minPhotoCount} ảnh container.`,
         };
       }
       if (!form.edoFileName?.trim()) {
@@ -1168,10 +1168,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       const offerPhotos = photos.length > 0 ? photos : targetAsset.photos;
-      if (offerPhotos.length < 6) {
+      if (offerPhotos.length < QA_RULES.offer.minPhotoCount) {
         return {
           success: false,
-          message: "Offer phải có tối thiểu 6 ảnh container.",
+          message: `Offer phải có tối thiểu ${QA_RULES.offer.minPhotoCount} ảnh container.`,
         };
       }
 
@@ -1206,7 +1206,8 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
         baselineDepotCostVnd,
         vehicleRequirements: form.vehicleRequirements,
         photoUrls: offerPhotos,
-        photoChecklistComplete: offerPhotos.length >= 6,
+        photoChecklistComplete:
+          offerPhotos.length >= QA_RULES.offer.minPhotoCount,
         edoDocumentIds: [form.edoFileName.trim()],
         edoFileName: form.edoFileName.trim(),
         edoNumber: form.edoNumber?.trim() || undefined,
@@ -1322,10 +1323,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
         };
       }
       const finalPhotos = updates.photoUrls ?? offer.photoUrls;
-      if (finalPhotos.length < 6) {
+      if (finalPhotos.length < QA_RULES.offer.minPhotoCount) {
         return {
           success: false,
-          message: "Offer phải giữ tối thiểu 6 ảnh container.",
+          message: `Offer phải giữ tối thiểu ${QA_RULES.offer.minPhotoCount} ảnh container.`,
         };
       }
       const photosChanged = Object.prototype.hasOwnProperty.call(
@@ -1353,7 +1354,8 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
             : {}),
         },
         photoUrls: finalPhotos,
-        photoChecklistComplete: finalPhotos.length >= 6,
+        photoChecklistComplete:
+          finalPhotos.length >= QA_RULES.offer.minPhotoCount,
         // Ảnh mới vẫn được lưu khi AI chưa phản hồi; trường hợp này phải quay
         // lại hàng đợi Ops để kiểm tra thủ công trước khi công khai.
         requiresOpsManualReview: photosChanged

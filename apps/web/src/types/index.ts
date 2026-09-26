@@ -338,6 +338,7 @@ export interface OfferAiCheckResult {
   actualCarrierCode?: string;
   actualConditionNotes?: string;
   mismatchDetails?: string[];
+  missingAngles?: string[];
   photoStatus?:
     | "MATCHED"
     | "MISMATCH"

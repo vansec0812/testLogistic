@@ -1,4 +1,5 @@
 import { Offer, OfferAiCheckResult } from '../types';
+import { OFFER_PHOTO_ANGLE_LABELS, OFFER_PHOTO_ANGLES } from './qaRules';
 
 /** One approval gate for creation and resubmission; old partial verdicts never auto-pass. */
 export function offerAiCanAutoApprove(ai?: OfferAiCheckResult): boolean {
@@ -13,9 +14,110 @@ export function offerAiCanAutoApprove(ai?: OfferAiCheckResult): boolean {
     && ai.verificationStatus === 'VERIFIED');
 }
 
+/** True when the AI has actually produced a photo-comparison result. */
+export function hasOfferPhotoAiResult(ai?: OfferAiCheckResult): boolean {
+  return Boolean(
+    ai && (
+      ai.photoChecked !== undefined
+      || ai.photoStatus !== undefined
+      || ai.photoCondition !== undefined
+      || ai.photoConditionNotes
+      || ai.actualConditionNotes
+      || ai.missingAngles?.length
+      || ai.actualContainerNumber
+      || ai.actualContainerType
+      || ai.actualCarrierCode
+      || ai.matchesRegistration !== undefined
+    ),
+  );
+}
+
+/**
+ * Compact evidence for the Ops queue. Keep the detail useful for a decision,
+ * but bounded so a card does not become a full AI transcript.
+ */
+export function getOfferAiReviewEvidence(offer: Offer): string[] {
+  const ai = offer.aiCheck;
+  if (!ai) return [];
+
+  const evidence: string[] = [];
+  const add = (value?: string) => {
+    const text = String(value || "").trim();
+    if (!text) return;
+    const duplicate = evidence.some(
+      (item) => item.toLocaleLowerCase() === text.toLocaleLowerCase(),
+    );
+    if (duplicate) return;
+    evidence.push(text.length > 180 ? `${text.slice(0, 177)}...` : text);
+  };
+
+  const edoNeedsReview = Boolean(
+    ai.edoAnomaly ||
+      ai.edoValid === false ||
+      ai.edoMatchesRegistration === false ||
+      (ai.edoDocumentType && ai.edoDocumentType !== "EDO"),
+  );
+  if (edoNeedsReview) {
+    (ai.edoMismatchDetails || []).slice(0, 2).forEach(add);
+    if (!ai.edoMismatchDetails?.length) add(ai.anomalyReason);
+    const edoIdentity = [
+      ai.edoActualContainerNumber,
+      ai.edoActualCarrierCode,
+      ai.edoActualContainerType,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    if (edoIdentity) {
+      add(
+        `eDO đọc được: ${edoIdentity}. Offer đăng ký: ${offer.asset.containerNumber} · ${offer.asset.carrierCode} · ${offer.asset.containerType}.`,
+      );
+    }
+    if (!evidence.length)
+      add("eDO chưa được xác minh đầy đủ hoặc có dấu hiệu bất thường.");
+  }
+
+  const photoNeedsReview = Boolean(
+    ai.photoStatus && ai.photoStatus !== "MATCHED" ||
+    ai.matchesRegistration === false ||
+      ai.missingAngles?.length ||
+      ai.mismatchDetails?.length,
+  );
+  if (photoNeedsReview) {
+    if (ai.missingAngles?.length) {
+      const missingLabels = ai.missingAngles.map((angle) => {
+        const index = OFFER_PHOTO_ANGLES.indexOf(angle as typeof OFFER_PHOTO_ANGLES[number]);
+        return OFFER_PHOTO_ANGLE_LABELS[index] || angle;
+      });
+      add(`Thiếu góc ảnh bắt buộc: ${missingLabels.join(', ')}.`);
+    }
+    (ai.mismatchDetails || []).slice(0, 2).forEach(add);
+    const photoIdentity = [
+      ai.actualContainerNumber,
+      ai.actualCarrierCode,
+      ai.actualContainerType,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    if (photoIdentity) {
+      add(
+        `Ảnh đọc được: ${photoIdentity}. Offer đăng ký: ${offer.asset.containerNumber} · ${offer.asset.carrierCode} · ${offer.asset.containerType}.`,
+      );
+    }
+  }
+
+  if (ai.photoConditionNotes) add(`Tình trạng thực tế: ${ai.photoConditionNotes}`);
+  if (evidence.length < 3) (ai.details || []).slice(0, 2).forEach(add);
+  if (evidence.length < 2) add(ai.summary);
+
+  return evidence.slice(0, 4);
+}
+
 /** Short Vietnamese title used by Ops to understand why an offer needs attention. */
 export function getOfferAiConditionTitle(offer: Offer): string {
   const ai = offer.aiCheck;
+  if (ai?.photoStatus === 'INSPECTION_INCOMPLETE' || ai?.missingAngles?.length) {
+    return 'Thiếu góc ảnh container bắt buộc cần bổ sung';
+  }
   if (!ai) return 'Chưa nhận được kết quả AI đối chiếu ảnh container';
 
   // Luôn ưu tiên kết quả định danh có cấu trúc. Không suy diễn "không khớp"
