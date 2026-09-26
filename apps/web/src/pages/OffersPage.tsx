@@ -778,7 +778,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
       photoAiResult?.status === "INSPECTION_INCOMPLETE"
     )
       errors.photos =
-        "INSPECTION_INCOMPLETE: Vui lòng tải đủ tối thiểu 7 ảnh container theo 7 góc bắt buộc (Mặt trước container, Cửa sau container, Vách trái container, Vách phải container, Bên trong container, Sàn container, Tem số container / CSC plate).";
+        "INSPECTION_INCOMPLETE: Vui lòng tải đủ tối thiểu 7 ảnh container theo 7 góc bắt buộc (Mặt trước, Mặt trái, Mặt phải, Mặt sau, Mặt trên, Mặt dưới, Mặt sàn).";
     setError(
       errors,
       "edoEvidence",
@@ -1185,7 +1185,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
     const errors: FieldErrors = {};
     if (photos.length < 7)
       errors.editPhotoUrls =
-        "INSPECTION_INCOMPLETE: Offer phải giữ tối thiểu 7 ảnh: Mặt trước container, Cửa sau container, Vách trái container, Vách phải container, Bên trong container, Sàn container, Tem số container / CSC plate.";
+        "INSPECTION_INCOMPLETE: Offer phải giữ tối thiểu 7 ảnh: Mặt trước, Mặt trái, Mặt phải, Mặt sau, Mặt trên, Mặt dưới, Mặt sàn.";
     setError(
       errors,
       "editConditionNotes",
@@ -1996,9 +1996,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                     <RequiredMark />
                   </span>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Bắt buộc tối thiểu 7 ảnh theo thứ tự: Mặt trước, Cửa sau,
-                    Vách trái, Vách phải, Bên trong, Sàn cont, Tem số cont/CSC
-                    plate. Có thể thêm ảnh chi tiết để Ops đối chiếu.
+                    Bắt buộc tối thiểu 7 ảnh theo thứ tự: Mặt trước, Mặt trái,
+                    Mặt phải, Mặt sau, Mặt trên, Mặt dưới, Mặt sàn. Có thể thêm
+                    ảnh chi tiết để Ops đối chiếu.
                   </p>
                 </div>
 
@@ -2036,11 +2036,8 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                     </span>
                   </div>
                   <p className="mt-1 text-slate-600">
-                    {form.photos.length === 5
-                      ? "Mới bổ sung: kiểm tra độ sạch, thủng, vết dầu, tình trạng ván sàn."
-                      : form.photos.length === 6
-                        ? "Chụp rõ tem số container và bảng thông số CSC plate."
-                        : "Tải đúng thứ tự từng mặt; hoàn tất ảnh hiện tại mới chuyển sang mặt tiếp theo."}
+                    Tải đúng thứ tự từng mặt; hoàn tất ảnh hiện tại mới chuyển
+                    sang mặt tiếp theo.
                   </p>
                 </div>
               ) : (
@@ -2905,9 +2902,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                     <RequiredMark />
                   </p>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Bắt buộc tối thiểu 7 ảnh theo thứ tự: Mặt trước, Cửa sau,
-                    Vách trái, Vách phải, Bên trong, Sàn cont, Tem số cont/CSC
-                    plate. Có thể thêm ảnh chi tiết để Ops đối chiếu.
+                    Bắt buộc tối thiểu 7 ảnh theo thứ tự: Mặt trước, Mặt trái,
+                    Mặt phải, Mặt sau, Mặt trên, Mặt dưới, Mặt sàn. Có thể thêm
+                    ảnh chi tiết để Ops đối chiếu.
                   </p>
                 </div>
                 <label className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer shadow-sm">
@@ -2944,11 +2941,8 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                     </span>
                   </div>
                   <p className="mt-1 text-slate-600">
-                    {(editForm.photoUrls || []).length === 5
-                      ? "Mới bổ sung: kiểm tra độ sạch, thủng, vết dầu, tình trạng ván sàn."
-                      : (editForm.photoUrls || []).length === 6
-                        ? "Chụp rõ tem số container và bảng thông số CSC plate."
-                        : "Tải đúng thứ tự từng mặt; hoàn tất ảnh hiện tại mới chuyển sang mặt tiếp theo."}
+                    Tải đúng thứ tự từng mặt; hoàn tất ảnh hiện tại mới chuyển
+                    sang mặt tiếp theo.
                   </p>
                 </div>
               ) : (

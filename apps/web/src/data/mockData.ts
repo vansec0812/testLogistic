@@ -45,7 +45,7 @@ const dAgo = (days: number) => new Date(now - days * 86400000).toISOString();
 export const DEMO_DATASET_VERSION = "2026-09-26-v5-six-condition-photo-sets";
 
 // Mỗi Asset/Offer có một bộ ảnh local riêng, không dùng chung một mẫu ảnh.
-// Thứ tự trong mỗi bộ: Mặt trước, Cửa sau, Vách trái, Vách phải, Bên trong, Sàn cont, CSC plate.
+// Thứ tự trong mỗi bộ: Mặt trước, Mặt trái, Mặt phải, Mặt sau, Mặt trên, Mặt dưới, Mặt sàn.
 const DEMO_CONTAINER_PHOTO_SETS: Record<string, readonly string[]> = {
   "ASSET-01": [
     "/demo/container/asset-01/front.jpg",

@@ -60,8 +60,8 @@ export const QA_RULES = {
 export const OFFER_PHOTO_ANGLES = [
   "front",
   "left_side",
-  "rear",
   "right_side",
+  "rear",
   "roof",
   "underbody",
   "floor",
@@ -72,8 +72,8 @@ export type OfferPhotoAngle = (typeof OFFER_PHOTO_ANGLES)[number];
 export const OFFER_PHOTO_ANGLE_LABELS = [
   "Mặt trước",
   "Mặt trái",
-  "Mặt sau",
   "Mặt phải",
+  "Mặt sau",
   "Mặt trên",
   "Mặt dưới",
   "Mặt sàn",
@@ -82,8 +82,8 @@ export const OFFER_PHOTO_ANGLE_LABELS = [
 export const OFFER_PHOTO_ANGLE_SHORT_LABELS = [
   "Mặt trước",
   "Mặt trái",
-  "Mặt sau",
   "Mặt phải",
+  "Mặt sau",
   "Mặt trên",
   "Mặt dưới",
   "Mặt sàn",

@@ -39,7 +39,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { INITIAL_CARRIERS, INITIAL_DEPOTS } from "../data/mockData";
-import { QA_RULES } from "../services/qaRules";
+import { QA_RULES, OFFER_PHOTO_ANGLE_LABELS } from "../services/qaRules";
 import {
   FieldErrors,
   FieldError,
@@ -169,7 +169,7 @@ export const AssetsPage: React.FC = () => {
       "photos",
       formPhotos.length >= QA_RULES.offer.minPhotoCount
         ? undefined
-        : `INSPECTION_INCOMPLETE: Vui lòng tải đủ tối thiểu ${QA_RULES.offer.minPhotoCount} ảnh container theo 7 góc bắt buộc (Mặt trước container, Cửa sau container, Vách trái, Vách phải, Bên trong container, Sàn container, Tem số container/CSC plate).`,
+        : `INSPECTION_INCOMPLETE: Vui lòng tải đủ tối thiểu ${QA_RULES.offer.minPhotoCount} ảnh container theo 7 góc bắt buộc (${OFFER_PHOTO_ANGLE_LABELS.join(", ")}).`,
     );
     setError(
       errors,
@@ -889,9 +889,8 @@ export const AssetsPage: React.FC = () => {
             </label>
             <p className="text-xs font-semibold text-red-600 mb-2">
               <RequiredMark /> Bắt buộc tối thiểu {QA_RULES.offer.minPhotoCount}{" "}
-              ảnh: 1. Mặt trước container, 2. Cửa sau container, 3. Vách trái,
-              4. Vách phải, 5. Bên trong container, 6. Sàn container, 7. Tem số
-              container/CSC plate.
+              ảnh theo thứ tự: Mặt trước, Mặt trái, Mặt phải, Mặt sau, Mặt trên,
+              Mặt dưới, Mặt sàn.
             </p>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-3">
               {formPhotos.map((url, idx) => (
@@ -933,18 +932,8 @@ export const AssetsPage: React.FC = () => {
             )}
             {formPhotos.length < QA_RULES.offer.minPhotoCount && (
               <p className="text-xs text-emerald-700 mt-1.5 font-semibold">
-                Ảnh tiếp theo:{" "}
-                {
-                  [
-                    "Mặt trước container",
-                    "Cửa sau container",
-                    "Vách trái",
-                    "Vách phải",
-                    "Bên trong container",
-                    "Sàn container",
-                    "Tem số container/CSC plate",
-                  ][formPhotos.length]
-                }
+                Ảnh tiếp theo ({formPhotos.length + 1}/7):{" "}
+                {OFFER_PHOTO_ANGLE_LABELS[formPhotos.length]}
               </p>
             )}
           </div>
@@ -1290,10 +1279,9 @@ export const AssetsPage: React.FC = () => {
                   )}
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Tối thiểu {QA_RULES.offer.minPhotoCount} góc: 1. Mặt trước, 2.
-                  Cửa sau, 3. Vách trái, 4. Vách phải, 5. Bên trong container,
-                  6. Sàn container, 7. Tem số/CSC plate. Thiếu góc sẽ báo
-                  INSPECTION_INCOMPLETE.
+                  Tối thiểu {QA_RULES.offer.minPhotoCount} góc theo thứ tự: Mặt
+                  trước, Mặt trái, Mặt phải, Mặt sau, Mặt trên, Mặt dưới, Mặt
+                  sàn. Thiếu góc sẽ báo INSPECTION_INCOMPLETE.
                 </p>
 
                 {/* AI Inspection Card */}

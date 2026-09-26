@@ -1271,15 +1271,7 @@ export async function inspectContainerWithAI(
       await postApi<any>("/api/ai/container/inspect", {
         task: "CONTAINER_PHYSICAL_CONDITION",
         photos,
-        photoAngles: [
-          "front",
-          "back_door",
-          "left_side",
-          "right_side",
-          "inside",
-          "floor",
-          "container_number_plate",
-        ],
+        photoAngles: [...OFFER_PHOTO_ANGLES],
         requiredPhotoCount: 7,
       }),
     );
@@ -1392,15 +1384,7 @@ export async function verifyContainerPhotosWithAI(
       await postApi<any>("/api/ai/container/verify", {
         task: "CONTAINER_IDENTITY_AND_PHYSICAL_CONDITION",
         photos,
-        photoAngles: [
-          "front",
-          "back_door",
-          "left_side",
-          "right_side",
-          "inside",
-          "floor",
-          "container_number_plate",
-        ],
+        photoAngles: [...OFFER_PHOTO_ANGLES],
         expected,
         requiredPhotoCount: 7,
       }),

@@ -307,12 +307,12 @@ test("all photos and declared identity are sent; AI requests get the longer time
     assert.equal(sent.requiredPhotoCount, 7);
     assert.deepEqual(sent.photoAngles, [
       "front",
-      "back_door",
       "left_side",
       "right_side",
-      "inside",
+      "rear",
+      "roof",
+      "underbody",
       "floor",
-      "container_number_plate",
     ]);
     return new Response(
       JSON.stringify({
@@ -642,7 +642,11 @@ test("Ops AI evidence summarizes eDO and photo findings without a long transcrip
   });
   assert.ok(evidence.some((item) => item.includes("Hãng tàu trên eDO")));
   assert.ok(evidence.some((item) => item.includes("Tình trạng thực tế")));
-  assert.ok(evidence.some((item) => item.includes("Mặt trái") || item.includes("Vách trái")));
+  assert.ok(
+    evidence.some(
+      (item) => item.includes("Mặt trái") || item.includes("Vách trái"),
+    ),
+  );
   assert.ok(evidence.length <= 4);
 });
 
