@@ -94,13 +94,13 @@ export const OFFER_PHOTO_ANGLE_SHORT_LABELS = [
  * Thứ tự này là thứ tự hiển thị và được dùng chung cho UI/guard/thông báo.
  */
 export const INSPECTION_PHOTO_ANGLE_LABELS = [
-  "Mặt trước container",
-  "Cửa sau container",
-  "Vách trái",
-  "Vách phải",
-  "Bên trong container",
-  "Sàn cont",
-  "Tem số container/CSC plate",
+  "Mặt trước",
+  "Mặt trái",
+  "Mặt phải",
+  "Mặt sau",
+  "Mặt trên",
+  "Mặt dưới",
+  "Mặt sàn",
 ] as const;
 
 export const REQUIRED_INSPECTION_PHOTO_COUNT =

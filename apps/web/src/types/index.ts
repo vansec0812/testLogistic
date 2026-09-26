@@ -668,6 +668,8 @@ export interface Transaction {
   checkInNotes?: string;
   rescheduleRequest?: RescheduleRequest;
   noShowDetected?: boolean;
+  // Luồng dừng/hủy giao dịch, giải trình 2 bên, phán quyết Ops & hoàn tiền STK
+  disputeFlow?: DisputeCancellationFlow;
   // Metadata
   createdAt: string;
   updatedAt: string;
@@ -1106,4 +1108,54 @@ export interface CreateRequestForm {
   bookingFileName?: string;
   bookingFileMimeType?: string;
   bookingAiCheck?: BookingAiCheckResult;
+}
+
+
+export interface BankAccountInfo {
+  bankName: string;
+  accountNumber: string;
+  accountHolder: string;
+  submittedAt: string;
+}
+
+export interface PartyExplanation {
+  companyId: string;
+  companyName: string;
+  role: 'A' | 'B';
+  statement: string;
+  submittedAt: string;
+}
+
+export interface OpsDisputeRuling {
+  faultParty: 'PARTY_A' | 'PARTY_B' | 'MUTUAL' | 'NONE';
+  penaltyAmountVnd: number;
+  refundAmountA: number;
+  refundAmountB: number;
+  notes: string;
+  ruledBy: string;
+  ruledAt: string;
+}
+
+export interface DisputeCancellationFlow {
+  id: string;
+  transactionId: string;
+  requestedByCompanyId: string;
+  requestedByCompanyName: string;
+  requestedByRole: 'A' | 'B';
+  reason: string;
+  requestedAt: string;
+  status:
+    | 'PENDING_EXPLANATIONS'
+    | 'PENDING_OPS_RULING'
+    | 'PENDING_BANK_INFO'
+    | 'SETTLED'
+    | 'REJECTED';
+  explanationA?: PartyExplanation;
+  explanationB?: PartyExplanation;
+  opsRuling?: OpsDisputeRuling;
+  bankInfoA?: BankAccountInfo;
+  bankInfoB?: BankAccountInfo;
+  settledAt?: string;
+  settledBy?: string;
+  settlementNotes?: string;
 }
