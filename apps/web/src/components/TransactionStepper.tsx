@@ -124,13 +124,46 @@ export const TransactionStepper: React.FC<TransactionStepperProps> = ({
   const isTerminal = TERMINAL_STATUSES.includes(status);
 
   if (isTerminal) {
+    if (status === "DISPUTED" || transaction.disputeFlow) {
+      return (
+        <div className="flex items-start justify-between gap-4 rounded-2xl border-2 border-rose-300 bg-rose-50 p-4 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-rose-100 border border-rose-300 flex items-center justify-center text-rose-700 shrink-0">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold uppercase tracking-wider text-rose-800">
+                  GIAO DỊCH TẠM DỪNG GIỮA CHỪNG
+                </span>
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-rose-200 text-rose-900">
+                  {transaction.disputeFlow?.status === "PENDING_EXPLANATIONS"
+                    ? "Giai đoạn 1: Chờ 2 bên gửi giải trình"
+                    : transaction.disputeFlow?.status === "PENDING_OPS_RULING"
+                    ? "Giai đoạn 2: Chờ Ops phán quyết"
+                    : transaction.disputeFlow?.status === "PENDING_BANK_INFO"
+                    ? "Giai đoạn 3: Chờ STK nhận tiền hoàn"
+                    : transaction.disputeFlow?.status === "SETTLED"
+                    ? "Giai đoạn 4: Đã giải ngân & Đóng hồ sơ"
+                    : "Đang xử lý tranh chấp"}
+                </span>
+              </div>
+              <p className="text-xs font-medium text-rose-700 mt-1">
+                {transaction.nextAction || transaction.holdReason}
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     const label =
       status === "CANCELLED"
         ? "Giao dịch đã bị HỦY"
         : status === "REJECTED" || status === "CARRIER_REJECTED"
           ? "Hãng tàu TỪ CHỐI duyệt RU"
-          : status === "DISPUTED" || status === "PICKUP_REFUSED"
-            ? "Giao dịch đang có Case/Dispute"
+          : status === "PICKUP_REFUSED"
+            ? "Từ chối nhận vỏ tại Depot"
             : status === "PAYMENT_EXPIRED"
               ? "Quá hạn thanh toán"
               : "Giao dịch HẾT HẠN";

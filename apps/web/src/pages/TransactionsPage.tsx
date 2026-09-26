@@ -40,6 +40,11 @@ import {
   Send,
   X,
   Loader2,
+  Scale,
+  Landmark,
+  Receipt,
+  Ban,
+  Check,
 } from "lucide-react";
 import {
   FieldErrors,
@@ -316,6 +321,11 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     confirmHandoverB,
     toggleHold,
     cancelTransaction,
+    requestTransactionDispute,
+    submitDisputeExplanation,
+    submitOpsDisputeRuling,
+    submitDisputeBankInfo,
+    settleDisputeAndClose,
     startChatThread,
   } = useDatabase();
   const { currentRole, currentCompany } = useAuth();
@@ -377,12 +387,12 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
   >("MINOR");
   const [inspectionPhotos, setInspectionPhotos] = useState<string[]>([
     "/demo/container/asset-01/front.jpg",
-    "/demo/container/asset-01/rear.jpg",
     "/demo/container/asset-01/left.jpg",
     "/demo/container/asset-01/right.jpg",
-    "/demo/container/asset-01/inside.jpg",
+    "/demo/container/asset-01/rear.jpg",
+    "/demo/container/asset-01/roof.jpg",
+    "/demo/container/asset-01/underbody.jpg",
     "/demo/container/asset-01/floor.jpg",
-    "/demo/container/asset-01/csc.jpg",
   ]);
 
   const handleUploadInspectionPhoto = (
@@ -408,6 +418,17 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
   const [inspectionErrors, setInspectionErrors] = useState<FieldErrors>({});
   const [cancelErrors, setCancelErrors] = useState<FieldErrors>({});
   const [holdErrors, setHoldErrors] = useState<FieldErrors>({});
+
+  // Dispute & Cancellation Lifecycle States
+  const [explanationText, setExplanationText] = useState("");
+  const [rulingFaultParty, setRulingFaultParty] = useState<"PARTY_A" | "PARTY_B" | "MUTUAL" | "NONE">("PARTY_A");
+  const [rulingPenalty, setRulingPenalty] = useState(500000);
+  const [rulingNotes, setRulingNotes] = useState("Ops đã thẩm định bản giải trình của 2 bên và đối chiếu hiện trường. Xác định bên vi phạm do không tuân thủ cam kết giao nhận.");
+  const [bankName, setBankName] = useState("Vietcombank");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [accountHolder, setAccountHolder] = useState("");
+  const [settlementNotes, setSettlementNotes] = useState("");
+  const [disputeMsg, setDisputeMsg] = useState<{ text: string; error?: boolean } | null>(null);
 
   const handleCarrierApproval = () => {
     if (!activeTxn) return;
@@ -507,14 +528,14 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     setError(
       errors,
       "cancelReason",
-      required(cancelReason, "Vui lòng nhập lý do hủy giao dịch."),
+      required(cancelReason, "Vui lòng nhập lý do yêu cầu dừng / hủy giao dịch."),
     );
     setCancelErrors(errors);
     if (Object.keys(errors).length > 0) {
       scrollToFirstFieldError(errors);
       return;
     }
-    const result = cancelTransaction(activeTxn.id, cancelReason.trim());
+    const result = requestTransactionDispute(activeTxn.id, cancelReason.trim());
     if (!result.success) {
       setCancelErrors({ cancelReason: result.message });
       scrollToFirstFieldError({ cancelReason: result.message });
@@ -523,6 +544,71 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     setShowCancelModal(false);
     setCancelReason("");
     setCancelErrors({});
+    setDisputeMsg({ text: result.message, error: false });
+  };
+
+  const handleSubmitExplanation = () => {
+    if (!activeTxn || !explanationText.trim()) {
+      setDisputeMsg({ text: "Vui lòng nhập nội dung giải trình trước khi nộp.", error: true });
+      return;
+    }
+    const res = submitDisputeExplanation(activeTxn.id, explanationText.trim());
+    if (res.success) {
+      setDisputeMsg({ text: res.message, error: false });
+      setExplanationText("");
+    } else {
+      setDisputeMsg({ text: res.message, error: true });
+    }
+  };
+
+  const handleSubmitRuling = () => {
+    if (!activeTxn) return;
+    if (!rulingNotes.trim()) {
+      setDisputeMsg({ text: "Vui lòng nhập căn cứ kết luận phán quyết từ phía Ops.", error: true });
+      return;
+    }
+    const res = submitOpsDisputeRuling(activeTxn.id, {
+      faultParty: rulingFaultParty,
+      penaltyAmountVnd: rulingPenalty,
+      notes: rulingNotes.trim(),
+    });
+    if (res.success) {
+      setDisputeMsg({ text: res.message, error: false });
+    } else {
+      setDisputeMsg({ text: res.message, error: true });
+    }
+  };
+
+  const handleSubmitBankInfo = () => {
+    if (!activeTxn) return;
+    if (!bankName.trim() || !accountNumber.trim() || !accountHolder.trim()) {
+      setDisputeMsg({ text: "Vui lòng nhập đầy đủ Tên ngân hàng, Số tài khoản và Tên chủ tài khoản.", error: true });
+      return;
+    }
+    const res = submitDisputeBankInfo(activeTxn.id, {
+      bankName: bankName.trim(),
+      accountNumber: accountNumber.trim(),
+      accountHolder: accountHolder.trim().toUpperCase(),
+      submittedAt: new Date().toISOString(),
+    });
+    if (res.success) {
+      setDisputeMsg({ text: res.message, error: false });
+      setAccountNumber("");
+      setAccountHolder("");
+    } else {
+      setDisputeMsg({ text: res.message, error: true });
+    }
+  };
+
+  const handleSettleDispute = () => {
+    if (!activeTxn) return;
+    const res = settleDisputeAndClose(activeTxn.id, settlementNotes.trim() || undefined);
+    if (res.success) {
+      setDisputeMsg({ text: res.message, error: false });
+      setSettlementNotes("");
+    } else {
+      setDisputeMsg({ text: res.message, error: true });
+    }
   };
 
   const handleHoldTransaction = () => {
@@ -679,6 +765,765 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Flow Control (Left 2 cols) */}
         <div className="lg:col-span-2 space-y-6">
+          {/* ========================================================================= */}
+          {/* LUỒNG FAIL / TRANH CHẤP / DỪNG GIAO DỊCH GIỮA CHỪNG & PHÁN QUYẾT HOÀN TIỀN */}
+          {/* ========================================================================= */}
+          {(activeTxn.status === "DISPUTED" || Boolean(activeTxn.disputeFlow)) && (() => {
+            const dispute = activeTxn.disputeFlow;
+            const isPartyA = currentCompany.id === activeTxn.companyAId;
+            const isPartyB = currentCompany.id === activeTxn.companyBId;
+            const isOps = currentRole === "OPS";
+            const paidA = activeTxn.paymentOrderA?.amountVnd || (activeTxn.paymentConfirmedAt ? activeTxn.quote.econtCollectedFromA : 0);
+            const paidB = activeTxn.paymentOrderB?.amountVnd || (activeTxn.paymentConfirmedAt ? activeTxn.quote.econtCollectedFromB : 0);
+            const currentRuling = dispute?.opsRuling;
+
+            return (
+              <div className="bg-white border-2 border-rose-300 rounded-2xl p-6 shadow-md space-y-6">
+                {/* Alert Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-rose-100 pb-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-rose-100 border border-rose-300 flex items-center justify-center text-rose-700 shrink-0 mt-0.5">
+                      <Ban className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-600 text-white">
+                          GIAO DỊCH TẠM DỪNG GIỮA CHỪNG
+                        </span>
+                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                          {dispute?.status === "PENDING_EXPLANATIONS"
+                            ? "Giai đoạn 1: Chờ 2 bên gửi giải trình"
+                            : dispute?.status === "PENDING_OPS_RULING"
+                            ? "Giai đoạn 2: Chờ Ops thẩm định & phán quyết"
+                            : dispute?.status === "PENDING_BANK_INFO"
+                            ? "Giai đoạn 3: Chờ STK ngân hàng nhận tiền hoàn"
+                            : dispute?.status === "SETTLED"
+                            ? "Giai đoạn 4: Đã hoàn tất giải ngân & Đóng hồ sơ"
+                            : "Đang giải quyết sự cố"}
+                        </span>
+                      </div>
+                      <h3 className="text-base font-bold text-slate-900 mt-1">
+                        Hồ sơ Xử lý Sự cố, Phán quyết Trách nhiệm & Hoàn tiền Đền bù
+                      </h3>
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        Yêu cầu dừng bởi: <strong className="text-slate-800">{dispute?.requestedByCompanyName}</strong> ({dispute?.requestedByRole === "A" ? "Bên A - Chủ vỏ" : "Bên B - Cần vỏ"}) · Lúc {dispute?.requestedAt ? formatDateTime(dispute.requestedAt) : "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                  {activeTxn.isOnHold && (
+                    <span className="self-start sm:self-center px-3 py-1 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Cả 2 bên bị khóa thao tác</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Dispute Reason Banner */}
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                  <span className="font-bold text-slate-700 block mb-1">
+                    LÝ DO YÊU CẦU DỪNG GIAO DỊCH:
+                  </span>
+                  <p className="text-slate-800 italic bg-white p-2.5 rounded-lg border border-slate-200">
+                    "{dispute?.reason || "Không có lý do chi tiết."}"
+                  </p>
+                </div>
+
+                {disputeMsg && (
+                  <div className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between ${disputeMsg.error ? "bg-rose-50 border border-rose-300 text-rose-900" : "bg-emerald-50 border border-emerald-300 text-emerald-900"}`}>
+                    <div className="flex items-center gap-2">
+                      {disputeMsg.error ? <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" /> : <CheckCircle className="w-4 h-4 shrink-0 text-emerald-600" />}
+                      <span>{disputeMsg.text}</span>
+                    </div>
+                    <button onClick={() => setDisputeMsg(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold">×</button>
+                  </div>
+                )}
+
+                {/* 4-Stage Progress Tracker */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-2">
+                  <div className="p-2.5 rounded-xl border border-emerald-200 bg-emerald-50/50 text-xs">
+                    <span className="font-bold text-emerald-800 flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5 text-emerald-600" /> 1. Dừng giao dịch
+                    </span>
+                    <p className="text-[11px] text-emerald-700 mt-0.5">Đã thông báo Ops</p>
+                  </div>
+                  <div className={`p-2.5 rounded-xl border text-xs ${dispute?.explanationA && dispute?.explanationB ? "border-emerald-200 bg-emerald-50/50 text-emerald-800" : "border-amber-300 bg-amber-50 text-amber-900"}`}>
+                    <span className="font-bold flex items-center gap-1">
+                      {dispute?.explanationA && dispute?.explanationB ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Clock className="w-3.5 h-3.5 text-amber-600" />} 2. Giải trình 2 bên
+                    </span>
+                    <p className="text-[11px] mt-0.5">
+                      {dispute?.explanationA && dispute?.explanationB ? "Đã nộp đủ 2 bên" : dispute?.explanationA || dispute?.explanationB ? "Đã có 1 bên nộp" : "Chờ cả 2 bên"}
+                    </p>
+                  </div>
+                  <div className={`p-2.5 rounded-xl border text-xs ${currentRuling ? "border-emerald-200 bg-emerald-50/50 text-emerald-800" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                    <span className="font-bold flex items-center gap-1">
+                      {currentRuling ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Scale className="w-3.5 h-3.5" />} 3. Phán quyết Ops
+                    </span>
+                    <p className="text-[11px] mt-0.5">
+                      {currentRuling ? "Đã ra phán quyết" : "Chờ Ops phân định"}
+                    </p>
+                  </div>
+                  <div className={`p-2.5 rounded-xl border text-xs ${dispute?.status === "SETTLED" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                    <span className="font-bold flex items-center gap-1">
+                      {dispute?.status === "SETTLED" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Landmark className="w-3.5 h-3.5" />} 4. Hoàn tiền STK
+                    </span>
+                    <p className="text-[11px] mt-0.5">
+                      {dispute?.status === "SETTLED" ? "Đã hoàn tất đóng hồ sơ" : "Thu thập STK & giải ngân"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* ========================================================= */}
+                {/* GIAI ĐOẠN 2: BẢN GIẢI TRÌNH TỪ HAI PHÍA                    */}
+                {/* ========================================================= */}
+                <div className="space-y-3 pt-2 border-t border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-blue-600" />
+                      <span>1. VĂN BẢN GIẢI TRÌNH CỦA HAI BÊN</span>
+                    </h4>
+                    <span className="text-[11px] text-slate-500">
+                      Cả Bên A và Bên B cần giải trình rõ sự việc để Ops làm căn cứ phân xử
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Bên A Explanation */}
+                    <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                        <div>
+                          <strong className="text-xs text-slate-800 block">BÊN A (CHỦ CONTAINER)</strong>
+                          <span className="text-[11px] text-slate-500">{activeTxn.companyAName}</span>
+                        </div>
+                        {dispute?.explanationA ? (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold flex items-center gap-1">
+                            <Check className="w-3 h-3" /> Đã nộp
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                            Chờ nộp
+                          </span>
+                        )}
+                      </div>
+
+                      {dispute?.explanationA ? (
+                        <div className="space-y-1">
+                          <p className="text-xs text-slate-800 bg-white p-3 rounded-lg border border-slate-200 leading-relaxed">
+                            {dispute.explanationA.statement}
+                          </p>
+                          <span className="text-[10px] text-slate-400 block text-right">
+                            Nộp lúc: {formatDateTime(dispute.explanationA.submittedAt)}
+                          </span>
+                        </div>
+                      ) : isPartyA ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={explanationText}
+                            onChange={(e) => setExplanationText(e.target.value)}
+                            placeholder="Nhập nội dung giải trình chi tiết từ Bên A: nguyên nhân phát sinh sự cố, mốc thời gian, đối chiếu điều khoản..."
+                            className="w-full p-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                            rows={4}
+                          />
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setExplanationText("Đơn vị đã chuẩn bị vỏ container đúng quy cách tại bãi depot. Tuy nhiên đơn vị xe kéo của Bên B đến quá trễ so với khung giờ hẹn, dẫn đến phát sinh lưu bãi ngoài dự kiến.")}
+                              className="text-[10px] bg-white border border-slate-200 hover:bg-slate-100 px-2 py-1 rounded-lg text-slate-600"
+                            >
+                              + Mẫu: Bên B trễ hẹn
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setExplanationText("Bên A đã hoàn tất đăng ký RU nhưng hãng tàu từ chối duyệt vì lý do kỹ thuật ngoài ý muốn. Bên A xin dừng giao dịch và phối hợp hoàn tiền.")}
+                              className="text-[10px] bg-white border border-slate-200 hover:bg-slate-100 px-2 py-1 rounded-lg text-slate-600"
+                            >
+                              + Mẫu: Hãng tàu từ chối
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleSubmitExplanation}
+                            className="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            <span>Nộp bản giải trình của Bên A</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400 italic py-3 text-center">
+                          Đang chờ đại diện Bên A ({activeTxn.companyAName}) nộp bản giải trình...
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Bên B Explanation */}
+                    <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                        <div>
+                          <strong className="text-xs text-slate-800 block">BÊN B (ĐƠN VỊ CẦN VỎ)</strong>
+                          <span className="text-[11px] text-slate-500">{activeTxn.companyBName}</span>
+                        </div>
+                        {dispute?.explanationB ? (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold flex items-center gap-1">
+                            <Check className="w-3 h-3" /> Đã nộp
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                            Chờ nộp
+                          </span>
+                        )}
+                      </div>
+
+                      {dispute?.explanationB ? (
+                        <div className="space-y-1">
+                          <p className="text-xs text-slate-800 bg-white p-3 rounded-lg border border-slate-200 leading-relaxed">
+                            {dispute.explanationB.statement}
+                          </p>
+                          <span className="text-[10px] text-slate-400 block text-right">
+                            Nộp lúc: {formatDateTime(dispute.explanationB.submittedAt)}
+                          </span>
+                        </div>
+                      ) : isPartyB ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={explanationText}
+                            onChange={(e) => setExplanationText(e.target.value)}
+                            placeholder="Nhập nội dung giải trình chi tiết từ Bên B: phát hiện bất thường hiện trường, cont bị từ chối đóng hàng, sai lệch tình trạng..."
+                            className="w-full p-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                            rows={4}
+                          />
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setExplanationText("Tài xế của Bên B đến depot nhận cont nhưng kiểm tra thấy sàn cont có dấu hiệu thủng ẩm mốc, không đủ điều kiện đóng hàng nông sản xuất khẩu như thỏa thuận.")}
+                              className="text-[10px] bg-white border border-slate-200 hover:bg-slate-100 px-2 py-1 rounded-lg text-slate-600"
+                            >
+                              + Mẫu: Vỏ cont không đạt chuẩn
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setExplanationText("Bên A giao container không đúng số hiệu đăng ký trên Thỏa thuận, xe kéo phải quay đầu về bãi và phát sinh chi phí di chuyển.")}
+                              className="text-[10px] bg-white border border-slate-200 hover:bg-slate-100 px-2 py-1 rounded-lg text-slate-600"
+                            >
+                              + Mẫu: Sai số cont
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleSubmitExplanation}
+                            className="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            <span>Nộp bản giải trình của Bên B</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400 italic py-3 text-center">
+                          Đang chờ đại diện Bên B ({activeTxn.companyBName}) nộp bản giải trình...
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ========================================================= */}
+                {/* GIAI ĐOẠN 3: PHÁN QUYẾT BÊN SAI PHẠM & XÁC ĐỊNH PHÍ ĐỀN BÙ */}
+                {/* ========================================================= */}
+                <div className="space-y-3 pt-4 border-t border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <Scale className="w-4 h-4 text-purple-600" />
+                      <span>2. PHÁN QUYẾT TỪ ĐỘI NGŨ VẬN HÀNH OPS</span>
+                    </h4>
+                    <span className="text-[11px] text-slate-500">
+                      Ops kết luận bên có lỗi, xác định mức phạt đền bù và tính toán hoàn tiền
+                    </span>
+                  </div>
+
+                  {currentRuling ? (
+                    /* Display Existing Ruling */
+                    <div className="p-4 rounded-xl border border-purple-200 bg-purple-50/40 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-purple-200">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-purple-950 uppercase">Kết luận sai phạm:</span>
+                          <span className={`text-xs font-black px-2.5 py-0.5 rounded-full ${
+                            currentRuling.faultParty === "PARTY_A"
+                              ? "bg-rose-600 text-white"
+                              : currentRuling.faultParty === "PARTY_B"
+                              ? "bg-rose-600 text-white"
+                              : currentRuling.faultParty === "MUTUAL"
+                              ? "bg-amber-600 text-white"
+                              : "bg-blue-600 text-white"
+                          }`}>
+                            {currentRuling.faultParty === "PARTY_A"
+                              ? `BÊN A VI PHẠM (${activeTxn.companyAName})`
+                              : currentRuling.faultParty === "PARTY_B"
+                              ? `BÊN B VI PHẠM (${activeTxn.companyBName})`
+                              : currentRuling.faultParty === "MUTUAL"
+                              ? "LỖI TỪ CẢ HAI PHÍA (MUTUAL FAULT)"
+                              : "BẤT KHẢ KHÁNG / KHÔNG VI PHẠM"}
+                          </span>
+                        </div>
+                        <span className="text-xs font-black text-rose-700 bg-rose-100 px-3 py-1 rounded-lg border border-rose-200">
+                          Mức phạt đền bù: {formatVnd(currentRuling.penaltyAmountVnd)}
+                        </span>
+                      </div>
+
+                      <div className="text-xs text-slate-800 space-y-1">
+                        <span className="font-semibold text-slate-600 block">Căn cứ & Phân tích của Ops:</span>
+                        <p className="bg-white p-3 rounded-lg border border-purple-100 italic leading-relaxed text-slate-900">
+                          "{currentRuling.notes}"
+                        </p>
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                          <span>Thụ lý bởi: <strong>{currentRuling.ruledBy}</strong></span>
+                          <span>Ban hành lúc: {formatDateTime(currentRuling.ruledAt)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : isOps ? (
+                    /* Ops Ruling Form */
+                    <div className="p-4 rounded-xl border-2 border-purple-300 bg-purple-50/30 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-purple-950 uppercase flex items-center gap-1.5">
+                          <Scale className="w-4 h-4 text-purple-700" />
+                          BIỂU MẪU RA PHÁN QUYẾT & LẬP PHIẾU HOÀN TIỀN (DÀNH CHO OPS)
+                        </span>
+                        <span className="text-[11px] text-purple-700 font-semibold bg-purple-100 px-2.5 py-0.5 rounded-full">
+                          Thẩm quyền Ops
+                        </span>
+                      </div>
+
+                      {/* Fault Party Radio */}
+                      <div>
+                        <label className="text-xs font-bold text-slate-800 block mb-1.5">
+                          1. Xác định bên sai phạm <RequiredMark />
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <label className={`p-3 rounded-xl border cursor-pointer transition-colors ${rulingFaultParty === "PARTY_A" ? "bg-rose-50 border-rose-400 ring-2 ring-rose-200" : "bg-white border-slate-200 hover:bg-slate-50"}`}>
+                            <div className="flex items-start gap-2">
+                              <input
+                                type="radio"
+                                name="faultParty"
+                                checked={rulingFaultParty === "PARTY_A"}
+                                onChange={() => setRulingFaultParty("PARTY_A")}
+                                className="mt-0.5 text-rose-600"
+                              />
+                              <div>
+                                <strong className="text-xs text-rose-900 block">Bên A sai phạm (Chủ vỏ)</strong>
+                                <span className="text-[11px] text-slate-500">{activeTxn.companyAName} - Bị trừ phạt đền bù</span>
+                              </div>
+                            </div>
+                          </label>
+
+                          <label className={`p-3 rounded-xl border cursor-pointer transition-colors ${rulingFaultParty === "PARTY_B" ? "bg-rose-50 border-rose-400 ring-2 ring-rose-200" : "bg-white border-slate-200 hover:bg-slate-50"}`}>
+                            <div className="flex items-start gap-2">
+                              <input
+                                type="radio"
+                                name="faultParty"
+                                checked={rulingFaultParty === "PARTY_B"}
+                                onChange={() => setRulingFaultParty("PARTY_B")}
+                                className="mt-0.5 text-rose-600"
+                              />
+                              <div>
+                                <strong className="text-xs text-rose-900 block">Bên B sai phạm (Cần vỏ)</strong>
+                                <span className="text-[11px] text-slate-500">{activeTxn.companyBName} - Bị trừ phạt đền bù</span>
+                              </div>
+                            </div>
+                          </label>
+
+                          <label className={`p-3 rounded-xl border cursor-pointer transition-colors ${rulingFaultParty === "MUTUAL" ? "bg-amber-50 border-amber-400 ring-2 ring-amber-200" : "bg-white border-slate-200 hover:bg-slate-50"}`}>
+                            <div className="flex items-start gap-2">
+                              <input
+                                type="radio"
+                                name="faultParty"
+                                checked={rulingFaultParty === "MUTUAL"}
+                                onChange={() => setRulingFaultParty("MUTUAL")}
+                                className="mt-0.5 text-amber-600"
+                              />
+                              <div>
+                                <strong className="text-xs text-amber-900 block">Cả hai bên đều có lỗi (Mutual)</strong>
+                                <span className="text-[11px] text-slate-500">Hoàn tiền gốc theo tỷ lệ thỏa thuận</span>
+                              </div>
+                            </div>
+                          </label>
+
+                          <label className={`p-3 rounded-xl border cursor-pointer transition-colors ${rulingFaultParty === "NONE" ? "bg-blue-50 border-blue-400 ring-2 ring-blue-200" : "bg-white border-slate-200 hover:bg-slate-50"}`}>
+                            <div className="flex items-start gap-2">
+                              <input
+                                type="radio"
+                                name="faultParty"
+                                checked={rulingFaultParty === "NONE"}
+                                onChange={() => setRulingFaultParty("NONE")}
+                                className="mt-0.5 text-blue-600"
+                              />
+                              <div>
+                                <strong className="text-xs text-blue-900 block">Bất khả kháng / Không lỗi</strong>
+                                <span className="text-[11px] text-slate-500">Hoàn trả 100% tiền đã thu</span>
+                              </div>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Penalty Amount */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs font-bold text-slate-800">
+                            2. Mức phí phạt vi phạm / Đền bù thiệt hại (VNĐ) <RequiredMark />
+                          </label>
+                          <span className="text-xs font-black text-rose-700">
+                            {formatVnd(rulingPenalty)}
+                          </span>
+                        </div>
+                        <input
+                          type="number"
+                          value={rulingPenalty}
+                          onChange={(e) => setRulingPenalty(Math.max(0, Number(e.target.value) || 0))}
+                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 bg-white font-mono font-bold outline-none focus:ring-2 focus:ring-purple-500"
+                          step={100000}
+                        />
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {[0, 300000, 500000, 1000000, 1500000].map((amt) => (
+                            <button
+                              key={amt}
+                              type="button"
+                              onClick={() => setRulingPenalty(amt)}
+                              className={`text-[11px] px-2.5 py-1 rounded-lg border font-semibold ${rulingPenalty === amt ? "bg-purple-600 text-white border-purple-600" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-100"}`}
+                            >
+                              {amt === 0 ? "0 đ (Miễn phạt)" : formatVnd(amt)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Ruling Notes */}
+                      <div>
+                        <label className="text-xs font-bold text-slate-800 block mb-1">
+                          3. Căn cứ phán quyết & phân tích của Ops <RequiredMark />
+                        </label>
+                        <textarea
+                          value={rulingNotes}
+                          onChange={(e) => setRulingNotes(e.target.value)}
+                          placeholder="Ghi rõ lý do Ops đưa ra phán quyết bên sai phạm, căn cứ biên bản hiện trường, log dữ liệu và quy chế sàn ECont..."
+                          className="w-full p-2.5 text-xs rounded-xl border border-slate-200 bg-white outline-none focus:ring-2 focus:ring-purple-500"
+                          rows={3}
+                        />
+                      </div>
+
+                      {/* Financial Preview */}
+                      <div className="p-3 bg-white rounded-xl border border-purple-200 text-xs space-y-2">
+                        <strong className="text-purple-950 block border-b border-slate-100 pb-1">
+                          Dự thảo Quyết toán Hoàn tiền & Đền bù:
+                        </strong>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                          <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                            <span className="font-bold text-slate-800 block">Bên A ({activeTxn.companyAName}):</span>
+                            <div className="text-slate-600 mt-1">Đã đóng: <strong>{formatVnd(paidA)}</strong></div>
+                            <div className="text-slate-600">Phạt/Đền bù: <strong className={rulingFaultParty === "PARTY_A" ? "text-rose-600" : rulingFaultParty === "PARTY_B" ? "text-emerald-600" : ""}>{rulingFaultParty === "PARTY_A" ? `- ${formatVnd(rulingPenalty)}` : rulingFaultParty === "PARTY_B" ? `+ ${formatVnd(rulingPenalty)}` : "0 đ"}</strong></div>
+                            <div className="text-slate-900 font-bold border-t border-slate-200 pt-1 mt-1 text-xs">
+                              Thực nhận hoàn: <span className="text-purple-700 font-black">{formatVnd(rulingFaultParty === "PARTY_A" ? Math.max(0, paidA - rulingPenalty) : rulingFaultParty === "PARTY_B" ? paidA + rulingPenalty : paidA)}</span>
+                            </div>
+                          </div>
+
+                          <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                            <span className="font-bold text-slate-800 block">Bên B ({activeTxn.companyBName}):</span>
+                            <div className="text-slate-600 mt-1">Đã đóng: <strong>{formatVnd(paidB)}</strong></div>
+                            <div className="text-slate-600">Phạt/Đền bù: <strong className={rulingFaultParty === "PARTY_B" ? "text-rose-600" : rulingFaultParty === "PARTY_A" ? "text-emerald-600" : ""}>{rulingFaultParty === "PARTY_B" ? `- ${formatVnd(rulingPenalty)}` : rulingFaultParty === "PARTY_A" ? `+ ${formatVnd(rulingPenalty)}` : "0 đ"}</strong></div>
+                            <div className="text-slate-900 font-bold border-t border-slate-200 pt-1 mt-1 text-xs">
+                              Thực nhận hoàn: <span className="text-purple-700 font-black">{formatVnd(rulingFaultParty === "PARTY_B" ? Math.max(0, paidB - rulingPenalty) : rulingFaultParty === "PARTY_A" ? paidB + rulingPenalty : paidB)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleSubmitRuling}
+                        className="w-full py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                      >
+                        <Scale className="w-4 h-4" />
+                        <span>Ban hành Phán quyết & Phát hành Phiếu hoàn tiền đền bù</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-center text-xs text-slate-500 py-6">
+                      <Scale className="w-8 h-8 text-slate-300 mx-auto mb-1.5" />
+                      <p className="font-semibold text-slate-700">Đang chờ Ops ban hành phán quyết</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Sau khi Ops ra kết luận bên sai phạm, Phiếu hoàn tiền sẽ hiển thị tại đây để quý khách cung cấp số tài khoản nhận tiền.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* ========================================================= */}
+                {/* GIAI ĐOẠN 4: PHIẾU HOÀN TIỀN & THU THẬP STK NGÂN HÀNG      */}
+                {/* ========================================================= */}
+                {currentRuling && (
+                  <div className="space-y-3 pt-4 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <Receipt className="w-4 h-4 text-emerald-600" />
+                        <span>3. PHIẾU HOÀN TIỀN & THÔNG TIN TÀI KHOẢN NGÂN HÀNG (STK)</span>
+                      </h4>
+                      <span className="text-[11px] text-slate-500">
+                        Bên sai phạm bị trừ phí đền bù, bên không sai nhận đủ 100% kèm đền bù
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Phiếu hoàn tiền Bên A */}
+                      <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs space-y-3">
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                          <strong className="text-xs text-slate-900">PHIẾU HOÀN TIỀN: BÊN A</strong>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                            {activeTxn.companyAName}
+                          </span>
+                        </div>
+
+                        <div className="text-xs space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Số tiền đã nộp:</span>
+                            <span className="font-mono font-bold text-slate-800">{formatVnd(paidA)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Phí đền bù / Phạt vi phạm:</span>
+                            <span className={`font-mono font-bold ${currentRuling.faultParty === "PARTY_A" ? "text-rose-600" : currentRuling.faultParty === "PARTY_B" ? "text-emerald-600" : "text-slate-600"}`}>
+                              {currentRuling.faultParty === "PARTY_A"
+                                ? `- ${formatVnd(currentRuling.penaltyAmountVnd)} (Khấu trừ vi phạm)`
+                                : currentRuling.faultParty === "PARTY_B"
+                                ? `+ ${formatVnd(currentRuling.penaltyAmountVnd)} (Được bồi thường từ B)`
+                                : "0 đ"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between border-t border-slate-200 pt-1.5 text-sm font-bold">
+                            <span className="text-slate-900">Thực nhận về STK:</span>
+                            <span className="font-mono font-black text-emerald-700">{formatVnd(currentRuling.refundAmountA)}</span>
+                          </div>
+                        </div>
+
+                        {/* STK Bên A */}
+                        <div className="pt-1">
+                          <span className="text-xs font-bold text-slate-800 block mb-1.5">Tài khoản nhận hoàn tiền Bên A:</span>
+                          {dispute?.bankInfoA ? (
+                            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs space-y-1">
+                              <div className="flex items-center gap-1.5 font-bold text-emerald-900">
+                                <Landmark className="w-4 h-4 text-emerald-700" />
+                                <span>{dispute.bankInfoA.bankName}</span>
+                              </div>
+                              <div className="text-emerald-800 font-mono font-bold text-sm">
+                                {dispute.bankInfoA.accountNumber}
+                              </div>
+                              <div className="text-emerald-700 text-[11px]">
+                                Chủ TK: <strong>{dispute.bankInfoA.accountHolder}</strong>
+                              </div>
+                              <span className="text-[10px] text-emerald-600 block text-right">
+                                Cập nhật: {formatDateTime(dispute.bankInfoA.submittedAt)}
+                              </span>
+                            </div>
+                          ) : isPartyA ? (
+                            <div className="space-y-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                              <select
+                                value={bankName}
+                                onChange={(e) => setBankName(e.target.value)}
+                                className="w-full p-2 text-xs rounded-lg border border-slate-200 bg-white"
+                              >
+                                <option value="Vietcombank">Vietcombank - Ngân hàng TMCP Ngoại thương VN</option>
+                                <option value="Techcombank">Techcombank - Ngân hàng TMCP Kỹ thương VN</option>
+                                <option value="MB Bank">MB Bank - Ngân hàng Quân Đội</option>
+                                <option value="ACB">ACB - Ngân hàng TMCP Á Châu</option>
+                                <option value="BIDV">BIDV - Ngân hàng Đầu tư và Phát triển VN</option>
+                                <option value="Agribank">Agribank - Ngân hàng Nông nghiệp & PTNT VN</option>
+                                <option value="VietinBank">VietinBank - Ngân hàng TMCP Công thương VN</option>
+                              </select>
+                              <input
+                                type="text"
+                                value={accountNumber}
+                                onChange={(e) => setAccountNumber(e.target.value)}
+                                placeholder="Nhập số tài khoản ngân hàng (STK)..."
+                                className="w-full p-2 text-xs rounded-lg border border-slate-200 bg-white font-mono font-bold"
+                              />
+                              <input
+                                type="text"
+                                value={accountHolder}
+                                onChange={(e) => setAccountHolder(e.target.value.toUpperCase())}
+                                placeholder="Nhập tên chủ tài khoản (viết hoa không dấu)..."
+                                className="w-full p-2 text-xs rounded-lg border border-slate-200 bg-white uppercase font-bold"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleSubmitBankInfo}
+                                className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors shadow-xs"
+                              >
+                                Xác nhận gửi STK nhận tiền hoàn (Bên A)
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400 italic py-2">
+                              Chờ Bên A ({activeTxn.companyAName}) cung cấp STK nhận tiền hoàn...
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Phiếu hoàn tiền Bên B */}
+                      <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs space-y-3">
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                          <strong className="text-xs text-slate-900">PHIẾU HOÀN TIỀN: BÊN B</strong>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                            {activeTxn.companyBName}
+                          </span>
+                        </div>
+
+                        <div className="text-xs space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Số tiền đã nộp:</span>
+                            <span className="font-mono font-bold text-slate-800">{formatVnd(paidB)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Phí đền bù / Phạt vi phạm:</span>
+                            <span className={`font-mono font-bold ${currentRuling.faultParty === "PARTY_B" ? "text-rose-600" : currentRuling.faultParty === "PARTY_A" ? "text-emerald-600" : "text-slate-600"}`}>
+                              {currentRuling.faultParty === "PARTY_B"
+                                ? `- ${formatVnd(currentRuling.penaltyAmountVnd)} (Khấu trừ vi phạm)`
+                                : currentRuling.faultParty === "PARTY_A"
+                                ? `+ ${formatVnd(currentRuling.penaltyAmountVnd)} (Được bồi thường từ A)`
+                                : "0 đ"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between border-t border-slate-200 pt-1.5 text-sm font-bold">
+                            <span className="text-slate-900">Thực nhận về STK:</span>
+                            <span className="font-mono font-black text-emerald-700">{formatVnd(currentRuling.refundAmountB)}</span>
+                          </div>
+                        </div>
+
+                        {/* STK Bên B */}
+                        <div className="pt-1">
+                          <span className="text-xs font-bold text-slate-800 block mb-1.5">Tài khoản nhận hoàn tiền Bên B:</span>
+                          {dispute?.bankInfoB ? (
+                            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs space-y-1">
+                              <div className="flex items-center gap-1.5 font-bold text-emerald-900">
+                                <Landmark className="w-4 h-4 text-emerald-700" />
+                                <span>{dispute.bankInfoB.bankName}</span>
+                              </div>
+                              <div className="text-emerald-800 font-mono font-bold text-sm">
+                                {dispute.bankInfoB.accountNumber}
+                              </div>
+                              <div className="text-emerald-700 text-[11px]">
+                                Chủ TK: <strong>{dispute.bankInfoB.accountHolder}</strong>
+                              </div>
+                              <span className="text-[10px] text-emerald-600 block text-right">
+                                Cập nhật: {formatDateTime(dispute.bankInfoB.submittedAt)}
+                              </span>
+                            </div>
+                          ) : isPartyB ? (
+                            <div className="space-y-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                              <select
+                                value={bankName}
+                                onChange={(e) => setBankName(e.target.value)}
+                                className="w-full p-2 text-xs rounded-lg border border-slate-200 bg-white"
+                              >
+                                <option value="Vietcombank">Vietcombank - Ngân hàng TMCP Ngoại thương VN</option>
+                                <option value="Techcombank">Techcombank - Ngân hàng TMCP Kỹ thương VN</option>
+                                <option value="MB Bank">MB Bank - Ngân hàng Quân Đội</option>
+                                <option value="ACB">ACB - Ngân hàng TMCP Á Châu</option>
+                                <option value="BIDV">BIDV - Ngân hàng Đầu tư và Phát triển VN</option>
+                                <option value="Agribank">Agribank - Ngân hàng Nông nghiệp & PTNT VN</option>
+                                <option value="VietinBank">VietinBank - Ngân hàng TMCP Công thương VN</option>
+                              </select>
+                              <input
+                                type="text"
+                                value={accountNumber}
+                                onChange={(e) => setAccountNumber(e.target.value)}
+                                placeholder="Nhập số tài khoản ngân hàng (STK)..."
+                                className="w-full p-2 text-xs rounded-lg border border-slate-200 bg-white font-mono font-bold"
+                              />
+                              <input
+                                type="text"
+                                value={accountHolder}
+                                onChange={(e) => setAccountHolder(e.target.value.toUpperCase())}
+                                placeholder="Nhập tên chủ tài khoản (viết hoa không dấu)..."
+                                className="w-full p-2 text-xs rounded-lg border border-slate-200 bg-white uppercase font-bold"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleSubmitBankInfo}
+                                className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors shadow-xs"
+                              >
+                                Xác nhận gửi STK nhận tiền hoàn (Bên B)
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400 italic py-2">
+                              Chờ Bên B ({activeTxn.companyBName}) cung cấp STK nhận tiền hoàn...
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ========================================================= */}
+                {/* GIAI ĐOẠN 5: OPS GIẢI NGÂN HOÀN TIỀN & ĐÓNG HỒ SƠ          */}
+                {/* ========================================================= */}
+                {currentRuling && (
+                  <div className="pt-4 border-t border-slate-100">
+                    {dispute?.status === "SETTLED" ? (
+                      <div className="p-4 rounded-xl bg-emerald-50 border-2 border-emerald-300 text-emerald-950 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                          <strong className="text-sm">HỒ SƠ TRANH CHẤP ĐÃ HOÀN TẤT GIẢI NGÂN & ĐÓNG LẠI</strong>
+                        </div>
+                        <p className="text-xs text-emerald-800">
+                          {dispute.settlementNotes || "Ops đã chuyển tiền hoàn và bồi thường đầy đủ vào số tài khoản ngân hàng của các bên."}
+                        </p>
+                        <div className="flex items-center justify-between text-[11px] text-emerald-700 pt-1 border-t border-emerald-200">
+                          <span>Xác nhận bởi: <strong>{dispute.settledBy}</strong></span>
+                          <span>Đóng lúc: {dispute.settledAt ? formatDateTime(dispute.settledAt) : "N/A"}</span>
+                        </div>
+                      </div>
+                    ) : isOps ? (
+                      <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-xs space-y-3">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-amber-950 flex items-center gap-1.5">
+                            <Landmark className="w-4 h-4 text-amber-700" />
+                            XÁC NHẬN GIẢI NGÂN HOÀN TIỀN QUA STK & ĐÓNG HỒ SƠ (OPS)
+                          </strong>
+                          <span className="text-[11px] text-amber-800 font-semibold">
+                            Bước cuối cùng
+                          </span>
+                        </div>
+                        <p className="text-slate-600">
+                          Sau khi Ops thực hiện chuyển khoản hoàn tiền theo các số tài khoản đã được hai bên cung cấp ở trên, bấm nút dưới đây để kết thúc xử lý sự cố và mở khóa container cho các nhu cầu ghép cặp mới.
+                        </p>
+                        <input
+                          type="text"
+                          value={settlementNotes}
+                          onChange={(e) => setSettlementNotes(e.target.value)}
+                          placeholder="Nhập mã UNC ngân hàng hoặc ghi chú giải ngân (tùy chọn)..."
+                          className="w-full p-2 text-xs rounded-xl border border-slate-200 bg-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSettleDispute}
+                          className="w-full py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Xác nhận đã giải ngân qua STK & Đóng hồ sơ giao dịch</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500 text-center">
+                        <Clock className="w-4 h-4 inline-block text-slate-400 mr-1.5" />
+                        <span>Ops đang tiến hành thủ tục chuyển khoản hoàn tiền theo STK quý khách đã cung cấp. Vui lòng kiểm tra biến động số dư.</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Main Flow Control (Left 2 cols) */}
           {/* BƯỚC 1: NEGOTIATING */}
           {activeTxn.status === "NEGOTIATING" && (
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
@@ -1441,9 +2286,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                         <RequiredMark />
                       </span>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Bắt buộc 7 góc: 1. Mặt trước container, 2. Cửa sau
-                        container, 3. Vách trái, 4. Vách phải, 5. Bên trong
-                        container, 6. Sàn cont, 7. Tem số container/CSC plate.
+                        Bắt buộc 7 góc: 1. Mặt trước, 2. Mặt trái, 3. Mặt phải, 4. Mặt sau, 5. Mặt trên, 6. Mặt dưới, 7. Mặt sàn.
                       </p>
                     </div>
                     <label className="cursor-pointer text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 flex items-center gap-1 shrink-0">
@@ -1505,12 +2348,12 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                         onClick={() => {
                           setInspectionPhotos([
                             "/demo/container/asset-01/front.jpg",
-                            "/demo/container/asset-01/rear.jpg",
                             "/demo/container/asset-01/left.jpg",
                             "/demo/container/asset-01/right.jpg",
-                            "/demo/container/asset-01/inside.jpg",
+                            "/demo/container/asset-01/rear.jpg",
+                            "/demo/container/asset-01/roof.jpg",
+                            "/demo/container/asset-01/underbody.jpg",
                             "/demo/container/asset-01/floor.jpg",
-                            "/demo/container/asset-01/csc.jpg",
                           ]);
                           setInspectionErrors((p) => ({
                             ...p,
@@ -1800,6 +2643,16 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
               carrier, Ops có thể kích hoạt Tạm dừng (ON_HOLD).
             </p>
 
+            {activeTxn.status !== "COMPLETED" && !activeTxn.disputeFlow && (
+              <button
+                onClick={() => setShowCancelModal(true)}
+                className="w-full py-2.5 rounded-xl bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 font-bold transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+              >
+                <Ban className="w-4 h-4" />
+                <span>Yêu cầu Dừng / Hủy giao dịch (Báo Ops)</span>
+              </button>
+            )}
+
             {canOperate &&
               (activeTxn.isOnHold ? (
                 <button
@@ -1811,7 +2664,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
               ) : (
                 <button
                   onClick={() => setShowHoldModal(true)}
-                  className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold transition-colors shadow-sm"
+                  className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold transition-colors shadow-sm"
                 >
                   Kích hoạt Tạm dừng (ON_HOLD)
                 </button>
@@ -1829,14 +2682,17 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
         </div>
       </div>
 
-      {/* Cancel Modal */}
+      {/* Cancel / Dispute Modal */}
       {showCancelModal && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900">
-                Hủy giao dịch {activeTxn.id}
-              </h3>
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-rose-600">
+                <Ban className="w-5 h-5" />
+                <h3 className="text-base font-bold text-slate-900">
+                  Yêu cầu Dừng / Hủy Giao Dịch & Báo Ops ({activeTxn.id})
+                </h3>
+              </div>
               <button
                 onClick={() => setShowCancelModal(false)}
                 className="text-slate-400 hover:text-slate-600"
@@ -1844,14 +2700,22 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-xs text-slate-600">
-              Việc hủy giao dịch sẽ giải phóng Offer và Request để tham gia ghép
-              đôi mới.
-            </p>
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1.5">
+              <div className="font-bold flex items-center gap-1.5 text-amber-800">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>Quy trình xử lý khi dừng giao dịch giữa chừng:</span>
+              </div>
+              <ol className="list-decimal pl-5 space-y-0.5 text-[11px] text-amber-800">
+                <li>Giao dịch lập tức dừng lại đối với <strong>cả hai bên</strong>, thông báo khẩn gửi tới Ops.</li>
+                <li>Hai bên nộp <strong>văn bản giải trình</strong> & bằng chứng đối chiếu.</li>
+                <li>Ops phân định bên sai phạm, áp dụng <strong>phí phạt đền bù</strong>.</li>
+                <li>Hai bên nhận <strong>phiếu hoàn tiền</strong> và cung cấp STK ngân hàng để nhận giải ngân.</li>
+              </ol>
+            </div>
             <FormErrorSummary errors={cancelErrors} />
             <div>
               <label className="text-xs font-semibold text-slate-700 block mb-1">
-                Lý do hủy <RequiredMark />
+                Lý do yêu cầu dừng / hủy giao dịch <RequiredMark />
               </label>
               <textarea
                 id="cancelReason"
@@ -1861,28 +2725,28 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                   setCancelErrors({});
                   setCancelReason(e.target.value);
                 }}
-                placeholder="Nhập lý do hủy giao dịch..."
+                placeholder="Ví dụ: Đối tác chậm trễ không đúng lịch hẹn, vỏ container rỉ sét sai lệch mô tả ban đầu..."
                 aria-invalid={Boolean(cancelErrors.cancelReason)}
                 className={getFieldErrorClass(
                   Boolean(cancelErrors.cancelReason),
-                  "w-full p-3 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-brand-500",
+                  "w-full p-3 rounded-xl border border-slate-200 text-xs outline-none focus:ring-2 focus:ring-rose-500",
                 )}
                 rows={3}
               />
               <FieldError message={cancelErrors.cancelReason} />
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 onClick={() => setShowCancelModal(false)}
-                className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
               >
-                Đóng
+                Quay lại
               </button>
               <button
                 onClick={handleCancelTransaction}
-                className="px-4 py-2 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 text-white"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition-colors shadow-xs"
               >
-                Xác nhận Hủy
+                Xác nhận Dừng giao dịch & Báo Ops
               </button>
             </div>
           </div>

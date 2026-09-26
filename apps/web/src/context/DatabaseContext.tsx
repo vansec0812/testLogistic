@@ -40,6 +40,10 @@ import {
   CompanyPenalty,
   CaseAppeal,
   CaseAttachment,
+  BankAccountInfo,
+  DisputeCancellationFlow,
+  OpsDisputeRuling,
+  PartyExplanation,
 } from "../types";
 import {
   INITIAL_COMPANIES,
@@ -280,8 +284,32 @@ interface DatabaseContextType {
     role?: "A" | "B" | "BOTH",
   ) => ActionResult;
 
-  // Cancel
+  // Cancel & Dispute Lifecycle
   cancelTransaction: (transactionId: string, reason: string) => ActionResult;
+  requestTransactionDispute: (
+    transactionId: string,
+    reason: string,
+  ) => ActionResult;
+  submitDisputeExplanation: (
+    transactionId: string,
+    statement: string,
+  ) => ActionResult;
+  submitOpsDisputeRuling: (
+    transactionId: string,
+    ruling: {
+      faultParty: "PARTY_A" | "PARTY_B" | "MUTUAL" | "NONE";
+      penaltyAmountVnd: number;
+      notes: string;
+    },
+  ) => ActionResult;
+  submitDisputeBankInfo: (
+    transactionId: string,
+    bankInfo: BankAccountInfo,
+  ) => ActionResult;
+  settleDisputeAndClose: (
+    transactionId: string,
+    notes?: string,
+  ) => ActionResult;
 
   // Chat
   startChatThread: (
@@ -5062,6 +5090,548 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
       addNotification,
     ],
   );
+  // ==================== DISPUTE & CANCELLATION LIFECYCLE ====================
+
+  const requestTransactionDispute = useCallback(
+    (transactionId: string, reason: string): ActionResult => {
+      const txn = transactions.find((t) => t.id === transactionId);
+      if (!txn) return { success: false, message: "Không tìm thấy giao dịch." };
+      if (!reason.trim()) {
+        return {
+          success: false,
+          message: "Vui lòng nhập lý do yêu cầu dừng / hủy giao dịch.",
+        };
+      }
+      if (txn.status === "COMPLETED") {
+        return {
+          success: false,
+          message: "Giao dịch đã hoàn tất thành công, không thể yêu cầu dừng / hủy.",
+        };
+      }
+      if (txn.disputeFlow?.status === "SETTLED") {
+        return {
+          success: false,
+          message: "Giao dịch này đã được giải quyết tranh chấp và đóng hồ sơ.",
+        };
+      }
+
+      const isA = currentCompany.id === txn.companyAId;
+      const isB = currentCompany.id === txn.companyBId;
+      const isOps = currentRole === "OPS";
+
+      if (!isA && !isB && !isOps) {
+        return {
+          success: false,
+          message: "Bạn không có quyền can thiệp vào giao dịch này.",
+        };
+      }
+
+      const role: "A" | "B" = isB ? "B" : "A";
+      const requesterName = isOps
+        ? "Đội ngũ Vận hành Ops"
+        : (currentCompany.companyName || currentCompany.shortName || "Doanh nghiệp thành viên");
+
+      const disputeFlow: DisputeCancellationFlow = {
+        id: `DISP-${Date.now()}`,
+        transactionId: txn.id,
+        requestedByCompanyId: currentCompany.id,
+        requestedByCompanyName: requesterName,
+        requestedByRole: role,
+        reason: reason.trim(),
+        requestedAt: new Date().toISOString(),
+        status: "PENDING_EXPLANATIONS",
+      };
+
+      const updatedTxn: Transaction = {
+        ...txn,
+        status: "DISPUTED",
+        isOnHold: true,
+        holdReason: `Giao dịch tạm dừng khẩn cấp do yêu cầu dừng/hủy từ ${requesterName} (${role === "A" ? "Bên A - Chủ vỏ" : "Bên B - Cần vỏ"}): "${reason.trim()}". Cả 2 bên tạm dừng mọi thao tác và cung cấp bản giải trình cho Ops.`,
+        disputeFlow,
+        nextAction: "DỪNG GIAO DỊCH: Chờ Bên A & Bên B nộp bản giải trình cho Ops xem xét.",
+        rowVersion: txn.rowVersion + 1,
+        updatedAt: new Date().toISOString(),
+      };
+
+      persistTransactions(
+        transactions.map((t) => (t.id === transactionId ? updatedTxn : t)),
+      );
+
+      // Thông báo khẩn cấp đến Bên A và Bên B
+      addNotification(
+        txn.companyAId,
+        "OPS_ALERT",
+        `[KHẨN] Giao dịch ${txn.id} tạm dừng - Chờ nộp giải trình`,
+        `${requesterName} đã gửi yêu cầu dừng/hủy giao dịch: "${reason.trim()}". Giao dịch tạm dừng ngay lập tức. Cả hai bên vui lòng gửi bản giải trình để Ops xử lý phán quyết & hoàn tiền.`,
+        txn.id,
+      );
+
+      addNotification(
+        txn.companyBId,
+        "OPS_ALERT",
+        `[KHẨN] Giao dịch ${txn.id} tạm dừng - Chờ nộp giải trình`,
+        `${requesterName} đã gửi yêu cầu dừng/hủy giao dịch: "${reason.trim()}". Giao dịch tạm dừng ngay lập tức. Cả hai bên vui lòng gửi bản giải trình để Ops xử lý phán quyết & hoàn tiền.`,
+        txn.id,
+      );
+
+      addAudit(
+        "TRANSACTION_DISPUTE_REQUESTED",
+        "Transaction",
+        txn.id,
+        `Yêu cầu dừng/hủy giao dịch bởi ${requesterName} (${role}). Lý do: ${reason.trim()}`,
+      );
+
+      return {
+        success: true,
+        message: "Đã kích hoạt dừng giao dịch thành công. Thông báo đã gửi tới cả hai bên và Ops để tiến hành thu thập giải trình.",
+        data: updatedTxn,
+      };
+    },
+    [
+      transactions,
+      currentCompany,
+      currentRole,
+      persistTransactions,
+      addNotification,
+      addAudit,
+    ],
+  );
+
+  const submitDisputeExplanation = useCallback(
+    (transactionId: string, statement: string): ActionResult => {
+      const txn = transactions.find((t) => t.id === transactionId);
+      if (!txn) return { success: false, message: "Không tìm thấy giao dịch." };
+      if (!txn.disputeFlow) {
+        return {
+          success: false,
+          message: "Giao dịch không ở trong luồng tranh chấp / dừng giao dịch.",
+        };
+      }
+      if (!statement.trim()) {
+        return {
+          success: false,
+          message: "Vui lòng nhập nội dung giải trình chi tiết kèm bằng chứng nếu có.",
+        };
+      }
+
+      const isA = currentCompany.id === txn.companyAId;
+      const isB = currentCompany.id === txn.companyBId;
+
+      if (!isA && !isB) {
+        return {
+          success: false,
+          message: "Chỉ Bên A hoặc Bên B của giao dịch mới có quyền nộp bản giải trình.",
+        };
+      }
+
+      const explanation: PartyExplanation = {
+        companyId: currentCompany.id,
+        companyName: currentCompany.companyName || currentCompany.shortName || "Doanh nghiệp",
+        role: isA ? "A" : "B",
+        statement: statement.trim(),
+        submittedAt: new Date().toISOString(),
+      };
+
+      const updatedDisputeFlow: DisputeCancellationFlow = {
+        ...txn.disputeFlow,
+        explanationA: isA ? explanation : txn.disputeFlow.explanationA,
+        explanationB: isB ? explanation : txn.disputeFlow.explanationB,
+      };
+
+      const hasA = Boolean(updatedDisputeFlow.explanationA);
+      const hasB = Boolean(updatedDisputeFlow.explanationB);
+
+      if (hasA && hasB) {
+        updatedDisputeFlow.status = "PENDING_OPS_RULING";
+      }
+
+      const nextAction = hasA && hasB
+        ? "Đã nhận đủ bản giải trình từ cả 2 bên. Đang chờ Ops thẩm định, ra phán quyết và phát hành phiếu hoàn tiền."
+        : `Đã nhận giải trình từ Bên ${isA ? "A" : "B"}. Đang chờ Bên ${isA ? "B" : "A"} hoàn thành giải trình.`;
+
+      const updatedTxn: Transaction = {
+        ...txn,
+        disputeFlow: updatedDisputeFlow,
+        nextAction,
+        rowVersion: txn.rowVersion + 1,
+        updatedAt: new Date().toISOString(),
+      };
+
+      persistTransactions(
+        transactions.map((t) => (t.id === transactionId ? updatedTxn : t)),
+      );
+
+      const otherCompanyId = isA ? txn.companyBId : txn.companyAId;
+      addNotification(
+        otherCompanyId,
+        "TRANSACTION_UPDATE",
+        `Đối tác đã gửi giải trình cho giao dịch ${txn.id}`,
+        `Bên ${isA ? "A" : "B"} (${explanation.companyName}) đã gửi bản giải trình. ${hasA && hasB ? "Cả hai bên đã gửi xong, Ops sẽ bắt đầu phán quyết." : "Vui lòng gửi bản giải trình của bên bạn nếu chưa gửi."}`,
+        txn.id,
+      );
+
+      addAudit(
+        "DISPUTE_EXPLANATION_SUBMITTED",
+        "Transaction",
+        txn.id,
+        `Bên ${isA ? "A" : "B"} (${explanation.companyName}) đã gửi bản giải trình sự cố dừng giao dịch.`,
+      );
+
+      return {
+        success: true,
+        message: hasA && hasB
+          ? "Đã nộp giải trình thành công. Cả hai bên đã hoàn tất, hồ sơ chuyển sang Ops để ra phán quyết."
+          : "Đã nộp giải trình thành công. Đang chờ đối tác nộp giải trình để Ops tiến hành phán quyết.",
+        data: updatedTxn,
+      };
+    },
+    [transactions, currentCompany, persistTransactions, addNotification, addAudit],
+  );
+
+  const submitOpsDisputeRuling = useCallback(
+    (
+      transactionId: string,
+      ruling: {
+        faultParty: "PARTY_A" | "PARTY_B" | "MUTUAL" | "NONE";
+        penaltyAmountVnd: number;
+        notes: string;
+      },
+    ): ActionResult => {
+      const txn = transactions.find((t) => t.id === transactionId);
+      if (!txn) return { success: false, message: "Không tìm thấy giao dịch." };
+      if (!txn.disputeFlow) {
+        return {
+          success: false,
+          message: "Giao dịch không có hồ sơ tranh chấp / dừng giao dịch để phán quyết.",
+        };
+      }
+      if (currentRole !== "OPS") {
+        return {
+          success: false,
+          message: "Chỉ tài khoản Vận hành Ops mới có thẩm quyền ra phán quyết tranh chấp.",
+        };
+      }
+      if (!ruling.notes.trim()) {
+        return {
+          success: false,
+          message: "Vui lòng nhập căn cứ & phân tích phán quyết từ phía Ops.",
+        };
+      }
+
+      const penalty = Math.max(0, Number(ruling.penaltyAmountVnd) || 0);
+
+      // Tính số tiền gốc đã thanh toán (nếu đã qua bước thanh toán)
+      const paidA =
+        txn.paymentOrderA?.amountVnd ||
+        (txn.paymentConfirmedAt ? txn.quote.econtCollectedFromA : 0);
+      const paidB =
+        txn.paymentOrderB?.amountVnd ||
+        (txn.paymentConfirmedAt ? txn.quote.econtCollectedFromB : 0);
+
+      let refundAmountA = paidA;
+      let refundAmountB = paidB;
+
+      if (ruling.faultParty === "PARTY_A") {
+        // Bên A sai: bị phạt trừ tiền đền bù; Bên B không sai nhận đủ + được đền bù
+        refundAmountA = Math.max(0, paidA - penalty);
+        refundAmountB = paidB + penalty;
+      } else if (ruling.faultParty === "PARTY_B") {
+        // Bên B sai: bị phạt trừ tiền đền bù; Bên A không sai nhận đủ + được đền bù
+        refundAmountB = Math.max(0, paidB - penalty);
+        refundAmountA = paidA + penalty;
+      }
+
+      const opsRuling: OpsDisputeRuling = {
+        faultParty: ruling.faultParty,
+        penaltyAmountVnd: penalty,
+        refundAmountA,
+        refundAmountB,
+        notes: ruling.notes.trim(),
+        ruledBy: currentUserEmail || "OPS_DISPUTE_OFFICER",
+        ruledAt: new Date().toISOString(),
+      };
+
+      const updatedDisputeFlow: DisputeCancellationFlow = {
+        ...txn.disputeFlow,
+        opsRuling,
+        status: "PENDING_BANK_INFO",
+      };
+
+      const updatedTxn: Transaction = {
+        ...txn,
+        disputeFlow: updatedDisputeFlow,
+        nextAction: "Ops đã ra phán quyết & phát hành Phiếu hoàn tiền. Chờ 2 bên gửi thông tin STK Ngân hàng để nhận chuyển khoản.",
+        rowVersion: txn.rowVersion + 1,
+        updatedAt: new Date().toISOString(),
+      };
+
+      persistTransactions(
+        transactions.map((t) => (t.id === transactionId ? updatedTxn : t)),
+      );
+
+      const faultLabel =
+        ruling.faultParty === "PARTY_A"
+          ? `Lỗi vi phạm thuộc về Bên A (${txn.companyAName})`
+          : ruling.faultParty === "PARTY_B"
+          ? `Lỗi vi phạm thuộc về Bên B (${txn.companyBName})`
+          : ruling.faultParty === "MUTUAL"
+          ? "Lỗi phát sinh từ cả hai phía (Mutual)"
+          : "Không bên nào có lỗi nghiêm trọng (Bất khả kháng)";
+
+      addNotification(
+        txn.companyAId,
+        "OPS_ALERT",
+        `Phán quyết Ops giao dịch ${txn.id} - Phiếu hoàn tiền đền bù`,
+        `Ops kết luận: ${faultLabel}. Mức phạt/đền bù: ${penalty.toLocaleString("vi-VN")} đ. Số tiền hoàn dự kiến về Bên A: ${refundAmountA.toLocaleString("vi-VN")} đ. Vui lòng cung cấp STK Ngân hàng để nhận tiền hoàn.`,
+        txn.id,
+      );
+
+      addNotification(
+        txn.companyBId,
+        "OPS_ALERT",
+        `Phán quyết Ops giao dịch ${txn.id} - Phiếu hoàn tiền đền bù`,
+        `Ops kết luận: ${faultLabel}. Mức phạt/đền bù: ${penalty.toLocaleString("vi-VN")} đ. Số tiền hoàn dự kiến về Bên B: ${refundAmountB.toLocaleString("vi-VN")} đ. Vui lòng cung cấp STK Ngân hàng để nhận tiền hoàn.`,
+        txn.id,
+      );
+
+      // Nếu có bên sai phạm, trừ Trust Score của bên đó
+      if (ruling.faultParty === "PARTY_A" || ruling.faultParty === "PARTY_B") {
+        const faultCompId =
+          ruling.faultParty === "PARTY_A" ? txn.companyAId : txn.companyBId;
+        const faultComp = companies.find((c) => c.id === faultCompId);
+        if (faultComp) {
+          const role = ruling.faultParty === "PARTY_A" ? "A" : "B";
+          const { updatedCompany } = applyCompanyPenalty(
+            faultComp,
+            {
+              level: "LEVEL_2",
+              violationType: "LATE_CANCELLATION",
+              title: `Phạt vi phạm tranh chấp giao dịch ${txn.id}`,
+              description: `Ops xác định vi phạm: ${ruling.notes.trim()}. Phạt đền bù ${penalty.toLocaleString("vi-VN")} đ.`,
+              scoreDeduction: 10,
+              matchingDeprioritizedDays: 7,
+              transactionId: txn.id,
+              appliedBy: currentUserEmail || "OPS_DISPUTE",
+            },
+            role,
+          );
+          persistCompanies(
+            companies.map((c) => (c.id === faultCompId ? updatedCompany : c)),
+          );
+        }
+      }
+
+      addAudit(
+        "OPS_DISPUTE_RULED",
+        "Transaction",
+        txn.id,
+        `Ops ra phán quyết: ${faultLabel}. Phí đền bù: ${penalty.toLocaleString("vi-VN")} đ. Hoàn A: ${refundAmountA.toLocaleString("vi-VN")} đ, Hoàn B: ${refundAmountB.toLocaleString("vi-VN")} đ.`,
+      );
+
+      return {
+        success: true,
+        message: "Đã ban hành phán quyết và phát phiếu hoàn tiền đền bù thành công. Đang chờ 2 bên cung cấp số tài khoản ngân hàng.",
+        data: updatedTxn,
+      };
+    },
+    [
+      transactions,
+      companies,
+      currentRole,
+      currentUserEmail,
+      persistTransactions,
+      persistCompanies,
+      addNotification,
+      addAudit,
+    ],
+  );
+
+  const submitDisputeBankInfo = useCallback(
+    (transactionId: string, bankInfo: BankAccountInfo): ActionResult => {
+      const txn = transactions.find((t) => t.id === transactionId);
+      if (!txn) return { success: false, message: "Không tìm thấy giao dịch." };
+      if (!txn.disputeFlow || !txn.disputeFlow.opsRuling) {
+        return {
+          success: false,
+          message: "Giao dịch chưa có phán quyết và phiếu hoàn tiền từ Ops.",
+        };
+      }
+      if (
+        !bankInfo.bankName.trim() ||
+        !bankInfo.accountNumber.trim() ||
+        !bankInfo.accountHolder.trim()
+      ) {
+        return {
+          success: false,
+          message: "Vui lòng nhập đầy đủ Tên ngân hàng, Số tài khoản và Tên chủ tài khoản.",
+        };
+      }
+
+      const isA = currentCompany.id === txn.companyAId;
+      const isB = currentCompany.id === txn.companyBId;
+
+      if (!isA && !isB) {
+        return {
+          success: false,
+          message: "Chỉ Bên A hoặc Bên B mới có thể cung cấp thông tin tài khoản nhận hoàn tiền.",
+        };
+      }
+
+      const normalizedBankInfo: BankAccountInfo = {
+        bankName: bankInfo.bankName.trim(),
+        accountNumber: bankInfo.accountNumber.trim(),
+        accountHolder: bankInfo.accountHolder.trim().toUpperCase(),
+        submittedAt: new Date().toISOString(),
+      };
+
+      const updatedDisputeFlow: DisputeCancellationFlow = {
+        ...txn.disputeFlow,
+        bankInfoA: isA ? normalizedBankInfo : txn.disputeFlow.bankInfoA,
+        bankInfoB: isB ? normalizedBankInfo : txn.disputeFlow.bankInfoB,
+      };
+
+      const updatedTxn: Transaction = {
+        ...txn,
+        disputeFlow: updatedDisputeFlow,
+        nextAction: `Đã ghi nhận STK từ Bên ${isA ? "A" : "B"}. Ops chuẩn bị giải ngân tiền hoàn.`,
+        rowVersion: txn.rowVersion + 1,
+        updatedAt: new Date().toISOString(),
+      };
+
+      persistTransactions(
+        transactions.map((t) => (t.id === transactionId ? updatedTxn : t)),
+      );
+
+      addAudit(
+        "DISPUTE_BANK_INFO_SUBMITTED",
+        "Transaction",
+        txn.id,
+        `Bên ${isA ? "A" : "B"} (${currentCompany.companyName}) đã cung cấp STK: ${normalizedBankInfo.bankName} - ${normalizedBankInfo.accountNumber} (${normalizedBankInfo.accountHolder}).`,
+      );
+
+      return {
+        success: true,
+        message: "Đã cập nhật thông tin tài khoản ngân hàng thành công. Ops sẽ tiến hành lệnh chuyển khoản hoàn tiền theo STK này.",
+        data: updatedTxn,
+      };
+    },
+    [transactions, currentCompany, persistTransactions, addAudit],
+  );
+
+  const settleDisputeAndClose = useCallback(
+    (transactionId: string, notes?: string): ActionResult => {
+      const txn = transactions.find((t) => t.id === transactionId);
+      if (!txn) return { success: false, message: "Không tìm thấy giao dịch." };
+      if (!txn.disputeFlow || !txn.disputeFlow.opsRuling) {
+        return {
+          success: false,
+          message: "Giao dịch chưa hoàn thành phán quyết giải quyết tranh chấp.",
+        };
+      }
+      if (currentRole !== "OPS") {
+        return {
+          success: false,
+          message: "Chỉ tài khoản Ops mới có quyền xác nhận giải ngân & đóng hồ sơ.",
+        };
+      }
+
+      const updatedDisputeFlow: DisputeCancellationFlow = {
+        ...txn.disputeFlow,
+        status: "SETTLED",
+        settledAt: new Date().toISOString(),
+        settledBy: currentUserEmail || "OPS_SETTLEMENT_OFFICER",
+        settlementNotes:
+          notes ||
+          "Ops đã xác nhận chuyển tiền đền bù/hoàn cọc thành công vào tài khoản ngân hàng của các bên. Hồ sơ tranh chấp chính thức được khép lại.",
+      };
+
+      const updatedTxn: Transaction = {
+        ...txn,
+        status: "CANCELLED",
+        isOnHold: false,
+        disputeFlow: updatedDisputeFlow,
+        nextAction: "GIAO DỊCH ĐÃ KẾT THÚC: Đã hoàn tất giải ngân tiền hoàn & đền bù qua STK. Hồ sơ đóng.",
+        rowVersion: txn.rowVersion + 1,
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Mở lại Offer, Request và Asset
+      persistOffers(
+        offers.map((o) =>
+          o.id === txn.offerId
+            ? { ...o, status: "AVAILABLE", updatedAt: new Date().toISOString() }
+            : o,
+        ),
+      );
+      persistRequests(
+        requests.map((r) =>
+          r.id === txn.requestId
+            ? { ...r, status: "OPEN", updatedAt: new Date().toISOString() }
+            : r,
+        ),
+      );
+      persistAssets(
+        assets.map((a) =>
+          a.id === txn.assetId
+            ? {
+                ...a,
+                isLocked: false,
+                activeAllocationId: undefined,
+                updatedAt: new Date().toISOString(),
+              }
+            : a,
+        ),
+      );
+
+      persistTransactions(
+        transactions.map((t) => (t.id === transactionId ? updatedTxn : t)),
+      );
+
+      // Thông báo đóng hồ sơ cho cả 2 bên
+      addNotification(
+        txn.companyAId,
+        "TRANSACTION_UPDATE",
+        `[HOÀN TẤT] Giải ngân tiền hoàn giao dịch ${txn.id}`,
+        `Ops đã chuyển tiền hoàn/đền bù (${txn.disputeFlow.opsRuling.refundAmountA.toLocaleString("vi-VN")} đ) theo STK được cung cấp. Giao dịch đã được đóng hồ sơ.`,
+        txn.id,
+      );
+
+      addNotification(
+        txn.companyBId,
+        "TRANSACTION_UPDATE",
+        `[HOÀN TẤT] Giải ngân tiền hoàn giao dịch ${txn.id}`,
+        `Ops đã chuyển tiền hoàn/đền bù (${txn.disputeFlow.opsRuling.refundAmountB.toLocaleString("vi-VN")} đ) theo STK được cung cấp. Giao dịch đã được đóng hồ sơ.`,
+        txn.id,
+      );
+
+      addAudit(
+        "DISPUTE_SETTLED_AND_CLOSED",
+        "Transaction",
+        txn.id,
+        `Ops xác nhận đã chuyển tiền hoàn và đóng hồ sơ tranh chấp/hủy giao dịch. ${notes || ""}`,
+      );
+
+      return {
+        success: true,
+        message: "Đã xác nhận chuyển tiền thành công và chính thức đóng hồ sơ giao dịch.",
+        data: updatedTxn,
+      };
+    },
+    [
+      transactions,
+      offers,
+      requests,
+      assets,
+      currentRole,
+      currentUserEmail,
+      persistTransactions,
+      persistOffers,
+      persistRequests,
+      persistAssets,
+      addNotification,
+      addAudit,
+    ],
+  );
 
   // ==================== CHAT ====================
 
@@ -5342,6 +5912,11 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
     reviewCaseAppeal,
     applyPenalty,
     cancelTransaction,
+    requestTransactionDispute,
+    submitDisputeExplanation,
+    submitOpsDisputeRuling,
+    submitDisputeBankInfo,
+    settleDisputeAndClose,
     startChatThread,
     sendChatMessage,
     markChatThreadRead,
