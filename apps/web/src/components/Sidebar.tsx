@@ -16,7 +16,6 @@ import {
   Database,
   ChevronDown,
   User,
-  Settings2,
   ShieldCheck,
   LogOut,
   Check,
@@ -367,18 +366,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
 
                 <div className="p-1.5 space-y-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowRoleSwitcher(false);
-                      handleTabClick("profile");
-                    }}
-                    className="w-full p-2.5 rounded-xl flex items-center gap-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 border-b border-slate-100"
-                  >
-                    <Settings2 className="w-4 h-4 text-blue-600" />
-                    <span>Cập nhật hồ sơ tài khoản</span>
-                  </button>
-
                   {ROLE_OPTIONS.map((opt) => {
                     const isSelected = currentRole === opt.value;
                     return (

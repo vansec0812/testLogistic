@@ -79,6 +79,27 @@ test('eDO reported VALID for another container is still rejected against Offer f
   assert.deepEqual(result.mismatchedFields, ['CONTAINER_NUMBER', 'CARRIER_CODE', 'CONTAINER_TYPE']);
   assert.match(result.mismatchDetails.join(' '), /Số container trên eDO/);
 });
+test('eDO accepts equivalent logistics labels instead of flagging false mismatches', async () => {
+  for (const [actualCarrierCode, actualContainerType, carrierCode, containerType] of [
+    ['Evergreen Line', "20'", 'EMC', '20GP'],
+    ['Evergreen Marine Corp', '20GP (20 foot)', 'EMC', '20GP'],
+    ['Maersk Line A/S', "40'", 'MSK', '40HC'],
+    ['Ocean Network Express', '40HQ', 'ONE', '40HC'],
+    ['COSCO Shipping Line', "20'", 'COSCO', '20GP'],
+  ]) {
+    respond({
+      status: 'VALID', isLegal: true, hasAnomaly: false, requiresOpsReview: false,
+      documentType: 'EDO', summary: 'eDO hợp lệ.', details: [],
+      actualContainerNumber: 'MSKU8421093', actualCarrierCode, actualContainerType,
+    });
+    const result = await ai.verifyEdoWithAI(file, {
+      containerNumber: 'MSKU8421093', carrierCode, containerType,
+    });
+    assert.equal(result.status, 'VALID', actualCarrierCode);
+    assert.equal(result.comparisonStatus, 'MATCHED', actualCarrierCode);
+    assert.deepEqual(result.mismatchedFields, [], actualCarrierCode);
+  }
+});
 test('eDO cannot pass when AI did not read identity or confirm document type', async () => {
   respond({ status: 'VALID', isLegal: true, hasAnomaly: false, requiresOpsReview: false, summary: 'Có vẻ hợp lệ.', details: [] });
   const result = await ai.verifyEdoWithAI(file, { containerNumber: 'MSKU8421093', carrierCode: 'MSK', containerType: '40HC' });
@@ -191,6 +212,23 @@ test('Booking matches normalized booking number, carrier, type and dd/mm/yyyy cu
   const result = await ai.verifyBookingWithAI(file, bookingExpected);
   assert.equal(result.status, 'VALID');
   assert.equal(result.comparisonStatus, 'MATCHED');
+  assert.equal(result.requiresOpsReview, false);
+});
+
+test('Booking accepts carrier and container aliases found on logistics documents', async () => {
+  respond({
+    ...bookingObserved,
+    actualCarrierCode: 'Maersk Line A/S',
+    actualContainerType: "40'",
+  });
+  const result = await ai.verifyBookingWithAI(file, {
+    ...bookingExpected,
+    carrierCode: 'MSK',
+    containerType: '40HC',
+  });
+  assert.equal(result.status, 'VALID');
+  assert.equal(result.comparisonStatus, 'MATCHED');
+  assert.deepEqual(result.mismatchedFields, []);
   assert.equal(result.requiresOpsReview, false);
 });
 

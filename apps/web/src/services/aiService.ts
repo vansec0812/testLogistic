@@ -606,17 +606,16 @@ function normalizeBookingCarrier(value: unknown): string {
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");
   if (!normalized) return "";
-  if (["MSK", "MAERSK", "MAERSKLINE"].includes(normalized)) return "MSK";
-  if (["CMA", "CMACGM", "CMACGMGROUP"].includes(normalized)) return "CMA";
-  if (["ONE", "OCEANNETWORKEXPRESS"].includes(normalized)) return "ONE";
+  if (normalized === "MSK" || normalized.startsWith("MAERSK")) return "MSK";
+  if (normalized === "CMA" || normalized.startsWith("CMACGM")) return "CMA";
   if (
-    ["EMC", "EVERGREEN", "EVERGREENMARINE", "EVERGREENMARINECORP"].includes(
-      normalized,
-    )
+    normalized === "ONE" ||
+    normalized === "ONELINE" ||
+    normalized.includes("OCEANNETWORKEXPRESS")
   )
-    return "EMC";
-  if (["COSCO", "COSCOSHIPPING", "COSCOSHIPPINGLINES"].includes(normalized))
-    return "COSCO";
+    return "ONE";
+  if (normalized === "EMC" || normalized.startsWith("EVERGREEN")) return "EMC";
+  if (normalized.startsWith("COSCO")) return "COSCO";
   return normalized;
 }
 
@@ -631,11 +630,30 @@ function normalizeEdoContainerNumber(value: unknown): string {
 }
 
 function normalizeEdoContainerType(value: unknown): string {
-  const normalized = asString(value)
+  const source = asString(value).toUpperCase().trim();
+  const normalized = source
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");
-  if (["40HC", "40HQ", "40HIGHCUBE"].includes(normalized)) return "40HC";
-  if (["20GP", "20DC", "20DV", "20DRY"].includes(normalized)) return "20GP";
+  if (
+    ["40HC", "40HQ", "40HIGHCUBE", "40FT", "40FOOT"].some((alias) =>
+      normalized.startsWith(alias),
+    )
+  )
+    return "40HC";
+  if (
+    ["20GP", "20DC", "20DV", "20DRY", "20FT", "20FOOT"].some((alias) =>
+      normalized.startsWith(alias),
+    )
+  )
+    return "20GP";
+
+  const has20Foot = /(^|[^0-9])20\s*(?:'|FT|FOOT)?\s*(?:GP|DC|DV|DRY)?(?=$|[^0-9])/.test(
+    source,
+  );
+  const has40Foot = /(^|[^0-9])40\s*(?:'|FT|FOOT)?\s*(?:HC|HQ|HIGH\s*CUBE)?(?=$|[^0-9])/.test(
+    source,
+  );
+  if (has20Foot !== has40Foot) return has20Foot ? "20GP" : "40HC";
   return normalized;
 }
 
@@ -805,10 +823,9 @@ export async function extractEdoWithAI(
           document: { fileName: file.name, ...document },
         }),
       );
-      const carrierCode = asString(
-        response.carrierCode,
-        "OTHER",
-      ) as CarrierCode;
+      const rawCarrierCode = asString(response.carrierCode, "OTHER");
+      const carrierCode = (normalizeBookingCarrier(rawCarrierCode) ||
+        rawCarrierCode) as CarrierCode;
       const rawNumber = asString(response.containerNumber);
       if (!rawNumber)
         throw new Error("API không nhận diện được số container từ eDO.");
@@ -832,7 +849,7 @@ export async function extractEdoWithAI(
           ),
           consignee: asString(response.consignee || response.consigneeName),
           containerType:
-            String(response.containerType || "40HC").toUpperCase() === "20GP"
+            normalizeEdoContainerType(response.containerType) === "20GP"
               ? "20GP"
               : "40HC",
           sealNumber: asString(response.sealNumber) || undefined,
