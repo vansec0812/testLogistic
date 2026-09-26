@@ -1045,9 +1045,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                   <strong>
                     {bookingAiResult.status === "VALID"
                       ? "AI: Booking hợp lệ"
-                      : bookingAiResult.status === "MANUAL_REVIEW"
-                        ? "AI: Booking chờ Ops xác minh"
-                        : "AI: Booking có cảnh báo"}
+                      : "AI: Booking chờ Ops kiểm tra"}
                   </strong>
                   <span className="ml-1">{bookingAiResult.summary}</span>
                   {bookingAiResult.details.length > 0 && (
@@ -1474,9 +1472,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                     <strong>
                       {editBookingAiResult.status === "VALID"
                         ? "AI: Booking hợp lệ"
-                        : editBookingAiResult.status === "MANUAL_REVIEW"
-                          ? "AI: Booking chờ Ops xác minh"
-                          : "AI: Booking có cảnh báo"}
+                        : "AI: Booking chờ Ops kiểm tra"}
                     </strong>
                     <span className="ml-1">{editBookingAiResult.summary}</span>
                     <ul className="mt-1 list-disc pl-4">
@@ -1796,10 +1792,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                       · AI:{" "}
                       {!bookingNeedsOpsReview(req.bookingAiCheck)
                         ? "hợp lệ"
-                        : req.bookingAiCheck?.status === "INVALID" ||
-                            req.bookingAiCheck?.status === "ANOMALY"
-                          ? "có cảnh báo"
-                          : "chờ Ops kiểm tra"}
+                        : "chờ Ops kiểm tra"}
                     </span>
                     <p className="w-full font-semibold">{getBookingAiReviewTitle(req.bookingAiCheck)}</p>
                     <ul className="w-full list-disc pl-4">
