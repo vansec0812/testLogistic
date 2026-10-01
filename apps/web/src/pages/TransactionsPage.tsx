@@ -3,7 +3,7 @@
 // Vòng đời giao dịch 7 bước hoàn chỉnh theo SRS v1.0 & plan.md §6
 // ==============================================================================
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useDatabase } from "../context/DatabaseContext";
 import { useAuth } from "../context/AuthContext";
 import { TransactionStepper } from "../components/TransactionStepper";
@@ -57,6 +57,17 @@ import {
 import { required, validFutureDate, setError } from "../lib/formValidation";
 import { Transaction } from "../types";
 import { DateTimeInput } from "../components/DateInput";
+import { postApi } from "../services/apiClient";
+
+async function encodeFileBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
 
 const TRANSACTION_STEP_BY_STATUS: Partial<
   Record<Transaction["status"], number>
@@ -307,8 +318,12 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
 }) => {
   const {
     transactions,
+    requests,
+    offers,
     acceptAgreement,
     requestAgreementChange,
+    opsSendCarrierRequest,
+    opsRecordCarrierResponse,
     opsApproveCarrier,
     opsRejectCarrier,
     submitPayment,
@@ -341,6 +356,8 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
   useEffect(() => {
     setReviewStep(null);
   }, [activeTxn?.id]);
+  const carrierSubmission = activeTxn?.carrierSubmission;
+  const carrierResponseStatus = carrierSubmission?.carrierResponseStatus;
 
   // Permissions
   const canSignAsA =
@@ -363,9 +380,112 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
   const [evidenceName, setEvidenceName] = useState(
     "CV_Chap_Thuan_Cap_Lai_Vo_MSK.pdf",
   );
+  const [ruAttachmentFile, setRuAttachmentFile] = useState<File | null>(null);
+  const [carrierMailSending, setCarrierMailSending] = useState(false);
   const [carrierExpiry, setCarrierExpiry] = useState(
     new Date(Date.now() + 48 * 3600000).toISOString().slice(0, 16),
   );
+  const [carrierEmail, setCarrierEmail] = useState("ru@maersk.com");
+  const [carrierSentAt, setCarrierSentAt] = useState(
+    new Date().toISOString(),
+  );
+  const [carrierReply, setCarrierReply] = useState<{
+    messageId: string;
+    from: string;
+    subject: string;
+    receivedAt: string;
+    text: string;
+  } | null>(null);
+  const [carrierInboxError, setCarrierInboxError] = useState("");
+  const [carrierInboxChecking, setCarrierInboxChecking] = useState(false);
+  const [carrierInboxRefreshKey, setCarrierInboxRefreshKey] = useState(0);
+  useEffect(() => {
+    setRuAttachmentFile(null);
+    setEvidenceName("");
+    setCarrierEmail(
+      activeTxn?.carrierSubmission?.carrierEmail || "ru@maersk.com",
+    );
+    setCarrierSentAt(
+      activeTxn?.carrierSubmission?.submittedAt || new Date().toISOString(),
+    );
+  }, [activeTxn?.id]);
+
+  const carrierSubmittedMessageId = carrierSubmission?.emailMessageId || "";
+  const carrierSubmittedEmail = carrierSubmission?.carrierEmail || "";
+  const carrierSubmittedRef = carrierSubmission?.referenceNumber || "";
+  const carrierSubmittedAt = carrierSubmission?.submittedAt || "";
+  const pollCarrierReply = useCallback(async () => {
+    if (
+      !activeTxn?.id ||
+      !carrierSubmittedMessageId ||
+      !carrierSubmittedEmail ||
+      carrierResponseStatus
+    ) return;
+    setCarrierInboxChecking(true);
+    try {
+      const result = await postApi<{
+        found: boolean;
+        messageId?: string;
+        from?: string;
+        subject?: string;
+        receivedAt?: string;
+        text?: string;
+      }>("/api/mail/carrier-ru/check", {
+        transactionId: activeTxn.id,
+        carrierEmail: carrierSubmittedEmail,
+        referenceNumber: carrierSubmittedRef,
+        sentMessageId: carrierSubmittedMessageId,
+        submittedAt: carrierSubmittedAt,
+      });
+      setCarrierInboxError("");
+      if (result.found && result.messageId && result.from && result.subject) {
+        setCarrierReply({
+          messageId: result.messageId,
+          from: result.from,
+          subject: result.subject,
+          receivedAt: result.receivedAt || new Date().toISOString(),
+          text: result.text || "Email không có nội dung văn bản.",
+        });
+      }
+    } catch (error) {
+      setCarrierInboxError(
+        error instanceof Error
+          ? error.message
+          : "Không kiểm tra được hộp thư Gmail đã cấu hình.",
+      );
+    } finally {
+      setCarrierInboxChecking(false);
+    }
+  }, [
+    activeTxn?.id,
+    carrierSubmittedMessageId,
+    carrierSubmittedEmail,
+    carrierSubmittedRef,
+    carrierSubmittedAt,
+    carrierResponseStatus,
+  ]);
+
+  useEffect(() => {
+    setCarrierReply(null);
+    setCarrierInboxError("");
+    if (
+      !canOperate ||
+      activeTxn?.status !== "PENDING_CARRIER" ||
+      !carrierSubmittedMessageId ||
+      carrierResponseStatus
+    ) return;
+    void pollCarrierReply();
+    const intervalId = window.setInterval(() => void pollCarrierReply(), 60_000);
+    return () => window.clearInterval(intervalId);
+  }, [
+    activeTxn?.id,
+    activeTxn?.status,
+    canOperate,
+    carrierSubmittedMessageId,
+    carrierResponseStatus,
+    carrierInboxRefreshKey,
+    pollCarrierReply,
+  ]);
 
   // Step 4: Dispatch permit edit
   const [driverName, setDriverName] = useState("Nguyễn Văn Tài");
@@ -436,6 +556,46 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
   const handleCarrierApproval = () => {
     if (!activeTxn) return;
+    const approvalRef = carrierSubmission?.referenceNumber || carrierRef;
+    const approvalEvidence = carrierSubmission?.evidenceFileIds?.[0] || evidenceName;
+    const approvalExpiry = carrierSubmission?.validUntil || carrierExpiry;
+    const errors: FieldErrors = {};
+    setError(
+      errors,
+      "carrierRef",
+      required(approvalRef, "Vui lòng nhập số văn bản RU của hãng tàu."),
+    );
+    setError(
+      errors,
+      "evidenceName",
+      required(approvalEvidence, "Vui lòng tải lên công văn RU dạng PDF."),
+    );
+    setError(
+      errors,
+      "carrierExpiry",
+      validFutureDate(approvalExpiry, "hạn hiệu lực RU"),
+    );
+    setCarrierErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      scrollToFirstFieldError(errors);
+      return;
+    }
+    const result = opsApproveCarrier(
+      activeTxn.id,
+      approvalRef.trim(),
+      approvalEvidence.trim(),
+      new Date(approvalExpiry).toISOString(),
+    );
+    if (!result.success) {
+      setCarrierErrors({ carrierRef: result.message });
+      scrollToFirstFieldError({ carrierRef: result.message });
+      return;
+    }
+    setCarrierErrors({});
+  };
+
+  const handleSendCarrierRequest = async () => {
+    if (!activeTxn) return;
     const errors: FieldErrors = {};
     setError(
       errors,
@@ -445,30 +605,168 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     setError(
       errors,
       "evidenceName",
-      required(evidenceName, "Vui lòng nhập tên file bằng chứng RU."),
+      required(ruAttachmentFile?.name, "Vui lòng tải lên công văn RU dạng PDF."),
+    );
+    setError(
+      errors,
+      "carrierEmail",
+      required(carrierEmail, "Vui lòng nhập email của hãng tàu."),
+    );
+    setError(
+      errors,
+      "carrierSentAt",
+      required(carrierSentAt, "Vui lòng nhập thời gian gửi công văn."),
     );
     setError(
       errors,
       "carrierExpiry",
-      validFutureDate(carrierExpiry, "hạn hiệu lực RU"),
+      required(carrierExpiry, "Vui lòng nhập thời hạn hiệu lực RU."),
     );
+    if (ruAttachmentFile && ruAttachmentFile.type !== "application/pdf") {
+      errors.evidenceName = "Công văn đính kèm phải là tệp PDF.";
+    } else if (ruAttachmentFile && ruAttachmentFile.size > 3 * 1024 * 1024) {
+      errors.evidenceName = "Tệp PDF công văn không được vượt quá 3 MB.";
+    }
+    if (
+      carrierEmail &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(carrierEmail.trim())
+    ) {
+      errors.carrierEmail = "Địa chỉ email hãng tàu không hợp lệ.";
+    }
+    const sentAtDate = new Date(carrierSentAt);
+    const expiryDate = new Date(carrierExpiry);
+    if (carrierSentAt && Number.isNaN(sentAtDate.getTime())) {
+      errors.carrierSentAt = "Thời gian gửi công văn không hợp lệ.";
+    }
+    if (carrierExpiry && Number.isNaN(expiryDate.getTime())) {
+      errors.carrierExpiry = "Thời hạn RU không hợp lệ.";
+    } else if (
+      !Number.isNaN(sentAtDate.getTime()) &&
+      !Number.isNaN(expiryDate.getTime()) &&
+      expiryDate <= sentAtDate
+    ) {
+      errors.carrierExpiry = "Thời hạn RU phải sau thời gian gửi công văn.";
+    }
     setCarrierErrors(errors);
     if (Object.keys(errors).length > 0) {
       scrollToFirstFieldError(errors);
       return;
     }
-    const result = opsApproveCarrier(
-      activeTxn.id,
-      carrierRef.trim(),
-      evidenceName.trim(),
-      new Date(carrierExpiry).toISOString(),
-    );
-    if (!result.success) {
-      setCarrierErrors({ carrierRef: result.message });
-      scrollToFirstFieldError({ carrierRef: result.message });
+    if (!ruAttachmentFile) return;
+
+    setCarrierMailSending(true);
+    try {
+      const sentAt = sentAtDate.toISOString();
+      const validUntil = expiryDate.toISOString();
+      const requestInfo = requests.find((item) => item.id === activeTxn.requestId);
+      const offerInfo = offers.find((item) => item.id === activeTxn.offerId);
+      const mailResult = await postApi<{
+        sent: boolean;
+        messageId: string;
+      }>("/api/mail/carrier-ru", {
+        to: carrierEmail.trim(),
+        attachment: {
+          fileName: ruAttachmentFile.name,
+          mimeType: ruAttachmentFile.type,
+          data: await encodeFileBase64(ruAttachmentFile),
+        },
+        context: {
+          transactionId: activeTxn.id,
+          referenceNumber: carrierRef.trim(),
+          sentAt,
+          validUntil,
+          offerId: activeTxn.offerId,
+          bookingNumber: requestInfo?.bookingNumber,
+          bookingFileName: requestInfo?.bookingFileName,
+          bookingCarrierCode: requestInfo?.carrierCode,
+          bookingContainerType: requestInfo?.containerType,
+          bookingAiSummary: requestInfo?.bookingAiCheck?.summary,
+          companyAName: activeTxn.companyAName,
+          companyBName: activeTxn.companyBName,
+          containerNumber: activeTxn.asset.containerNumber,
+          containerType: activeTxn.asset.containerType,
+          carrierCode: activeTxn.asset.carrierCode,
+          edoFileName: offerInfo?.edoFileName,
+          edoNumber: offerInfo?.edoNumber,
+          edoAiSummary: offerInfo?.aiCheck?.summary,
+          pickupLocation: offerInfo?.pickupLocationName,
+          pickupLatitude: offerInfo?.pickupLatitude,
+          pickupLongitude: offerInfo?.pickupLongitude,
+          availableWindow: offerInfo
+            ? `${formatDateTime(offerInfo.availableFrom)} – ${formatDateTime(offerInfo.availableTo)}`
+            : "",
+          expectedDepotName: offerInfo?.expectedDepotName,
+          vehicleRequirements: offerInfo?.vehicleRequirements,
+          deliveryLocation: requestInfo?.deliveryLocationName,
+          deliveryLatitude: requestInfo?.deliveryLatitude,
+          deliveryLongitude: requestInfo?.deliveryLongitude,
+          pickupWindow: requestInfo
+            ? `${formatDateTime(requestInfo.pickupWindowStart)} – ${formatDateTime(requestInfo.pickupWindowEnd)}`
+            : "",
+          cutOffTime: requestInfo?.cutOffTime,
+          cargoType: requestInfo?.cargoType,
+          cargoRequirements: requestInfo?.cargoRequirements,
+          maxDistanceKm: requestInfo?.maxDistanceKm,
+          conditionNotes: offerInfo?.conditionNotes || activeTxn.asset.conditionNotes,
+        },
+      });
+
+      if (!mailResult.sent || !mailResult.messageId) {
+        throw new Error("Máy chủ chưa xác nhận email đã gửi.");
+      }
+      const result = opsSendCarrierRequest(
+        activeTxn.id,
+        carrierRef.trim(),
+        ruAttachmentFile.name,
+        carrierEmail.trim(),
+        sentAt,
+        validUntil,
+        mailResult.messageId,
+      );
+      if (!result.success) {
+        setCarrierErrors({
+          carrierEmail: `Email đã gửi thành công nhưng chưa lưu được trạng thái giao dịch: ${result.message}`,
+        });
+        scrollToFirstFieldError({ carrierEmail: result.message });
+        return;
+      }
+      setCarrierErrors({});
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : "Không gửi được email RU. Vui lòng kiểm tra cấu hình email và thử lại.";
+      setCarrierErrors({ carrierEmail: message });
+      scrollToFirstFieldError({ carrierEmail: message });
+    } finally {
+      setCarrierMailSending(false);
+    }
+  };
+
+  const handleCarrierResponse = (decision: "APPROVED" | "REJECTED") => {
+    if (!activeTxn) return;
+    if (!carrierReply && !carrierInboxError) {
+      setCarrierErrors({ carrierEmail: "Chưa nhận được email phản hồi RU từ hãng tàu." });
+      scrollToFirstFieldError({ carrierEmail: "Chưa nhận được email phản hồi RU từ hãng tàu." });
       return;
     }
-    setCarrierErrors({});
+    const note = prompt(
+      decision === "APPROVED"
+        ? "Nhập ghi chú từ email hãng tàu (không bắt buộc):"
+        : "Nhập lý do hãng tàu từ chối trong email:",
+      carrierReply?.text || "",
+    );
+    if (decision === "REJECTED" && !note?.trim()) return;
+    const result = opsRecordCarrierResponse(
+      activeTxn.id,
+      decision,
+      note?.trim() || "",
+    );
+    if (!result.success) {
+      setCarrierErrors({ carrierEmail: result.message });
+      scrollToFirstFieldError({ carrierEmail: result.message });
+    } else {
+      setCarrierErrors({});
+    }
   };
 
   const handleInspectionSubmit = () => {
@@ -1906,8 +2204,8 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                         Vui lòng chờ thông báo mới.
                       </p>
                       <p className="text-xs text-blue-700/80 mt-1">
-                        Khi hãng tàu phản hồi chấp thuận, hệ thống sẽ tự động
-                        cập nhật tiến trình và chuyển sang bước tiếp theo.
+                        Sau khi nhận phản hồi email, Ops sẽ ghi nhận kết quả và
+                        duyệt RU thủ công trước khi giao dịch chuyển bước.
                       </p>
                     </div>
                   </div>
@@ -1938,25 +2236,75 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       </div>
                       <div>
                         <label className="text-slate-700 font-semibold block mb-1">
-                          Tên file công văn đính kèm <RequiredMark />
+                          Công văn RU đính kèm (PDF) <RequiredMark />
                         </label>
                         <input
                           id="evidenceName"
                           data-field="evidenceName"
-                          type="text"
-                          value={evidenceName}
+                          type="file"
+                          accept="application/pdf,.pdf"
                           onChange={(e) => {
                             setCarrierErrors({});
-                            setEvidenceName(e.target.value);
+                            const file = e.target.files?.[0] || null;
+                            setRuAttachmentFile(file);
+                            setEvidenceName(file?.name || "");
                           }}
                           aria-invalid={Boolean(carrierErrors.evidenceName)}
                           className={getFieldErrorClass(
                             Boolean(carrierErrors.evidenceName),
+                            "w-full px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:font-semibold file:text-blue-700 outline-none focus:ring-2 focus:ring-brand-500",
+                          )}
+                          required
+                        />
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Tệp PDF này sẽ được đính kèm trực tiếp trong email gửi hãng tàu (tối đa 3 MB).
+                          {evidenceName ? ` Đã chọn: ${evidenceName}` : ""}
+                        </p>
+                        <FieldError message={carrierErrors.evidenceName} />
+                      </div>
+                      <div>
+                        <label className="text-slate-700 font-semibold block mb-1">
+                          Email hãng tàu <RequiredMark />
+                        </label>
+                        <input
+                          id="carrierEmail"
+                          data-field="carrierEmail"
+                          type="email"
+                          value={carrierEmail}
+                          onChange={(e) => {
+                            setCarrierErrors({});
+                            setCarrierEmail(e.target.value);
+                          }}
+                          placeholder="ru@hangtau.com"
+                          aria-invalid={Boolean(carrierErrors.carrierEmail)}
+                          className={getFieldErrorClass(
+                            Boolean(carrierErrors.carrierEmail),
                             "w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus:ring-2 focus:ring-brand-500",
                           )}
                           required
                         />
-                        <FieldError message={carrierErrors.evidenceName} />
+                        <FieldError message={carrierErrors.carrierEmail} />
+                      </div>
+                      <div>
+                        <label className="text-slate-700 font-semibold block mb-1">
+                          Thời gian gửi công văn <RequiredMark />
+                        </label>
+                        <DateTimeInput
+                          id="carrierSentAt"
+                          data-field="carrierSentAt"
+                          value={carrierSentAt}
+                          onChange={(v) => {
+                            setCarrierErrors({});
+                            setCarrierSentAt(v);
+                          }}
+                          aria-invalid={Boolean(carrierErrors.carrierSentAt)}
+                          className={getFieldErrorClass(
+                            Boolean(carrierErrors.carrierSentAt),
+                            "w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus:ring-2 focus:ring-brand-500",
+                          )}
+                          required
+                        />
+                        <FieldError message={carrierErrors.carrierSentAt} />
                       </div>
                       <div>
                         <label className="text-slate-700 font-semibold block mb-1">
@@ -1988,27 +2336,113 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                           Điều phối viên (Ops)
                         </strong>
                       </span>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            const reason = prompt(
-                              "Nhập lý do hãng tàu từ chối:",
-                            );
-                            if (reason) opsRejectCarrier(activeTxn.id, reason);
-                          }}
-                          className="px-3.5 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 font-semibold text-xs"
-                        >
-                          Hãng tàu Từ chối
-                        </button>
-                        <button
-                          onClick={() => {
-                            handleCarrierApproval();
-                          }}
-                          className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold flex items-center gap-2 shadow-sm text-xs"
-                        >
-                          <Ship className="w-4 h-4" />
-                          <span>Xác nhận Hãng Tàu Đã Duyệt RU</span>
-                        </button>
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {!carrierSubmission?.carrierEmail ? (
+                          <button
+                            type="button"
+                            onClick={handleSendCarrierRequest}
+                            disabled={carrierMailSending}
+                            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60 text-white font-bold flex items-center gap-2 shadow-sm text-xs"
+                          >
+                            {carrierMailSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                            <span>{carrierMailSending ? "Đang gửi email…" : "Gửi công văn RU qua email"}</span>
+                          </button>
+                        ) : !carrierResponseStatus ? (
+                          <>
+                            <div className="w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                              {carrierReply ? (
+                                <>
+                                  <p className="font-bold">Đã nhận email phản hồi từ {carrierReply.from} · {formatDateTime(carrierReply.receivedAt)}</p>
+                                  <p className="mt-1 font-semibold">{carrierReply.subject}</p>
+                                  <p className="mt-1 whitespace-pre-wrap break-words">{carrierReply.text}</p>
+                                </>
+                              ) : carrierInboxError ? (
+                                <>
+                                  <p className="font-bold text-amber-900">Chưa đồng bộ được hộp thư phản hồi.</p>
+                                  <p className="mt-1 text-amber-800">{carrierInboxError}</p>
+                                  <p className="mt-1 text-amber-800">Ops có thể kiểm tra Gmail bên ngoài rồi ghi nhận phản hồi đã nhận tại đây.</p>
+                                </>
+                              ) : (
+                                <p className="font-semibold">
+                                  Đã gửi tới {carrierSubmission.carrierEmail} · hệ thống đang kiểm tra email trả lời mỗi phút.
+                                </p>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!carrierSubmittedMessageId) {
+                                  setCarrierInboxError("Email RU này chưa có mã gửi Gmail để tự dò hộp thư. Ops hãy kiểm tra Gmail bên ngoài rồi ghi nhận phản hồi thủ công.");
+                                  return;
+                                }
+                                setCarrierInboxRefreshKey((key) => key + 1);
+                              }}
+                              disabled={carrierInboxChecking}
+                              className="px-3.5 py-2 rounded-lg border border-blue-200 bg-white text-blue-800 hover:bg-blue-50 disabled:opacity-60 font-semibold flex items-center gap-2 text-xs"
+                            >
+                              {carrierInboxChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-4 h-4" />}
+                              Kiểm tra email ngay
+                            </button>
+                            {(carrierReply || carrierInboxError) && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCarrierResponse("APPROVED")}
+                                  className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-2 text-xs"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  Ops ghi nhận hãng tàu đồng ý
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCarrierResponse("REJECTED")}
+                                  className="px-3.5 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 font-semibold text-xs"
+                                >
+                                  Ops ghi nhận hãng tàu từ chối
+                                </button>
+                              </>
+                            )}
+                          </>
+                        ) : carrierResponseStatus === "APPROVED" ? (
+                          <>
+                            <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+                              Hãng tàu đã email đồng ý RU · Ops duyệt thủ công
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleCarrierApproval}
+                              className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold flex items-center gap-2 shadow-sm text-xs"
+                            >
+                              <Ship className="w-4 h-4" />
+                              <span>Ops duyệt RU thủ công</span>
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800">
+                              Hãng tàu đã email từ chối RU
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const result = opsRejectCarrier(
+                                  activeTxn.id,
+                                  carrierSubmission.carrierResponseNote ||
+                                    "Hãng tàu từ chối RU qua email.",
+                                );
+                                if (!result.success) {
+                                  setCarrierErrors({ carrierEmail: result.message });
+                                  scrollToFirstFieldError({
+                                    carrierEmail: result.message,
+                                  });
+                                }
+                              }}
+                              className="px-3.5 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 font-semibold text-xs"
+                            >
+                              Từ chối giao dịch
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </>

@@ -6,7 +6,7 @@ export function localAiGateway(options) {
   const attach = server => {
     server.middlewares.use((request, response, next) => {
       const path = new URL(request.url || '/', 'http://localhost').pathname;
-      if (path === '/api/health' || path.startsWith('/api/ai/')) {
+      if (path === '/api/health' || path.startsWith('/api/ai/') || path.startsWith('/api/mail/')) {
         void handler(request, response);
       } else {
         next();
