@@ -19,6 +19,7 @@ import {
   Transaction,
   Agreement,
   CarrierApproval,
+  CarrierSubmission,
   PaymentOrder,
   DispatchPermit,
   Inspection,
@@ -177,6 +178,20 @@ interface DatabaseContextType {
   ) => ActionResult;
 
   // Carrier
+  opsSendCarrierRequest: (
+    transactionId: string,
+    refNumber: string,
+    evidenceFileName: string,
+    carrierEmail: string,
+    sentAt: string,
+    validUntil: string,
+    emailMessageId: string,
+  ) => ActionResult;
+  opsRecordCarrierResponse: (
+    transactionId: string,
+    decision: "APPROVED" | "REJECTED",
+    note?: string,
+  ) => ActionResult;
   opsApproveCarrier: (
     transactionId: string,
     refNumber: string,
@@ -2878,6 +2893,220 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // ==================== CARRIER APPROVAL ====================
 
+  const opsSendCarrierRequest = useCallback(
+    (
+      transactionId: string,
+      refNumber: string,
+      evidenceFileName: string,
+      carrierEmail: string,
+      sentAt: string,
+      validUntil: string,
+      emailMessageId: string,
+    ): ActionResult => {
+      if (currentRole !== "OPS") {
+        return { success: false, message: "Chỉ Ops mới có thể gửi công văn RU." };
+      }
+      const txn = transactions.find((item) => item.id === transactionId);
+      if (!txn) return { success: false, message: "Không tìm thấy giao dịch." };
+      if (txn.status !== "PENDING_CARRIER") {
+        return {
+          success: false,
+          message:
+            "Giao dịch không ở trạng thái PENDING_CARRIER (hiện: " +
+            txn.status +
+            ").",
+        };
+      }
+      if (!refNumber.trim()) {
+        return { success: false, message: "Số văn bản RU không được để trống." };
+      }
+      if (!evidenceFileName.trim()) {
+        return { success: false, message: "Phải có tên file công văn đính kèm." };
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(carrierEmail.trim())) {
+        return { success: false, message: "Địa chỉ email hãng tàu không hợp lệ." };
+      }
+      const carrierRequest = requests.find(
+        (request) => request.id === txn.requestId,
+      );
+      const carrierOffer = offers.find((offer) => offer.id === txn.offerId);
+      if (!carrierRequest) {
+        return { success: false, message: "Giao dịch chưa có Booking để gửi hãng tàu." };
+      }
+
+      const submittedAt = sentAt || new Date().toISOString();
+      if (Number.isNaN(new Date(submittedAt).getTime())) {
+        return { success: false, message: "Thời gian gửi công văn không hợp lệ." };
+      }
+      const submission: CarrierSubmission = {
+        id: txn.carrierSubmission?.id || genId("CARSUB"),
+        transactionId,
+        submittedBy: currentUserEmail,
+        submittedAt,
+        carrierCode: txn.asset.carrierCode,
+        referenceNumber: refNumber.trim(),
+        notes:
+          "Đã gửi văn bản RU và toàn bộ hồ sơ Offer/Booking cho hãng tàu qua email. " +
+          "Offer " +
+          txn.offerId +
+          "; Booking " +
+          carrierRequest.bookingNumber +
+          "; Container " +
+          txn.asset.containerNumber +
+          "; Loại " +
+          txn.asset.containerType +
+          "; Hãng " +
+          txn.asset.carrierCode +
+          "; Vị trí lấy " +
+          txn.asset.currentLocationName +
+          "; Điểm giao " +
+          carrierRequest.deliveryLocationName +
+          "; eDO " +
+          (carrierOffer?.edoFileName || "đính kèm trong hồ sơ") +
+          ".",
+        evidenceFileIds: [evidenceFileName.trim()],
+        status: "SUBMITTED",
+        carrierEmail: carrierEmail.trim(),
+        emailMessageId: emailMessageId.trim(),
+        validUntil,
+      };
+      const updatedTxn: Transaction = {
+        ...txn,
+        carrierSubmission: submission,
+        rowVersion: txn.rowVersion + 1,
+        nextAction:
+          "Đã gửi hồ sơ RU tới " +
+          submission.carrierEmail +
+          ". Chờ email hãng tàu phản hồi đồng ý hoặc từ chối.",
+        updatedAt: new Date().toISOString(),
+      };
+      persistTransactions(
+        transactions.map((item) =>
+          item.id === transactionId ? updatedTxn : item,
+        ),
+      );
+      addAudit(
+        "CARRIER_RU_REQUEST_SENT",
+        "CarrierSubmission",
+        submission.id,
+        "Ops gửi công văn RU tới " +
+          submission.carrierEmail +
+          ". Ref: " +
+          submission.referenceNumber +
+          ".",
+      );
+      addNotification(
+        currentCompany.id,
+        "OPS_ALERT",
+        "Đã gửi công văn RU cho hãng tàu",
+        "Giao dịch " +
+          transactionId +
+          ": chờ email phản hồi từ " +
+          submission.carrierEmail +
+          ".",
+        transactionId,
+      );
+      return {
+        success: true,
+        message: "Đã ghi nhận gửi công văn RU và hồ sơ giao dịch cho hãng tàu.",
+      };
+    },
+    [
+      transactions,
+      requests,
+      offers,
+      currentRole,
+      currentUserEmail,
+      currentCompany.id,
+      persistTransactions,
+      addAudit,
+      addNotification,
+    ],
+  );
+
+  const opsRecordCarrierResponse = useCallback(
+    (
+      transactionId: string,
+      decision: "APPROVED" | "REJECTED",
+      note = "",
+    ): ActionResult => {
+      if (currentRole !== "OPS") {
+        return {
+          success: false,
+          message: "Chỉ Ops mới có thể ghi nhận email hãng tàu.",
+        };
+      }
+      const txn = transactions.find((item) => item.id === transactionId);
+      if (!txn) return { success: false, message: "Không tìm thấy giao dịch." };
+      if (txn.status !== "PENDING_CARRIER") {
+        return {
+          success: false,
+          message: "Giao dịch không còn chờ phản hồi hãng tàu.",
+        };
+      }
+      const submission = txn.carrierSubmission;
+      if (!submission?.carrierEmail) {
+        return {
+          success: false,
+          message: "Cần gửi công văn RU qua email trước khi ghi nhận phản hồi.",
+        };
+      }
+      const responseAt = new Date().toISOString();
+      const updatedSubmission: CarrierSubmission = {
+        ...submission,
+        status: "ACKNOWLEDGED",
+        carrierResponseStatus: decision,
+        carrierResponseAt: responseAt,
+        carrierResponseNote: note.trim() || undefined,
+      };
+      const updatedTxn: Transaction = {
+        ...txn,
+        carrierSubmission: updatedSubmission,
+        rowVersion: txn.rowVersion + 1,
+        nextAction:
+          decision === "APPROVED"
+            ? "Hãng tàu đã email đồng ý RU. Ops kiểm tra chứng từ và duyệt thủ công."
+            : "Hãng tàu đã email từ chối RU. Ops kiểm tra và quyết định từ chối giao dịch.",
+        updatedAt: responseAt,
+      };
+      persistTransactions(
+        transactions.map((item) =>
+          item.id === transactionId ? updatedTxn : item,
+        ),
+      );
+      addAudit(
+        "CARRIER_RESPONSE_RECORDED",
+        "CarrierSubmission",
+        submission.id,
+        "Ghi nhận email hãng tàu: " + decision + ". " + note.trim(),
+      );
+      addNotification(
+        currentCompany.id,
+        "OPS_ALERT",
+        decision === "APPROVED"
+          ? "Hãng tàu phản hồi đồng ý RU"
+          : "Hãng tàu phản hồi từ chối RU",
+        "Giao dịch " + transactionId + " đã có phản hồi qua email. Ops cần xử lý tiếp.",
+        transactionId,
+      );
+      return {
+        success: true,
+        message:
+          decision === "APPROVED"
+            ? "Đã ghi nhận email hãng tàu đồng ý RU. Ops có thể duyệt thủ công."
+            : "Đã ghi nhận email hãng tàu từ chối RU.",
+      };
+    },
+    [
+      transactions,
+      currentRole,
+      currentCompany.id,
+      persistTransactions,
+      addAudit,
+      addNotification,
+    ],
+  );
+
   const opsApproveCarrier = useCallback(
     (
       transactionId: string,
@@ -2909,6 +3138,13 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
         return { success: false, message: "Phải có tên file bằng chứng RU." };
       }
 
+      if (txn.carrierSubmission?.carrierResponseStatus !== "APPROVED") {
+        return {
+          success: false,
+          message:
+            "Chưa thể duyệt thủ công: cần ghi nhận email hãng tàu đồng ý RU trước.",
+        };
+      }
       const carrierRequest = requests.find((r) => r.id === txn.requestId);
       if (
         !carrierRequest?.bookingNumber ||
@@ -3030,6 +3266,13 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
         return {
           success: false,
           message: "Giao dịch không ở PENDING_CARRIER.",
+        };
+      }
+      if (txn.carrierSubmission?.carrierResponseStatus !== "REJECTED") {
+        return {
+          success: false,
+          message:
+            "Chưa thể từ chối: cần ghi nhận email hãng tàu từ chối RU trước.",
         };
       }
       const updatedTxn: Transaction = {
@@ -5892,6 +6135,8 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({
     rejectMatch,
     acceptAgreement,
     requestAgreementChange,
+    opsSendCarrierRequest,
+    opsRecordCarrierResponse,
     opsApproveCarrier,
     opsRejectCarrier,
     submitPayment,
