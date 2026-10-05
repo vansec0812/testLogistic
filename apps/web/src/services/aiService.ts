@@ -45,6 +45,9 @@ export interface EdoVerificationResult {
   actualContainerNumber?: string;
   actualCarrierCode?: string;
   actualContainerType?: string;
+  actualEdoNumber?: string;
+  actualReturnDepot?: string;
+  actualExpiryDate?: string;
   mismatchDetails?: string[];
   mismatchedFields?: Array<
     "CONTAINER_NUMBER" | "CARRIER_CODE" | "CONTAINER_TYPE"
@@ -790,6 +793,27 @@ function compareEdoRegistration(
   const actualContainerType =
     asString(response.actualContainerType ?? response.containerType) ||
     undefined;
+  const actualEdoNumber =
+    asString(
+      response.actualEdoNumber ??
+        response.edoNumber ??
+        response.eDoNumber ??
+        response.documentNumber,
+    ) || undefined;
+  const actualReturnDepot =
+    asString(
+      response.actualReturnDepot ??
+        response.returnDepot ??
+        response.depot ??
+        response.returnDepotName,
+    ) || undefined;
+  const actualExpiryDate =
+    normalizeAiDate(
+      response.actualExpiryDate ??
+        response.expiryDate ??
+        response.freeTimeEnd ??
+        response.expiry,
+    ) || undefined;
   const sourceMismatchDetails = vietnameseTextArray(response.mismatchDetails);
 
   const observed = {
@@ -798,6 +822,9 @@ function compareEdoRegistration(
     actualContainerNumber,
     actualCarrierCode,
     actualContainerType,
+    actualEdoNumber,
+    actualReturnDepot,
+    actualExpiryDate,
     sourceReportedMismatch: response.matchesRegistration === false,
     sourceMismatchDetails,
   };
@@ -833,10 +860,28 @@ function compareEdoRegistration(
   const missingExpected =
     Boolean(expected) && (!expectedNumber || !expectedCarrier || !expectedType);
   const missingObserved = !actualNumber || !actualCarrier || !actualType;
+  // OCR may report a mismatch only because spacing/punctuation differs.
+  // Compare normalized values before forwarding a false alarm to Ops.
+  const identityMatches = Boolean(
+    expectedNumber &&
+      expectedCarrier &&
+      expectedType &&
+      actualNumber &&
+      actualCarrier &&
+      actualType &&
+      expectedNumber === actualNumber &&
+      expectedCarrier === actualCarrier &&
+      expectedType === actualType,
+  );
+  const sourceMismatchActive =
+    response.matchesRegistration === false && !identityMatches;
+  if (!sourceMismatchActive && sourceMismatchDetails.length > 0) {
+    mismatchDetails.splice(0, sourceMismatchDetails.length);
+  }
   const hasMismatch =
     mismatchedFields.length > 0 ||
-    observed.sourceReportedMismatch ||
-    sourceMismatchDetails.length > 0;
+    sourceMismatchActive ||
+    mismatchDetails.length > 0;
   const hasWrongDocument =
     documentType === "BOOKING" || documentType === "OTHER";
   const pending =
@@ -878,6 +923,11 @@ function compareEdoRegistration(
   return {
     ...base,
     ...observed,
+    actualEdoNumber,
+    actualReturnDepot,
+    actualExpiryDate,
+    sourceReportedMismatch: sourceMismatchActive,
+    sourceMismatchDetails: sourceMismatchActive ? sourceMismatchDetails : [],
     status,
     isLegal: status === "VALID",
     hasAnomaly: base.hasAnomaly || hasMismatch || hasWrongDocument,
@@ -914,6 +964,9 @@ export function reconcileEdoVerificationResult(
       actualContainerNumber: result.actualContainerNumber,
       actualCarrierCode: result.actualCarrierCode,
       actualContainerType: result.actualContainerType,
+      actualEdoNumber: result.actualEdoNumber,
+      actualReturnDepot: result.actualReturnDepot,
+      actualExpiryDate: result.actualExpiryDate,
       matchesRegistration:
         result.sourceReportedMismatch === true ? false : undefined,
       mismatchDetails: result.sourceMismatchDetails,
@@ -1120,6 +1173,20 @@ function compareBookingRegistration(
     expected?.cutOffTime,
     dateKey,
   );
+  const identityMatches = Boolean(
+    expected?.bookingNumber &&
+      expected?.carrierCode &&
+      expected?.containerType &&
+      actualBookingNumber &&
+      actualCarrierCode &&
+      actualContainerType &&
+      mismatchedFields.length === 0,
+  );
+  const sourceMismatchActive =
+    sourceReportedMismatch && !identityMatches;
+  if (!sourceMismatchActive && sourceMismatchDetails.length > 0) {
+    mismatchDetails.splice(0, sourceMismatchDetails.length);
+  }
   const wrongDocument = documentType === "EDO" || documentType === "OTHER";
   const missingExpected =
     !expected?.bookingNumber ||
@@ -1129,8 +1196,8 @@ function compareBookingRegistration(
     !actualBookingNumber || !actualCarrierCode || !actualContainerType;
   const hasMismatch =
     mismatchedFields.length > 0 ||
-    sourceReportedMismatch ||
-    sourceMismatchDetails.length > 0 ||
+    sourceMismatchActive ||
+    mismatchDetails.length > 0 ||
     wrongDocument;
   const pending =
     !hasMismatch &&
@@ -1169,8 +1236,8 @@ function compareBookingRegistration(
     actualCarrierCode,
     actualContainerType,
     actualCutOffDate,
-    sourceReportedMismatch,
-    sourceMismatchDetails,
+    sourceReportedMismatch: sourceMismatchActive,
+    sourceMismatchDetails: sourceMismatchActive ? sourceMismatchDetails : [],
     status: missingCutOff && status === "VALID" ? "MANUAL_REVIEW" : status,
     isLegal: status === "VALID" && !requiresOpsReview,
     hasAnomaly: base.hasAnomaly || hasMismatch,

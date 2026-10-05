@@ -54,7 +54,7 @@ export async function callApi<T>(path: string, init: RequestInit = {}): Promise<
 
   const controller = new AbortController();
   // Allow uploads + image fetching + the provider's 90s inference budget.
-  const timeout = window.setTimeout(() => controller.abort(), path.startsWith('/api/ai/') ? 120_000 : 30_000);
+  const timeout = window.setTimeout(() => controller.abort(), path.startsWith('/api/ai/') ? 120_000 : path === '/api/mail/carrier-ru' ? 55_000 : 30_000);
   try {
     const response = await fetch(`${apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`, {
       ...init,

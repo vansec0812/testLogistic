@@ -7,7 +7,12 @@ import React, { useState } from "react";
 import { ContainerRequest, MatchCandidate } from "../types";
 import { useDatabase } from "../context/DatabaseContext";
 import { findMatchesForRequest } from "../services/matchingEngine";
-import { formatVnd, formatDistance, formatDate } from "../lib/utils";
+import {
+  formatVnd,
+  formatDistance,
+  formatDate,
+  buildGoogleMapsDirectionsUrl,
+} from "../lib/utils";
 import { RouteVisualizer } from "./RouteVisualizer";
 import { PricingBreakdownCard } from "./PricingBreakdownCard";
 import {
@@ -197,6 +202,25 @@ export const MatchingModal: React.FC<MatchingModalProps> = ({
                     <strong className="font-mono font-bold text-slate-900 text-sm mt-0.5 block">
                       📍 {cand.distanceKm} km
                     </strong>
+                    <a
+                      href={buildGoogleMapsDirectionsUrl(
+                        {
+                          lat: cand.offer.pickupLatitude,
+                          lng: cand.offer.pickupLongitude,
+                          label: cand.offer.pickupLocationName,
+                        },
+                        {
+                          lat: request.deliveryLatitude,
+                          lng: request.deliveryLongitude,
+                          label: request.deliveryLocationName,
+                        },
+                      )}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-flex text-[11px] font-semibold text-blue-700 hover:text-blue-900 hover:underline"
+                    >
+                      Xem khoảng cách
+                    </a>
                   </div>
 
                   {/* 2. Thời gian có thể bàn giao (Available time) */}

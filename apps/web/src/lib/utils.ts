@@ -2,6 +2,31 @@
 // ECont Utility Functions
 // ==============================================================================
 
+export function buildGoogleMapsDirectionsUrl(
+  origin: { lat?: number; lng?: number; label?: string },
+  destination: { lat?: number; lng?: number; label?: string },
+): string {
+  const point = (value: { lat?: number; lng?: number; label?: string }) => {
+    // Prefer the full user-entered address so Maps resolves the actual depot/warehouse,
+    // rather than routing to an approximate or stale pin.
+    if (value.label?.trim()) return value.label.trim();
+    const hasCoordinates =
+      Number.isFinite(value.lat) &&
+      Number.isFinite(value.lng) &&
+      !(value.lat === 0 && value.lng === 0);
+    return hasCoordinates
+      ? String(value.lat) + "," + String(value.lng)
+      : value.label || "";
+  };
+  return (
+    "https://www.google.com/maps/dir/?api=1&origin=" +
+    encodeURIComponent(point(origin)) +
+    "&destination=" +
+    encodeURIComponent(point(destination)) +
+    "&travelmode=driving"
+  );
+}
+
 /**
  * Format tiền VND (integer) - KHÔNG dùng toFixed() hay float arithmetic
  */
@@ -234,16 +259,8 @@ export function maskPrivateData(
   }
 
   if (options?.field === "address") {
-    // Với địa chỉ: nếu cấu hình preserveRegion !== false và địa chỉ có phân tách quận/huyện/tỉnh
-    // Giữ lại khu vực/tỉnh thành để doanh nghiệp nhận biết vùng hoạt động
-    if (options?.preserveRegion !== false) {
-      const parts = text.split(",").map((p) => p.trim());
-      if (parts.length > 1) {
-        const region = parts.slice(1).join(", ");
-        return `***, ${region}`;
-      }
-    }
-    return "***";
+    // Logistics pickup/delivery addresses are public to both parties.
+    return text;
   }
 
   return "***";

@@ -20,6 +20,7 @@ import {
   formatDate,
   formatRelativeTime,
   maskPrivateData,
+  buildGoogleMapsDirectionsUrl,
 } from "../lib/utils";
 export { maskPrivateData } from "../lib/utils";
 import {
@@ -108,6 +109,51 @@ function bookingExpectedFromForm(values: Partial<CreateRequestForm>) {
   };
 }
 
+type BookingAiLockedField =
+  | "bookingNumber"
+  | "carrierId"
+  | "containerType"
+  | "cutOffTime";
+
+const EMPTY_BOOKING_AI_LOCKS: Record<BookingAiLockedField, boolean> = {
+  bookingNumber: false,
+  carrierId: false,
+  containerType: false,
+  cutOffTime: false,
+};
+
+function normalizeAiBookingNumber(value?: string): string {
+  return (value || "").trim().toUpperCase();
+}
+
+function carrierIdFromBookingAiValue(value?: string): string {
+  const normalized = (value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!normalized) return "";
+  const aliasCode =
+    normalized.includes("MAERSK") ? "MSK" :
+    normalized.includes("CMACGM") ? "CMA" :
+    normalized.includes("OCEANNETWORK") || normalized === "ONE" ? "ONE" :
+    normalized.includes("EVERGREEN") ? "EMC" :
+    normalized.includes("COSCO") ? "COSCO" :
+    normalized;
+  return (
+    INITIAL_CARRIERS.find((carrier) => {
+      const code = carrier.code.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const name = carrier.name.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      return aliasCode === code || normalized === name || name.includes(normalized);
+    })?.id || ""
+  );
+}
+
+function containerTypeFromBookingAiValue(
+  value?: string,
+): "20GP" | "40HC" | undefined {
+  const normalized = (value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (normalized.startsWith("20")) return "20GP";
+  if (normalized.startsWith("40")) return "40HC";
+  return undefined;
+}
+
 function bookingMismatchErrors(result: BookingVerificationResult | null, prefix = ''): FieldErrors {
   const fields = { BOOKING_NUMBER: 'bookingNumber', CARRIER_CODE: 'carrierId', CONTAINER_TYPE: 'containerType', CUT_OFF_TIME: 'cutOffTime' };
   return Object.fromEntries((result?.mismatchedFields || []).map(field => [prefix + fields[field], 'Thông tin không khớp file Booking. Vui lòng kiểm tra lại hoặc gửi Ops xác minh.']));
@@ -115,10 +161,12 @@ function bookingMismatchErrors(result: BookingVerificationResult | null, prefix 
 
 function MatchCandidateCard({
   candidate,
+  request,
   onHold,
   onChat,
 }: {
   candidate: MatchCandidate;
+  request: ContainerRequest;
   onHold: () => void;
   onChat?: () => void;
 }) {
@@ -137,6 +185,18 @@ function MatchCandidateCard({
     estimatedShippingMinutes = Math.round(distanceKm * 2 + 25),
     trustScoreA = 94,
   } = candidate;
+  const googleMapsUrl = buildGoogleMapsDirectionsUrl(
+    {
+      lat: offer.pickupLatitude,
+      lng: offer.pickupLongitude,
+      label: offer.pickupLocationName,
+    },
+    {
+      lat: request.deliveryLatitude,
+      lng: request.deliveryLongitude,
+      label: request.deliveryLocationName,
+    },
+  );
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all p-4 space-y-3.5">
@@ -187,6 +247,14 @@ function MatchCandidateCard({
           <strong className="text-slate-900 text-sm font-mono mt-0.5 block">
             📍 {formatDistance(distanceKm)}
           </strong>
+          <a
+            href={googleMapsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-1 inline-flex text-[11px] font-semibold text-blue-700 hover:text-blue-900 hover:underline"
+          >
+            Xem khoảng cách
+          </a>
         </div>
 
         {/* 3. Tình trạng vỏ khai báo (Declared condition) */}
@@ -344,10 +412,16 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
   const [bookingAiSource, setBookingAiResult] =
     useState<BookingVerificationResult | null>(null);
   const [isBookingAiChecking, setIsBookingAiChecking] = useState(false);
+  const [bookingAiLockedFields, setBookingAiLockedFields] = useState<
+    Record<BookingAiLockedField, boolean>
+  >({ ...EMPTY_BOOKING_AI_LOCKS });
   const [editBookingFile, setEditBookingFile] = useState<File | null>(null);
   const [editBookingAiSource, setEditBookingAiResult] =
     useState<BookingVerificationResult | null>(null);
   const [isEditBookingAiChecking, setIsEditBookingAiChecking] = useState(false);
+  const [editBookingAiLockedFields, setEditBookingAiLockedFields] = useState<
+    Record<BookingAiLockedField, boolean>
+  >({ ...EMPTY_BOOKING_AI_LOCKS });
 
   useEffect(() => {
     if (currentRole === "ENTERPRISE_A") {
@@ -364,8 +438,6 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
   });
 
   const bookingScanId = useRef({ create: 0, edit: 0 });
-  const latestBookingExpected = useRef({ create: bookingExpectedFromForm(form), edit: bookingExpectedFromForm(editForm) });
-  latestBookingExpected.current = { create: bookingExpectedFromForm(form), edit: bookingExpectedFromForm(editForm) };
   const bookingAiResult = useMemo(() => bookingAiSource
     ? reconcileBookingVerificationResult(bookingAiSource, bookingExpectedFromForm(form)) : null,
     [bookingAiSource, form.bookingNumber, form.carrierId, form.containerType, form.cutOffTime]);
@@ -405,6 +477,11 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
     const scanId = ++bookingScanId.current[target];
     setChecking(true);
     if (target === "create") {
+      setBookingAiLockedFields({ ...EMPTY_BOOKING_AI_LOCKS });
+    } else {
+      setEditBookingAiLockedFields({ ...EMPTY_BOOKING_AI_LOCKS });
+    }
+    if (target === "create") {
       setBookingFile(file);
       setBookingAiResult(null);
       clearRequestError("bookingEvidence");
@@ -433,14 +510,60 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
     try {
       const observed = await verifyBookingWithAI(file);
       if (bookingScanId.current[target] !== scanId) return;
-      const result = reconcileBookingVerificationResult(observed, latestBookingExpected.current[target]);
+      const actualBookingNumber = normalizeAiBookingNumber(
+        observed.actualBookingNumber,
+      );
+      const actualCarrierId = carrierIdFromBookingAiValue(
+        observed.actualCarrierCode,
+      );
+      const actualContainerType = containerTypeFromBookingAiValue(
+        observed.actualContainerType,
+      );
+      const actualCutOffTime = formatDateInputDdMmYyyy(
+        observed.actualCutOffDate,
+      );
+      const nextLocks: Record<BookingAiLockedField, boolean> = {
+        ...EMPTY_BOOKING_AI_LOCKS,
+        bookingNumber: Boolean(actualBookingNumber),
+        carrierId: Boolean(actualCarrierId),
+        containerType: Boolean(actualContainerType),
+        cutOffTime: Boolean(actualCutOffTime),
+      };
+      const currentValues = target === "create" ? form : editForm;
+      const filledValues = {
+        ...currentValues,
+        ...(actualBookingNumber ? { bookingNumber: actualBookingNumber } : {}),
+        ...(actualCarrierId ? { carrierId: actualCarrierId } : {}),
+        ...(actualContainerType ? { containerType: actualContainerType } : {}),
+        ...(actualCutOffTime ? { cutOffTime: actualCutOffTime } : {}),
+      };
+      const result = reconcileBookingVerificationResult(
+        observed,
+        bookingExpectedFromForm(filledValues),
+      );
       const aiCheck = mapBookingAiResult(result);
       if (target === "create") {
-        setBookingAiResult(result);
-        setForm((previous) => ({ ...previous, bookingAiCheck: aiCheck }));
+        setBookingAiResult(observed);
+        setBookingAiLockedFields(nextLocks);
+        setForm((previous) => ({
+          ...previous,
+          ...(actualBookingNumber ? { bookingNumber: actualBookingNumber } : {}),
+          ...(actualCarrierId ? { carrierId: actualCarrierId } : {}),
+          ...(actualContainerType ? { containerType: actualContainerType } : {}),
+          ...(actualCutOffTime ? { cutOffTime: actualCutOffTime } : {}),
+          bookingAiCheck: aiCheck,
+        }));
       } else {
-        setEditBookingAiResult(result);
-        setEditForm((previous) => ({ ...previous, bookingAiCheck: aiCheck }));
+        setEditBookingAiResult(observed);
+        setEditBookingAiLockedFields(nextLocks);
+        setEditForm((previous) => ({
+          ...previous,
+          ...(actualBookingNumber ? { bookingNumber: actualBookingNumber } : {}),
+          ...(actualCarrierId ? { carrierId: actualCarrierId } : {}),
+          ...(actualContainerType ? { containerType: actualContainerType } : {}),
+          ...(actualCutOffTime ? { cutOffTime: actualCutOffTime } : {}),
+          bookingAiCheck: aiCheck,
+        }));
       }
       if (result.status === "VALID") {
         showMsg("AI xác minh file Booking hợp lệ. Hồ sơ vẫn chờ Ops duyệt.");
@@ -661,6 +784,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
       });
       setBookingFile(null);
       setBookingAiResult(null);
+      setBookingAiLockedFields({ ...EMPTY_BOOKING_AI_LOCKS });
       setFormErrors({});
     } else {
       showMsg(result.message, true);
@@ -694,6 +818,12 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
     });
     setEditBookingFile(null);
     setEditBookingAiResult(req.bookingAiCheck ? bookingVerificationFromCheck(req.bookingAiCheck) : null);
+    setEditBookingAiLockedFields({
+      bookingNumber: Boolean(req.bookingAiCheck?.actualBookingNumber),
+      carrierId: Boolean(req.bookingAiCheck?.actualCarrierCode),
+      containerType: Boolean(req.bookingAiCheck?.actualContainerType),
+      cutOffTime: Boolean(req.bookingAiCheck?.actualCutOffDate),
+    });
   };
 
   const handleSaveEdit = () => {
@@ -980,7 +1110,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                 id="request-bookingNumber"
                 data-field="bookingNumber"
                 value={form.bookingNumber || ""}
+                readOnly={bookingAiLockedFields.bookingNumber}
                 onChange={(e) => {
+                  if (bookingAiLockedFields.bookingNumber) return;
                   clearRequestError("bookingNumber");
                   setForm((p) => ({
                     ...p,
@@ -991,7 +1123,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                 aria-invalid={Boolean(visibleFormErrors.bookingNumber)}
                 className={getFieldErrorClass(
                   Boolean(visibleFormErrors.bookingNumber),
-                  "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
+                  bookingAiLockedFields.bookingNumber
+                    ? "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase outline-none bg-slate-100 cursor-not-allowed"
+                    : "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                 )}
               />
               <FieldError message={visibleFormErrors.bookingNumber} />
@@ -1000,7 +1134,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
               data-field="bookingEvidence"
               className={getFieldErrorClass(
                 Boolean(visibleFormErrors.bookingEvidence),
-                "md:col-span-2 rounded-xl border border-blue-200 bg-blue-50/50 p-3 space-y-2",
+                "order-first md:col-span-2 rounded-xl border border-blue-200 bg-blue-50/50 p-3 space-y-2",
               )}
             >
               <label className="text-slate-700 font-semibold text-xs sm:text-sm block">
@@ -1069,14 +1203,18 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                 id="request-carrierId"
                 data-field="carrierId"
                 value={form.carrierId || ""}
+                disabled={bookingAiLockedFields.carrierId}
                 onChange={(e) => {
+                  if (bookingAiLockedFields.carrierId) return;
                   clearRequestError("carrierId");
                   setForm((p) => ({ ...p, carrierId: e.target.value }));
                 }}
                 aria-invalid={Boolean(visibleFormErrors.carrierId)}
                 className={getFieldErrorClass(
                   Boolean(visibleFormErrors.carrierId),
-                  "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
+                  bookingAiLockedFields.carrierId
+                    ? "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none bg-slate-100 cursor-not-allowed"
+                    : "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                 )}
               >
                 <option value="">-- Chọn hãng tàu --</option>
@@ -1099,7 +1237,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                 id="request-containerType"
                 data-field="containerType"
                 value={form.containerType || ""}
+                disabled={bookingAiLockedFields.containerType}
                 onChange={(e) => {
+                  if (bookingAiLockedFields.containerType) return;
                   clearRequestError("containerType");
                   setForm((p) => ({
                     ...p,
@@ -1111,7 +1251,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                 aria-invalid={Boolean(visibleFormErrors.containerType)}
                 className={getFieldErrorClass(
                   Boolean(visibleFormErrors.containerType),
-                  "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
+                  bookingAiLockedFields.containerType
+                    ? "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none bg-slate-100 cursor-not-allowed"
+                    : "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                 )}
               >
                 <option value="">-- Chọn loại container --</option>
@@ -1196,7 +1338,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                 data-field="cutOffTime"
                 value={form.cutOffTime}
                 endOfDay
+                disabled={bookingAiLockedFields.cutOffTime}
                 onChange={(v) => {
+                  if (bookingAiLockedFields.cutOffTime) return;
                   clearRequestError("cutOffTime");
                   setForm((p) => ({ ...p, cutOffTime: v || undefined }));
                 }}
@@ -1290,7 +1434,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
             </div>
 
             <FormErrorSummary errors={visibleEditErrors} />
-            <div className="space-y-3 text-xs">
+            <div className="flex flex-col space-y-3 text-xs">
               <div>
                 <label className="text-slate-700 font-semibold block mb-1">
                   Số Booking <RequiredMark />
@@ -1299,7 +1443,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                   id="edit-bookingNumber"
                   data-field="edit-bookingNumber"
                   value={editForm.bookingNumber || ""}
+                  readOnly={editBookingAiLockedFields.bookingNumber}
                   onChange={(e) => {
+                    if (editBookingAiLockedFields.bookingNumber) return;
                     setEditErrors((previous) => {
                       const next = { ...previous };
                       delete next["edit-bookingNumber"];
@@ -1314,7 +1460,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                   aria-invalid={Boolean(visibleEditErrors["edit-bookingNumber"])}
                   className={getFieldErrorClass(
                     Boolean(visibleEditErrors["edit-bookingNumber"]),
-                    "w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500",
+                    editBookingAiLockedFields.bookingNumber
+                      ? "w-full p-2.5 rounded-xl border border-slate-200 outline-none bg-slate-100 cursor-not-allowed"
+                      : "w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500",
                   )}
                 />
                 <FieldError message={visibleEditErrors["edit-bookingNumber"]} />
@@ -1331,7 +1479,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                     id="edit-carrierId"
                     data-field="edit-carrierId"
                     value={editForm.carrierId || ""}
+                    disabled={editBookingAiLockedFields.carrierId}
                     onChange={(e) => {
+                      if (editBookingAiLockedFields.carrierId) return;
                       setEditErrors((previous) => {
                         const next = { ...previous };
                         delete next["edit-carrierId"];
@@ -1342,7 +1492,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                     aria-invalid={Boolean(visibleEditErrors["edit-carrierId"])}
                     className={getFieldErrorClass(
                       Boolean(visibleEditErrors["edit-carrierId"]),
-                      "w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
+                      editBookingAiLockedFields.carrierId
+                        ? "w-full p-2.5 rounded-xl border border-slate-200 outline-none bg-slate-100 cursor-not-allowed"
+                        : "w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                     )}
                   >
                     <option value="">-- Chọn hãng tàu --</option>
@@ -1367,7 +1519,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                     id="edit-containerType"
                     data-field="edit-containerType"
                     value={editForm.containerType || ""}
+                    disabled={editBookingAiLockedFields.containerType}
                     onChange={(e) => {
+                      if (editBookingAiLockedFields.containerType) return;
                       setEditErrors((previous) => {
                         const next = { ...previous };
                         delete next["edit-containerType"];
@@ -1381,7 +1535,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                     aria-invalid={Boolean(visibleEditErrors["edit-containerType"])}
                     className={getFieldErrorClass(
                       Boolean(visibleEditErrors["edit-containerType"]),
-                      "w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
+                      editBookingAiLockedFields.containerType
+                        ? "w-full p-2.5 rounded-xl border border-slate-200 outline-none bg-slate-100 cursor-not-allowed"
+                        : "w-full p-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-cyan-500 bg-white",
                     )}
                   >
                     <option value="">-- Chọn loại container --</option>
@@ -1427,7 +1583,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                 data-field="edit-bookingEvidence"
                 className={getFieldErrorClass(
                   Boolean(visibleEditErrors["edit-bookingEvidence"]),
-                  "rounded-xl border border-blue-200 bg-blue-50/50 p-3 space-y-2",
+                  "order-first rounded-xl border border-blue-200 bg-blue-50/50 p-3 space-y-2",
                 )}
               >
                 <label className="text-slate-700 font-semibold block mb-1">
@@ -1559,7 +1715,9 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                   data-field="edit-cutOffTime"
                   value={editForm.cutOffTime}
                   endOfDay
+                  disabled={editBookingAiLockedFields.cutOffTime}
                   onChange={(v) => {
+                    if (editBookingAiLockedFields.cutOffTime) return;
                     setEditErrors((previous) => {
                       const next = { ...previous };
                       delete next["edit-cutOffTime"];
@@ -2046,6 +2204,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({
                       <MatchCandidateCard
                         key={cand.offer.id}
                         candidate={cand}
+                        request={req}
                         onHold={() => handleHoldReservation(cand, req)}
                         onChat={() => handleStartChat(req, cand)}
                       />

@@ -94,6 +94,51 @@ const POPULAR_LOCATIONS = [
 const REQUIRED_OFFER_PHOTO_COUNT = OFFER_PHOTO_ANGLE_LABELS.length;
 const MAX_OFFER_PHOTO_COUNT = 12;
 
+type OfferAiLockedField =
+  | "containerNumber"
+  | "containerType"
+  | "carrierId"
+  | "edoNumber"
+  | "edoExpiryDate";
+
+const EMPTY_OFFER_AI_LOCKS: Record<OfferAiLockedField, boolean> = {
+  containerNumber: false,
+  containerType: false,
+  carrierId: false,
+  edoNumber: false,
+  edoExpiryDate: false,
+};
+
+function normalizeAiContainerNumber(value?: string): string {
+  return (value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function carrierIdFromAiValue(value?: string): string {
+  const normalized = (value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!normalized) return "";
+  const aliasCode =
+    normalized.includes("MAERSK") ? "MSK" :
+    normalized.includes("CMACGM") ? "CMA" :
+    normalized.includes("OCEANNETWORK") || normalized === "ONE" ? "ONE" :
+    normalized.includes("EVERGREEN") ? "EMC" :
+    normalized.includes("COSCO") ? "COSCO" :
+    normalized;
+  return (
+    INITIAL_CARRIERS.find((carrier) => {
+      const code = carrier.code.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const name = carrier.name.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      return aliasCode === code || normalized === name || name.includes(normalized);
+    })?.id || ""
+  );
+}
+
+function containerTypeFromAiValue(value?: string): "20GP" | "40HC" | "" {
+  const normalized = (value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (normalized.startsWith("20")) return "20GP";
+  if (normalized.startsWith("40")) return "40HC";
+  return "";
+}
+
 function formatDateTimeDdMmYyyy(value: string): string {
   if (!value) return "—";
   const isoDate = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
@@ -204,6 +249,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({
   const edoScanId = useRef(0);
   const aiInputVersion = useRef(0);
   const [isEdoAiChecking, setIsEdoAiChecking] = useState(false);
+  const [edoAiLockedFields, setEdoAiLockedFields] = useState<
+    Record<OfferAiLockedField, boolean>
+  >({ ...EMPTY_OFFER_AI_LOCKS });
 
   const clearFormError = (field: string) => {
     setFormErrors((prev) => {
@@ -262,7 +310,6 @@ export const OffersPage: React.FC<OffersPageProps> = ({
     photos: string[];
     edoFileName: string;
     edoNumber: string;
-    edoReturnDepot: string;
     edoExpiryDate: string;
     pickupLocationName: string;
     pickupLatitude: number;
@@ -281,7 +328,6 @@ export const OffersPage: React.FC<OffersPageProps> = ({
     photos: [],
     edoFileName: "",
     edoNumber: "",
-    edoReturnDepot: "",
     edoExpiryDate: "",
     pickupLocationName: "",
     pickupLatitude: 0,
@@ -373,16 +419,53 @@ export const OffersPage: React.FC<OffersPageProps> = ({
     setAiCheckResult(null);
     setEdoFile(file);
     setEdoAiSource(null);
+    setEdoAiLockedFields({ ...EMPTY_OFFER_AI_LOCKS });
     setForm((previous) => ({ ...previous, edoFileName: file.name }));
     clearFormError("edoEvidence");
     setIsEdoAiChecking(true);
-    const verification = await verifyEdoWithAI(file, edoExpected);
+    const verification = await verifyEdoWithAI(file);
     if (scanId !== edoScanId.current) return;
+
+    const aiContainerNumber = normalizeAiContainerNumber(
+      verification.actualContainerNumber,
+    );
+    const aiContainerType = containerTypeFromAiValue(
+      verification.actualContainerType,
+    );
+    const aiCarrierId = carrierIdFromAiValue(verification.actualCarrierCode);
+    const aiEdoNumber = verification.actualEdoNumber || "";
+    const aiExpiryDate = formatDateInput(verification.actualExpiryDate);
+    const nextLocks: Record<OfferAiLockedField, boolean> = {
+      ...EMPTY_OFFER_AI_LOCKS,
+      containerNumber: Boolean(aiContainerNumber),
+      containerType: Boolean(aiContainerType),
+      carrierId: Boolean(aiCarrierId),
+      edoNumber: Boolean(aiEdoNumber),
+      edoExpiryDate: Boolean(aiExpiryDate),
+    };
+    setForm((previous) => ({
+      ...previous,
+      edoFileName: file.name,
+      ...(aiContainerNumber ? { containerNumber: aiContainerNumber } : {}),
+      ...(aiContainerType ? { containerType: aiContainerType } : {}),
+      ...(aiCarrierId ? { carrierId: aiCarrierId } : {}),
+      ...(aiEdoNumber ? { edoNumber: aiEdoNumber } : {}),
+      ...(aiExpiryDate ? { edoExpiryDate: aiExpiryDate } : {}),
+    }));
+    setEdoAiLockedFields(nextLocks);
     setEdoAiSource(verification);
     setIsEdoAiChecking(false);
     const currentVerification = reconcileEdoVerificationResult(
       verification,
-      latestEdoExpected.current,
+      {
+        containerNumber:
+          aiContainerNumber || latestEdoExpected.current.containerNumber,
+        carrierCode:
+          verification.actualCarrierCode ||
+          latestEdoExpected.current.carrierCode,
+        containerType:
+          aiContainerType || latestEdoExpected.current.containerType,
+      },
     );
     if (
       currentVerification.status === "VALID" &&
@@ -871,7 +954,6 @@ export const OffersPage: React.FC<OffersPageProps> = ({
       photos: form.photos,
       edoFileName: form.edoFileName,
       edoNumber: form.edoNumber,
-      edoReturnDepot: form.edoReturnDepot,
       edoExpiryDate: form.edoExpiryDate,
       pickupLocationName: form.pickupLocationName.trim(),
       pickupLatitude: form.pickupLatitude,
@@ -952,7 +1034,6 @@ export const OffersPage: React.FC<OffersPageProps> = ({
         conditionNotes: "",
         edoNumber: "",
         edoFileName: "",
-        edoReturnDepot: "",
         edoExpiryDate: "",
         photos: [],
         pickupLocationName: "",
@@ -966,6 +1047,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
       setEdoFile(null);
       ++edoScanId.current;
       setEdoAiSource(null);
+      setEdoAiLockedFields({ ...EMPTY_OFFER_AI_LOCKS });
       setIsEdoAiChecking(false);
     } else {
       showMsg(result.message, true);
@@ -1578,6 +1660,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                 data-field="containerNumber"
                 value={form.containerNumber}
                 onChange={(e) => {
+                  if (edoAiLockedFields.containerNumber) return;
                   clearFormError("containerNumber");
                   invalidateAiCheck();
                   setForm((p) => ({
@@ -1595,8 +1678,11 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                     formErrors.containerNumber ||
                     edoMismatchErrors.containerNumber,
                   ),
-                  "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase outline-none focus:ring-2 focus:ring-emerald-500 bg-white",
+                  edoAiLockedFields.containerNumber
+                    ? "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase outline-none bg-slate-100 cursor-not-allowed"
+                    : "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-mono uppercase outline-none focus:ring-2 focus:ring-emerald-500 bg-white",
                 )}
+                readOnly={edoAiLockedFields.containerNumber}
               />
               <FieldError
                 message={
@@ -1618,7 +1704,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                 id="offer-containerType"
                 data-field="containerType"
                 value={form.containerType}
+                disabled={edoAiLockedFields.containerType}
                 onChange={(e) => {
+                  if (edoAiLockedFields.containerType) return;
                   clearFormError("containerType");
                   invalidateAiCheck();
                   setForm((p) => ({
@@ -1633,7 +1721,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                   Boolean(
                     formErrors.containerType || edoMismatchErrors.containerType,
                   ),
-                  "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white",
+                  edoAiLockedFields.containerType
+                    ? "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none bg-slate-100 cursor-not-allowed"
+                    : "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white",
                 )}
               >
                 <option value="">-- Chọn loại container --</option>
@@ -1659,7 +1749,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                 id="offer-carrierId"
                 data-field="carrierId"
                 value={form.carrierId}
+                disabled={edoAiLockedFields.carrierId}
                 onChange={(e) => {
+                  if (edoAiLockedFields.carrierId) return;
                   clearFormError("carrierId");
                   invalidateAiCheck();
                   setForm((p) => ({ ...p, carrierId: e.target.value }));
@@ -1669,7 +1761,9 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                 )}
                 className={getFieldErrorClass(
                   Boolean(formErrors.carrierId || edoMismatchErrors.carrierId),
-                  "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white",
+                  edoAiLockedFields.carrierId
+                    ? "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none bg-slate-100 cursor-not-allowed"
+                    : "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white",
                 )}
               >
                 <option value="">-- Chọn hãng tàu --</option>
@@ -1691,7 +1785,7 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                 Boolean(
                   formErrors.edoEvidence || edoMismatchErrors.edoEvidence,
                 ),
-                "md:col-span-2 lg:col-span-3 p-3.5 rounded-xl border border-blue-200 bg-blue-50/50 space-y-3",
+                "order-first md:col-span-2 lg:col-span-3 p-3.5 rounded-xl border border-blue-200 bg-blue-50/50 space-y-3",
               )}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1787,6 +1881,37 @@ export const OffersPage: React.FC<OffersPageProps> = ({
                     )}
                   </div>
                 )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 lg:col-span-3">
+              <div className="space-y-1">
+                <label htmlFor="offer-edoNumber" className="text-slate-700 font-semibold block">
+                  Số e-DO
+                </label>
+                <input
+                  id="offer-edoNumber"
+                  data-field="edoNumber"
+                  value={form.edoNumber}
+                  onChange={(e) => !edoAiLockedFields.edoNumber && setForm((previous) => ({ ...previous, edoNumber: e.target.value }))}
+                  readOnly={edoAiLockedFields.edoNumber}
+                  placeholder="Nhập số e-DO"
+                  className={getFieldErrorClass(false, `w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${edoAiLockedFields.edoNumber ? "bg-slate-100 cursor-not-allowed" : "bg-white"}`)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="offer-edoExpiryDate" className="text-slate-700 font-semibold block">
+                  Hạn e-DO
+                </label>
+                <DateInput
+                  id="offer-edoExpiryDate"
+                  data-field="edoExpiryDate"
+                  value={form.edoExpiryDate}
+                  onChange={(value) => !edoAiLockedFields.edoExpiryDate && setForm((previous) => ({ ...previous, edoExpiryDate: value }))}
+                  disabled={edoAiLockedFields.edoExpiryDate}
+                  placeholder="dd/mm/yyyy"
+                  className={`w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${edoAiLockedFields.edoExpiryDate ? "bg-slate-100 cursor-not-allowed" : "bg-white"}`}
+                />
               </div>
             </div>
 

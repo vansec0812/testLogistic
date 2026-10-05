@@ -702,6 +702,12 @@ export interface CarrierSubmission {
   notes?: string;
   evidenceFileIds: string[];
   status: "SUBMITTED" | "ACKNOWLEDGED" | "PENDING_RESPONSE";
+  carrierEmail?: string;
+  emailMessageId?: string;
+  validUntil?: string;
+  carrierResponseStatus?: "APPROVED" | "REJECTED";
+  carrierResponseAt?: string;
+  carrierResponseNote?: string;
 }
 
 export interface CarrierApproval {
